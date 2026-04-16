@@ -8,7 +8,12 @@ import { Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
 
-const navItems = [
+const navItems: Array<{
+  href: string
+  label: string
+  icon: string
+  prefetch?: string
+}> = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊', prefetch: 'prefetchDashboard' },
   { href: '/campaigns', label: 'Outbound Campaigns', icon: '📧', prefetch: 'prefetchCampaigns' },
   { href: '/domains', label: 'Sending Health', icon: '🌐', prefetch: 'prefetchDomains' },
@@ -17,7 +22,7 @@ const navItems = [
   { href: '/analytics', label: 'Performance', icon: '📈', prefetch: 'prefetchAnalytics' },
   { href: '/inbox', label: 'Conversations', icon: '💬', prefetch: 'prefetchInbox' },
   { href: '/settings', label: 'Workspace', icon: '⚙️' },
-] as const
+]
 
 export function Sidebar() {
   const pathname = usePathname()

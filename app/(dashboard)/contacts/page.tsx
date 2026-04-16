@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useContacts, useDeleteContact } from '@/lib/hooks'
+import { Contact } from '@/lib/api'
 import { UploadContactsModal } from '@/components/upload-contacts-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,11 +33,11 @@ export default function ContactsPage() {
   const { mutate: deleteContact } = useDeleteContact()
 
   const filteredContacts = contacts
-    ?.filter((c) => {
+    ?.filter((contact: Contact) => {
       const matchesSearch = 
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = statusFilter === 'all' || c.status === statusFilter
+        contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.name.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesStatus = statusFilter === 'all' || contact.status === statusFilter
       return matchesSearch && matchesStatus
     })
 
@@ -127,7 +128,7 @@ export default function ContactsPage() {
                       </TableRow>
                     ))
                 ) : filteredContacts && filteredContacts.length > 0 ? (
-                  filteredContacts.map((contact) => (
+                  filteredContacts.map((contact: Contact) => (
                     <TableRow key={contact.id}>
                       <TableCell className="font-medium">{contact.email}</TableCell>
                       <TableCell>{contact.name}</TableCell>

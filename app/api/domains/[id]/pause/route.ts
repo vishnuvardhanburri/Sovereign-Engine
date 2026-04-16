@@ -1,39 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { queryOne } from '@/lib/db'
-import { Domain } from '@/lib/db/types'
+import { resolveClientId } from '@/lib/client-context'
+import { updateDomainStatus } from '@/lib/backend'
 
 export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
-
-    if (isNaN(id)) {
-      return NextResponse.json(
-        { error: 'Invalid domain ID' },
-        { status: 400 }
-      )
+    const { id } = await params
+    const domainId = Number(id)
+    if (!domainId) {
+      return NextResponse.json({ error: 'Invalid domain id' }, { status: 400 })
     }
 
-    const domain = await queryOne<Domain>(
-      'UPDATE domains SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
-      ['paused', id]
-    )
+    const clientId = await resolveClientId({
+      searchParams: request.nextUrl.searchParams,
+      headers: request.headers,
+    })
 
+    const domain = await updateDomainStatus(clientId, domainId, 'paused')
     if (!domain) {
-      return NextResponse.json(
-        { error: 'Domain not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
     }
 
     return NextResponse.json(domain)
   } catch (error) {
-    console.error('[API] Error pausing domain:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('[API] Failed to pause domain', error)
+    return NextResponse.json({ error: 'Failed to pause domain' }, { status: 500 })
   }
 }

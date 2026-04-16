@@ -12,11 +12,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Table,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
 } from 'recharts'
 import {
   Table as UITable,

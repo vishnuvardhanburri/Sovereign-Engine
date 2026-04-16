@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { api, api_getStats, api_getChartData } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -7,7 +12,7 @@ export const useCampaigns = () => {
   return useQuery({
     queryKey: ['campaigns'],
     queryFn: () => api.campaigns.getAll(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -16,7 +21,7 @@ export const useCampaign = (id: string) => {
     queryKey: ['campaigns', id],
     queryFn: () => api.campaigns.getById(id),
     enabled: !!id,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -66,7 +71,7 @@ export const useContacts = () => {
   return useQuery({
     queryKey: ['contacts'],
     queryFn: () => api.contacts.getAll(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -104,7 +109,7 @@ export const useSequences = () => {
   return useQuery({
     queryKey: ['sequences'],
     queryFn: () => api.sequences.getAll(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -113,7 +118,7 @@ export const useSequence = (id: string) => {
     queryKey: ['sequences', id],
     queryFn: () => api.sequences.getById(id),
     enabled: !!id,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -152,7 +157,7 @@ export const useReplies = () => {
   return useQuery({
     queryKey: ['replies'],
     queryFn: () => api.replies.getAll(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -161,7 +166,7 @@ export const useReply = (id: string) => {
     queryKey: ['replies', id],
     queryFn: () => api.replies.getById(id),
     enabled: !!id,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -185,7 +190,7 @@ export const useAnalytics = () => {
   return useQuery({
     queryKey: ['analytics'],
     queryFn: () => api.analytics.getAll(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -194,7 +199,7 @@ export const useActivityFeed = () => {
   return useQuery({
     queryKey: ['activity'],
     queryFn: () => api.activity.getRecent(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -203,7 +208,7 @@ export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => api_getStats(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -212,6 +217,6 @@ export const useChartData = () => {
   return useQuery({
     queryKey: ['chart-data'],
     queryFn: () => api_getChartData(),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useReplies } from '@/lib/hooks'
+import { Reply } from '@/lib/api'
 import { ReplyDetailModal } from '@/components/reply-detail-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -30,14 +31,14 @@ export default function InboxPage() {
   const { data: replies, isLoading } = useReplies()
 
   const filteredReplies = replies
-    ?.filter((r) => {
+    ?.filter((reply: Reply) => {
       const matchesSearch =
-        r.fromEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.fromName.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = statusFilter === 'all' || r.status === statusFilter
+        reply.fromEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        reply.fromName.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesStatus = statusFilter === 'all' || reply.status === statusFilter
       return matchesSearch && matchesStatus
     })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .sort((a: Reply, b: Reply) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -51,9 +52,9 @@ export default function InboxPage() {
     }
   }
 
-  const interestedCount = replies?.filter((r) => r.status === 'interested').length || 0
-  const notInterestedCount = replies?.filter((r) => r.status === 'not_interested').length || 0
-  const unreadCount = replies?.filter((r) => r.status === 'unread').length || 0
+  const interestedCount = replies?.filter((r: Reply) => r.status === 'interested').length || 0
+  const notInterestedCount = replies?.filter((r: Reply) => r.status === 'not_interested').length || 0
+  const unreadCount = replies?.filter((r: Reply) => r.status === 'unread').length || 0
 
   return (
     <div className="space-y-6">
@@ -164,7 +165,7 @@ export default function InboxPage() {
                       </TableRow>
                     ))
                 ) : filteredReplies && filteredReplies.length > 0 ? (
-                  filteredReplies.map((reply) => (
+                  filteredReplies.map((reply: Reply) => (
                     <TableRow key={reply.id}>
                       <TableCell>
                         <div>

@@ -5,8 +5,8 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "node --loader ts-node/esm index.ts",
-    "dev": "NODE_ENV=development ts-node-esm index.ts",
+    "start": "tsx index.ts",
+    "dev": "NODE_ENV=development tsx watch index.ts",
     "build": "tsc",
     "test": "node --test"
   },
@@ -19,15 +19,15 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "pg": "^8.11.3",
     "@upstash/redis": "^1.34.0",
-    "resend": "^3.0.0"
+    "pg": "^8.11.3",
+    "redis": "^4.7.0",
+    "resend": "^6.12.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/pg": "^8.11.0",
-    "typescript": "^5.0.0",
-    "ts-node": "^10.9.0",
-    "tsx": "^4.0.0"
+    "tsx": "^4.20.6",
+    "typescript": "^5.0.0"
   }
 }

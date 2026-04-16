@@ -1,69 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { query, queryOne } from '@/lib/db'
-import { Identity } from '@/lib/db/types'
+import { createIdentity, listIdentities } from '@/lib/backend'
+import { resolveClientId } from '@/lib/client-context'
 
-export async function POST(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const body = await req.json()
-    const { domain_id, email, daily_limit = 50 } = body
-
-    if (!domain_id || !email || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-      return NextResponse.json(
-        { error: 'Invalid domain_id or email format' },
-        { status: 400 }
-      )
+    const searchParams = request.nextUrl.searchParams
+    const domainId = Number(searchParams.get('domain_id') ?? 0)
+    if (!domainId) {
+      return NextResponse.json({ error: 'domain_id is required' }, { status: 400 })
     }
 
-    const result = await queryOne<Identity>(
-      `INSERT INTO identities (domain_id, email, daily_limit)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [domain_id, email, daily_limit]
-    )
+    const clientId = await resolveClientId({
+      searchParams,
+      headers: request.headers,
+    })
 
-    return NextResponse.json(result, { status: 201 })
-  } catch (error: any) {
-    console.error('[API] Error creating identity:', error)
+    const result = await listIdentities(clientId, domainId, {
+      page: Number(searchParams.get('page') ?? 1),
+      limit: Number(searchParams.get('limit') ?? 50),
+    })
 
-    if (error.code === '23505') {
-      return NextResponse.json(
-        { error: 'Identity already exists for this domain' },
-        { status: 409 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const domain_id = searchParams.get('domain_id')
-
-    if (!domain_id) {
-      return NextResponse.json(
-        { error: 'domain_id query parameter required' },
-        { status: 400 }
-      )
-    }
-
-    const results = await query<Identity>(
-      `SELECT * FROM identities 
-       WHERE domain_id = $1 
-       ORDER BY created_at DESC`,
-      [parseInt(domain_id)]
-    )
-
-    return NextResponse.json(results.rows)
+    return NextResponse.json(result.data)
   } catch (error) {
-    console.error('[API] Error fetching identities:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('[API] Failed to list identities', error)
+    return NextResponse.json({ error: 'Failed to list identities' }, { status: 500 })
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const clientId = await resolveClientId({
+      body,
+      headers: request.headers,
+    })
+
+    if (!body.domain_id || !body.email) {
+      return NextResponse.json(
+        { error: 'domain_id and email are required' },
+        { status: 400 }
+      )
+    }
+
+    const identity = await createIdentity(clientId, {
+      domainId: Number(body.domain_id),
+      email: String(body.email),
+      dailyLimit: body.daily_limit ? Number(body.daily_limit) : undefined,
+    })
+
+    return NextResponse.json(identity, { status: 201 })
+  } catch (error) {
+    console.error('[API] Failed to create identity', error)
+    return NextResponse.json({ error: 'Failed to create identity' }, { status: 500 })
+  }
+}
+

@@ -1,77 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { queryOne, query } from '@/lib/db'
-import { enqueueJob, peekQueue } from '@/lib/redis'
-import { QueueJob } from '@/lib/db/types'
+import {
+  enqueueCampaignJobs,
+  listQueueJobs,
+  promoteReadyQueueJobs,
+} from '@/lib/backend'
+import { peekQueue } from '@/lib/redis'
+import { resolveClientId } from '@/lib/client-context'
 
-export async function POST(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const body = await req.json()
-    const { contact_id, campaign_id, domain_id, scheduled_at } = body
+    const searchParams = request.nextUrl.searchParams
+    const clientId = await resolveClientId({
+      searchParams,
+      headers: request.headers,
+    })
+    const action = searchParams.get('action')
 
-    if (!contact_id || !campaign_id || !domain_id) {
+    if (action === 'peek') {
+      const jobs = await peekQueue(Number(searchParams.get('count') ?? 10))
+      return NextResponse.json({ jobs, count: jobs.length })
+    }
+
+    if (action === 'promote') {
+      const promoted = await promoteReadyQueueJobs()
+      return NextResponse.json({ promoted })
+    }
+
+    const jobs = await listQueueJobs(clientId, {
+      page: Number(searchParams.get('page') ?? 1),
+      limit: Number(searchParams.get('limit') ?? 50),
+      status: (searchParams.get('status') as any) ?? undefined,
+    })
+
+    return NextResponse.json(jobs)
+  } catch (error) {
+    console.error('[API] Failed to list queue jobs', error)
+    return NextResponse.json({ error: 'Failed to list queue jobs' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const clientId = await resolveClientId({
+      body,
+      headers: request.headers,
+    })
+
+    if (!body.campaign_id) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'campaign_id is required' },
         { status: 400 }
       )
     }
 
-    // Add to database queue
-    const result = await queryOne<QueueJob>(
-      `INSERT INTO queue (contact_id, campaign_id, domain_id, scheduled_at)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [contact_id, campaign_id, domain_id, scheduled_at || null]
-    )
-
-    // Add to Redis queue for real-time processing
-    const jobId = await enqueueJob({
-      contact_id,
-      campaign_id,
-      domain_id,
-      scheduled_at,
-    })
-
-    return NextResponse.json(
-      { ...result, redis_id: jobId },
-      { status: 201 }
-    )
-  } catch (error) {
-    console.error('[API] Error enqueueing job:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const action = searchParams.get('action')
-
-    if (action === 'peek') {
-      const count = parseInt(searchParams.get('count') || '10')
-      const jobs = await peekQueue(count)
-      return NextResponse.json({ jobs, count: jobs.length })
-    }
-
-    // Get pending jobs from database
-    const results = await query<QueueJob>(
-      `SELECT * FROM queue 
-       WHERE status = 'pending' 
-       ORDER BY scheduled_at ASC NULLS FIRST, created_at ASC
-       LIMIT 100`
+    const result = await enqueueCampaignJobs(
+      clientId,
+      Number(body.campaign_id),
+      Array.isArray(body.contact_ids)
+        ? body.contact_ids.map((value: unknown) => Number(value)).filter(Boolean)
+        : undefined
     )
 
     return NextResponse.json({
-      jobs: results.rows,
-      count: results.rowCount,
+      queued_jobs: result.jobs.length,
+      contact_count: result.contactCount,
     })
   } catch (error) {
-    console.error('[API] Error fetching queue:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('[API] Failed to enqueue campaign', error)
+    return NextResponse.json({ error: 'Failed to enqueue campaign' }, { status: 500 })
   }
 }
+

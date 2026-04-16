@@ -1,58 +1,80 @@
-import { Pool } from 'pg'
+import { Pool, PoolClient, QueryResult } from 'pg'
+import { appEnv } from '@/lib/env'
 
-// Initialize PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-})
+let pool: Pool | undefined
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err)
-})
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: appEnv.databaseUrl(),
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+      ssl:
+        process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : undefined,
+    })
+
+    pool.on('error', (error: unknown) => {
+      console.error('[DB] Unexpected idle client error', error)
+    })
+  }
+
+  return pool
+}
+
+export interface QueryExecutor {
+  <T>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }>
+}
+
+async function execute<T>(
+  client: Pool | PoolClient,
+  text: string,
+  params?: unknown[]
+): Promise<{ rows: T[]; rowCount: number }> {
+  const startedAt = Date.now()
+  const result: QueryResult = await client.query(text, params)
+  const duration = Date.now() - startedAt
+
+  if (duration > 250) {
+    console.warn('[DB] Slow query detected', {
+      duration,
+      statement: text.slice(0, 120),
+      rowCount: result.rowCount ?? 0,
+    })
+  }
+
+  return {
+    rows: result.rows as T[],
+    rowCount: result.rowCount ?? 0,
+  }
+}
 
 export async function query<T>(
   text: string,
-  params?: any[]
+  params?: unknown[]
 ): Promise<{ rows: T[]; rowCount: number }> {
-  const start = Date.now()
-  try {
-    const result = await pool.query(text, params)
-    const duration = Date.now() - start
-    console.log('[DB] Executed query', { duration, rows: result.rowCount })
-    return {
-      rows: result.rows as T[],
-      rowCount: result.rowCount || 0,
-    }
-  } catch (error) {
-    console.error('[DB] Query error:', error, { text, params })
-    throw error
-  }
+  return execute<T>(getPool(), text, params)
 }
 
 export async function queryOne<T>(
   text: string,
-  params?: any[]
+  params?: unknown[]
 ): Promise<T | null> {
   const result = await query<T>(text, params)
-  return result.rows[0] || null
+  return result.rows[0] ?? null
 }
 
 export async function transaction<T>(
-  callback: (query: typeof query) => Promise<T>
+  callback: (executor: QueryExecutor) => Promise<T>
 ): Promise<T> {
-  const client = await pool.connect()
+  const client = await getPool().connect()
+
   try {
     await client.query('BEGIN')
-    const transactionQuery = async (text: string, params?: any[]) => {
-      const result = await client.query(text, params)
-      return {
-        rows: result.rows,
-        rowCount: result.rowCount || 0,
-      }
-    }
-    const result = await callback(transactionQuery as typeof query)
+    const executor: QueryExecutor = (text, params) => execute(client, text, params)
+    const result = await callback(executor)
     await client.query('COMMIT')
     return result
   } catch (error) {
@@ -64,7 +86,8 @@ export async function transaction<T>(
 }
 
 export async function closePool(): Promise<void> {
-  await pool.end()
+  if (pool) {
+    await pool.end()
+    pool = undefined
+  }
 }
-
-export default pool
