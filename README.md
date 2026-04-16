@@ -2,7 +2,7 @@
 
 A production-grade, white-labeled cold email automation platform built with Next.js 16, React Query, Zustand, and ShadCN UI components. Optimized for instant navigation (<200ms) and seamless user experience.
 
-## Performance Features ⚡
+## Performance Features
 
 - **Instant Navigation:** <200ms page transitions with no full reloads
 - **Smart Data Caching:** 30-second freshness with background refetch
@@ -28,7 +28,7 @@ See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization doc
 - Campaign detail pages with sequence preview
 - Search, filter, and sort capabilities
 
-### Domains & Rate Control ⭐ NEW
+### Domains & Rate Control
 - **Domain Management**: Add and manage sending domains with daily limits
 - **Identity Management**: Create email identities per domain
 - **Health Scoring**: Real-time health metrics (0-100 based on bounce/reply rates)
@@ -95,7 +95,7 @@ See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization doc
 │   ├── (dashboard)/                # Protected routes
 │   │   ├── dashboard/              # Main dashboard
 │   │   ├── campaigns/              # Campaign management
-│   │   ├── domains/                # Domain management ⭐
+│   │   ├── domains/                # Domain management
 │   │   ├── contacts/               # Contact management
 │   │   ├── sequences/              # Email sequences
 │   │   ├── analytics/              # Analytics dashboard
@@ -114,30 +114,30 @@ See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization doc
 │   └── page.tsx
 ├── components/
 │   ├── ui/                         # ShadCN UI components
-│   ├── domain-manager.tsx          # Domain table & controls ⭐
-│   ├── add-domain-modal.tsx        # Add domain form ⭐
-│   ├── identities-list.tsx         # Email identities ⭐
+│   ├── domain-manager.tsx          # Domain table & controls
+│   ├── add-domain-modal.tsx        # Add domain form
+│   ├── identities-list.tsx         # Email identities
 │   ├── sidebar.tsx
 │   ├── header.tsx
 │   ├── app-layout.tsx
 │   └── ...
 ├── lib/
-│   ├── api.ts                      # Mock API layer
+│   ├── api.ts                      # Frontend API client
 │   ├── db.ts                       # PostgreSQL client
 │   ├── db/types.ts                 # Database types
 │   ├── redis.ts                    # Redis utilities & queue
-│   ├── rate-limiter.ts             # Rate limiting logic ⭐
-│   ├── integration-tests.ts        # Test scenarios ⭐
+│   ├── rate-limiter.ts             # Rate limiting logic
+│   ├── integration-tests.ts        # Backend integration test
 │   ├── store.ts                    # Zustand store
 │   ├── hooks/index.ts              # React Query hooks
 │   └── utils.ts
 ├── scripts/
 │   ├── init-db.sql                 # Database schema
 │   └── seed-data.ts                # Test data seeding
-├── worker/                         # External worker service ⭐
+├── worker/                         # External worker service
 │   ├── index.ts                    # Email queue processor
 │   └── package.json
-├── DOMAIN_RATE_CONTROL_README.md   # Detailed documentation ⭐
+├── DOMAIN_RATE_CONTROL_README.md   # Detailed documentation
 └── package.json
 ```
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useDashboardStats, useChartData, useActivityFeed } from '@/lib/hooks'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -12,7 +13,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { Mail, MessageSquare, TrendingUp, AlertCircle, Activity } from 'lucide-react'
+import { Mail, MessageSquare, TrendingUp, AlertCircle, Activity, ArrowRight } from 'lucide-react'
 
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
@@ -51,6 +52,48 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold">Outbound Performance</h1>
         <p className="text-muted-foreground">Real-time insights into your lead generation campaigns</p>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Quick start</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>
+            1. Add a sending domain and at least one email identity in{' '}
+            <Link className="text-foreground underline underline-offset-4" href="/domains">
+              Sending Health
+            </Link>
+            .
+          </p>
+          <p>
+            2. Import prospects in{' '}
+            <Link className="text-foreground underline underline-offset-4" href="/contacts">
+              Prospects
+            </Link>
+            .
+          </p>
+          <p>
+            3. Create your message steps in{' '}
+            <Link className="text-foreground underline underline-offset-4" href="/sequences">
+              Message Sequences
+            </Link>
+            .
+          </p>
+          <p>
+            4. Create a campaign in{' '}
+            <Link className="text-foreground underline underline-offset-4" href="/campaigns">
+              Outbound Campaigns
+            </Link>
+            , then click Start to enqueue jobs.
+          </p>
+          <p className="flex items-center flex-wrap gap-2">
+            5. Run the worker process to send emails (local):{' '}
+            <code className="px-2 py-0.5 rounded bg-muted text-foreground">npm run worker:dev</code>
+            <ArrowRight className="w-4 h-4 opacity-70" />
+            <span>Emails are sent by the worker, not the API.</span>
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

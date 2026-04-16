@@ -52,7 +52,7 @@ export function CreateCampaignModal() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>Create Campaign</Button>
+        <Button className="shadow-sm">Create Campaign</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

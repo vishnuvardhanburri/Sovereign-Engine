@@ -1,6 +1,6 @@
 # Xavira Quick Reference Card
 
-## 🚀 Launch Checklist
+## Launch Checklist
 
 ```bash
 # 1. Install & Run
@@ -17,24 +17,24 @@ npm run dev
 vercel deploy
 
 # 4. Monitor Analytics
-# Visit Vercel Dashboard → Project → Analytics
+# Visit Vercel Dashboard > Project > Analytics
 ```
 
 ---
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Navigation Time | <200ms | ✅ |
-| Cache Freshness | 30s | ✅ |
-| First Load | <1.5s | ✅ |
-| Prefetch Success | >80% | ✅ |
-| API Response | <200ms | ✅ |
+| Navigation Time | <200ms | OK |
+| Cache Freshness | 30s | OK |
+| First Load | <1.5s | OK |
+| Prefetch Success | >80% | OK |
+| API Response | <200ms | OK |
 
 ---
 
-## 🎨 Branding
+## Branding
 
 **Product Name:** Xavira
 **Logo:** X
@@ -43,7 +43,7 @@ vercel deploy
 
 ---
 
-## ⚡ Key Optimizations
+## Key Optimizations
 
 ```typescript
 // 1. React Query Configuration
@@ -67,7 +67,7 @@ onError: () => { /* Rollback if failed */ }
 
 ---
 
-## 📁 File Structure
+## File Structure
 
 ```
 ├── app/
@@ -85,12 +85,12 @@ onError: () => { /* Rollback if failed */ }
 │   └── layout.tsx              (Root layout)
 │
 ├── lib/
-│   ├── api.ts                  (Mock API)
+│   ├── api.ts                  (Frontend API client)
 │   ├── store.ts                (Zustand state)
 │   ├── hooks/                  (React Query hooks)
-│   ├── prefetch.ts             ⭐ NEW (Prefetch system)
-│   ├── pagination.ts           ⭐ NEW (Pagination)
-│   └── performance.ts          ⭐ NEW (Monitoring)
+│   ├── prefetch.ts             (Prefetch system)
+│   ├── pagination.ts           (Pagination)
+│   └── performance.ts          (Monitoring)
 │
 ├── components/
 │   ├── sidebar.tsx             (Updated: prefetch + branding)
@@ -99,15 +99,15 @@ onError: () => { /* Rollback if failed */ }
 │   └── ui/                     (ShadCN components)
 │
 └── docs/
-    ├── PERFORMANCE_GUIDE.md    ⭐ NEW (351 lines)
-    ├── IMPLEMENTATION_CHECKLIST.md ⭐ NEW (213 lines)
-    ├── OPTIMIZATION_SUMMARY.md ⭐ NEW (428 lines)
-    └── QUICK_REFERENCE.md      ⭐ NEW (This file)
+    ├── PERFORMANCE_GUIDE.md    (351 lines)
+    ├── IMPLEMENTATION_CHECKLIST.md (213 lines)
+    ├── OPTIMIZATION_SUMMARY.md (428 lines)
+    └── QUICK_REFERENCE.md      (This file)
 ```
 
 ---
 
-## 🔧 Common Tasks
+## Common Tasks
 
 ### Add New Page with Prefetch
 ```typescript
@@ -128,7 +128,7 @@ export const prefetchMyPage = async () => {
 
 ### Update Existing Query
 ```typescript
-// ✅ Correct - Add keepPreviousData
+// Correct - Add keepPreviousData
 export const useMyQuery = () => {
   return useQuery({
     queryKey: ['myquery'],
@@ -156,7 +156,7 @@ const mutation = useMutation({
 
 ---
 
-## 🐛 Debugging
+## Debugging
 
 ### Check Navigation Performance
 ```javascript
@@ -179,12 +179,12 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 ```javascript
 // In lib/performance.ts:
 measureQueryFetch('campaigns', duration)
-// Logs: "[Performance] campaigns fetch: 45.23ms ✓"
+// Logs: "[Performance] campaigns fetch: 45.23ms OK"
 ```
 
 ---
 
-## 📚 Documentation Files
+## Documentation Files
 
 | File | Purpose | Size |
 |------|---------|------|
@@ -201,7 +201,7 @@ Read in order:
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
 ### Deploy to Vercel
 ```bash
@@ -217,7 +217,7 @@ git push origin main  # Auto-deploys
 
 ### Environment Variables
 ```env
-# Set in Vercel Project Settings → Env Vars
+# Set in Vercel Project Settings > Env Vars
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://...
 API_KEY=...
@@ -226,14 +226,14 @@ NEXT_PUBLIC_APP_URL=https://yourapp.vercel.app
 
 ### Custom Domain
 ```
-Vercel Dashboard → Settings → Domains
+Vercel Dashboard > Settings > Domains
 Add: example.com
 Auto-configures DNS
 ```
 
 ---
 
-## 📞 Support
+## Support
 
 ### Performance Not as Expected?
 1. Check DevTools Network tab - should see <200ms navigation
@@ -255,7 +255,7 @@ Auto-configures DNS
 
 ---
 
-## 💡 Pro Tips
+## Pro Tips
 
 ### Speed Up Development
 ```bash
@@ -272,7 +272,7 @@ npm run dev
 
 ### Monitor Real Users
 ```
-Vercel Dashboard → Analytics
+Vercel Dashboard > Analytics
 Track Core Web Vitals in production
 ```
 
@@ -286,19 +286,19 @@ useEffect(() => {
 
 ---
 
-## 🎯 Success Metrics
+## Success Metrics
 
-✅ Navigation <200ms (no loading spinners)
-✅ Sidebar prefetch visible in DevTools
-✅ Campaign status update instant
-✅ Return visits use cache (refresh = background)
-✅ Branding: "Xavira" everywhere, no tech jargon
-✅ Deploy to Vercel (automatic on git push)
-✅ Monitor analytics (Core Web Vitals tracking)
+- Navigation <200ms (no loading spinners)
+- Sidebar prefetch visible in DevTools
+- Campaign status update instant
+- Return visits use cache (refresh = background)
+- Branding: "Xavira" everywhere, no tech jargon
+- Deploy to Vercel (automatic on git push)
+- Monitor analytics (Core Web Vitals tracking)
 
 ---
 
-## 📦 What's Inside
+## What's Inside
 
 - **8 Dashboard Pages** (Dashboard, Campaigns, Domains, Contacts, Sequences, Analytics, Inbox, Settings)
 - **Performance Optimizations** (Prefetch, caching, optimistic updates)
@@ -308,16 +308,16 @@ useEffect(() => {
 
 ---
 
-## 🚀 Ready to Launch?
+## Ready to Launch?
 
-1. ✅ Run locally and test
-2. ✅ Deploy to Vercel
-3. ✅ Set environment variables
-4. ✅ Monitor analytics
-5. ✅ Celebrate! 🎉
+1. Run locally and test
+2. Deploy to Vercel
+3. Set environment variables
+4. Monitor analytics
+5. Validate production
 
 **Xavira is now live and performing at enterprise standards.**
 
 ---
 
-Created with ❤️ for Xavira Premium Edition
+Created for Xavira Premium Edition

@@ -26,7 +26,7 @@ export default function SequencesPage() {
       <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
         <CardContent className="pt-6">
           <p className="text-sm text-blue-900 dark:text-blue-100">
-            💡 Sequences are email templates with multiple steps. Create one, then use it for multiple campaigns.
+            Sequences are email templates with multiple steps. Create one, then use it for multiple campaigns.
           </p>
         </CardContent>
       </Card>

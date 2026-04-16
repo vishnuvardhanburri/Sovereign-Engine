@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { bulkCreateContacts, createCampaign, createDomain, createIdentity, createSequence, enqueueCampaignJobs } from '@/lib/backend'

@@ -57,30 +57,36 @@ export default function AnalyticsPage() {
           {
             label: 'Avg Reply Rate',
             value: analytics
-              ? Math.round(
-                  analytics.reduce((sum, a) => sum + a.replyRate, 0) /
-                    analytics.length
-                )
+              ? analytics.length > 0
+                ? Math.round(
+                    analytics.reduce((sum, a) => sum + a.replyRate, 0) /
+                      analytics.length
+                  )
+                : 0
               : 0,
             suffix: '%',
           },
           {
             label: 'Avg Open Rate',
             value: analytics
-              ? Math.round(
-                  analytics.reduce((sum, a) => sum + a.openRate, 0) /
-                    analytics.length
-                )
+              ? analytics.length > 0
+                ? Math.round(
+                    analytics.reduce((sum, a) => sum + a.openRate, 0) /
+                      analytics.length
+                  )
+                : 0
               : 0,
             suffix: '%',
           },
           {
             label: 'Avg Bounce Rate',
             value: analytics
-              ? Math.round(
-                  analytics.reduce((sum, a) => sum + a.bounceRate, 0) /
-                    analytics.length
-                )
+              ? analytics.length > 0
+                ? Math.round(
+                    analytics.reduce((sum, a) => sum + a.bounceRate, 0) /
+                      analytics.length
+                  )
+                : 0
               : 0,
             suffix: '%',
           },

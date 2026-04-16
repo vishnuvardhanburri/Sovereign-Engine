@@ -40,7 +40,7 @@ export function Header() {
     <header className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-border bg-card md:fixed md:top-0 md:right-0 md:left-64 z-20">
       <div className="hidden md:block">
         <h2 className="text-sm text-muted-foreground">Xavira Orbit</h2>
-        <p className="text-xs text-muted-foreground/70">Outbound Infrastructure</p>
+        <p className="text-xs text-muted-foreground">Outbound Infrastructure</p>
       </div>
 
       <div className="flex-1" /> {/* Spacer */}

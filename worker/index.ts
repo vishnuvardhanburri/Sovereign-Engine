@@ -1,26 +1,43 @@
+import 'dotenv/config'
 import { Resend } from 'resend'
-import {
-  buildSendMessage,
-  claimQueueJob,
-  deferQueueJob,
-  getNextBusinessWindow,
-  getRandomSendDelaySeconds,
-  isSuppressed,
-  loadQueueExecutionContext,
-  markQueueJobCompleted,
-  markQueueJobFailed,
-  markQueueJobSkipped,
-  popQueuedJob,
-  promoteReadyQueueJobs,
-  selectBestIdentity,
-} from '../lib/backend'
-import { closePool } from '../lib/db'
-import { closeRedis } from '../lib/redis'
-import { appEnv, validateWorkerEnv } from '../lib/env'
+import * as backendModule from '../lib/backend.ts'
+import * as dbModule from '../lib/db.ts'
+import * as redisModule from '../lib/redis.ts'
+import * as envModule from '../lib/env.ts'
+
+const appEnv =
+  (envModule as any).appEnv ?? (envModule as any).default?.appEnv
+const validateWorkerEnv =
+  (envModule as any).validateWorkerEnv ?? (envModule as any).default?.validateWorkerEnv
+
+if (typeof validateWorkerEnv !== 'function' || !appEnv) {
+  throw new Error('Failed to load env module exports for worker runtime')
+}
 
 validateWorkerEnv()
 
 const resend = new Resend(appEnv.resendApiKey())
+
+const backend = ((backendModule as any).default ?? backendModule) as any
+const db = ((dbModule as any).default ?? dbModule) as any
+const redis = ((redisModule as any).default ?? redisModule) as any
+
+const buildSendMessage = backend.buildSendMessage as typeof import('../lib/backend.ts').buildSendMessage
+const claimQueueJob = backend.claimQueueJob as typeof import('../lib/backend.ts').claimQueueJob
+const deferQueueJob = backend.deferQueueJob as typeof import('../lib/backend.ts').deferQueueJob
+const getNextBusinessWindow = backend.getNextBusinessWindow as typeof import('../lib/backend.ts').getNextBusinessWindow
+const getRandomSendDelaySeconds = backend.getRandomSendDelaySeconds as typeof import('../lib/backend.ts').getRandomSendDelaySeconds
+const isSuppressed = backend.isSuppressed as typeof import('../lib/backend.ts').isSuppressed
+const loadQueueExecutionContext = backend.loadQueueExecutionContext as typeof import('../lib/backend.ts').loadQueueExecutionContext
+const markQueueJobCompleted = backend.markQueueJobCompleted as typeof import('../lib/backend.ts').markQueueJobCompleted
+const markQueueJobFailed = backend.markQueueJobFailed as typeof import('../lib/backend.ts').markQueueJobFailed
+const markQueueJobSkipped = backend.markQueueJobSkipped as typeof import('../lib/backend.ts').markQueueJobSkipped
+const popQueuedJob = backend.popQueuedJob as typeof import('../lib/backend.ts').popQueuedJob
+const promoteReadyQueueJobs = backend.promoteReadyQueueJobs as typeof import('../lib/backend.ts').promoteReadyQueueJobs
+const selectBestIdentity = backend.selectBestIdentity as typeof import('../lib/backend.ts').selectBestIdentity
+
+const closePool = db.closePool as typeof import('../lib/db.ts').closePool
+const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRedis
 
 let shuttingDown = false
 
@@ -133,6 +150,9 @@ async function processOnce() {
 
     if (response.error) {
       await markQueueJobFailed(context, response.error.message)
+      console.error(
+        `[Worker] provider error queue_job=${context.job.id} to=${context.contact.email}: ${response.error.message}`
+      )
       return
     }
 

@@ -10,8 +10,10 @@ export interface RedisQueueJobPayload {
   scheduled_at: string
 }
 
-const READY_QUEUE_KEY = 'xavira:queue:ready'
-const SCHEDULED_QUEUE_KEY = 'xavira:queue:scheduled'
+// Redis list queue (FIFO) used by the worker.
+const READY_QUEUE_KEY = 'email:queue'
+// ZSET used for delayed retries and scheduled sends.
+const SCHEDULED_QUEUE_KEY = 'email:queue:scheduled'
 
 let redisClient: any
 let connectPromise: Promise<any> | undefined

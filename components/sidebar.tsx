@@ -4,24 +4,35 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import { Menu, X } from 'lucide-react'
+import {
+  Menu,
+  X,
+  LayoutDashboard,
+  Mail,
+  Globe,
+  Users,
+  ListOrdered,
+  LineChart,
+  MessageCircle,
+  Settings,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
 
 const navItems: Array<{
   href: string
   label: string
-  icon: string
+  icon: React.ComponentType<{ className?: string }>
   prefetch?: string
 }> = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊', prefetch: 'prefetchDashboard' },
-  { href: '/campaigns', label: 'Outbound Campaigns', icon: '📧', prefetch: 'prefetchCampaigns' },
-  { href: '/domains', label: 'Sending Health', icon: '🌐', prefetch: 'prefetchDomains' },
-  { href: '/contacts', label: 'Prospects', icon: '👥', prefetch: 'prefetchContacts' },
-  { href: '/sequences', label: 'Message Sequences', icon: '⚙️', prefetch: 'prefetchSequences' },
-  { href: '/analytics', label: 'Performance', icon: '📈', prefetch: 'prefetchAnalytics' },
-  { href: '/inbox', label: 'Conversations', icon: '💬', prefetch: 'prefetchInbox' },
-  { href: '/settings', label: 'Workspace', icon: '⚙️' },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, prefetch: 'prefetchDashboard' },
+  { href: '/campaigns', label: 'Outbound Campaigns', icon: Mail, prefetch: 'prefetchCampaigns' },
+  { href: '/domains', label: 'Sending Health', icon: Globe, prefetch: 'prefetchDomains' },
+  { href: '/contacts', label: 'Prospects', icon: Users, prefetch: 'prefetchContacts' },
+  { href: '/sequences', label: 'Message Sequences', icon: ListOrdered, prefetch: 'prefetchSequences' },
+  { href: '/analytics', label: 'Performance', icon: LineChart, prefetch: 'prefetchAnalytics' },
+  { href: '/inbox', label: 'Conversations', icon: MessageCircle, prefetch: 'prefetchInbox' },
+  { href: '/settings', label: 'Workspace', icon: Settings },
 ]
 
 export function Sidebar() {
@@ -71,7 +82,7 @@ export function Sidebar() {
             </div>
             <div>
               <h1 className="font-bold text-lg">Xavira Orbit</h1>
-              <p className="text-xs text-sidebar-foreground/60">Lead Generation Infrastructure</p>
+              <p className="text-xs text-sidebar-foreground/80">Lead Generation Infrastructure</p>
             </div>
           </div>
 
@@ -80,6 +91,7 @@ export function Sidebar() {
             <div className="space-y-2">
               {navItems.map((item) => {
                 const isActive = pathname.startsWith(item.href)
+                const Icon = item.icon
                 return (
                   <Link
                     key={item.href}
@@ -92,7 +104,7 @@ export function Sidebar() {
                         : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                     }`}
                   >
-                    <span className="text-base">{item.icon}</span>
+                    <Icon className="w-4 h-4 opacity-90" />
                     <span className="hidden sm:inline">{item.label}</span>
                   </Link>
                 )

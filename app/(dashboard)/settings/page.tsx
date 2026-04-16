@@ -62,7 +62,6 @@ export default function SettingsPage() {
       <Card className="border-blue-500/20 bg-blue-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span className="text-2xl">🚀</span>
             Xavira Orbit
           </CardTitle>
           <CardDescription>Outbound Infrastructure for Scalable Lead Generation</CardDescription>

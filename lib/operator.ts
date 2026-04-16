@@ -244,7 +244,7 @@ export function buildOperatorSequence(client: Client, angle: MessageAngle) {
         ]),
       () =>
         buildFiveLineEmail([
-          `I’ll close the loop after this.`,
+          `I'll close the loop after this.`,
           `Usually silence means timing, not lack of need.`,
           `If outbound reply quality matters this quarter, there is a clean fix.`,
           `I can leave the blueprint here and step back.`,

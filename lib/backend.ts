@@ -546,33 +546,55 @@ export async function createSequence(clientId: number, input: SequenceInput) {
 
     for (const [index, step] of input.steps.entries()) {
       await executor(
-        `INSERT INTO sequence_steps (
-          sequence_id,
-          step_index,
-          day_delay,
-          touch_label,
-          variant_key,
-          recipient_strategy,
-          cc_mode,
-          subject,
-          body
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          sequence.id,
-          index + 1,
-          Math.max(step.day, 0),
-          step.touchLabel ?? `touch_${index + 1}`,
-          step.variantKey ?? 'primary',
-          step.recipientStrategy ?? 'primary',
-          step.ccMode ?? 'none',
-          step.subject.trim(),
-          step.body,
-        ]
+	        `INSERT INTO sequence_steps (
+	          sequence_id,
+	          step_index,
+	          day_delay,
+	          touch_label,
+	          variant_key,
+	          recipient_strategy,
+	          cc_mode,
+	          subject,
+	          body
+	        )
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+	        [
+	          sequence.id,
+	          index + 1,
+	          Math.max(step.day, 0),
+	          step.touchLabel ?? `touch_${index + 1}`,
+	          step.variantKey ?? 'primary',
+	          step.recipientStrategy ?? 'primary',
+	          step.ccMode ?? 'none',
+	          step.subject.trim(),
+	          step.body,
+	        ]
       )
     }
 
-    return fetchSequences(clientId, sequence.id).then((sequences) => sequences[0]!)
+    const persisted = await executor<Sequence>(
+      `SELECT *
+       FROM sequences
+       WHERE client_id = $1 AND id = $2`,
+      [clientId, sequence.id]
+    )
+    const persistedSequence = firstRow(persisted)
+    if (!persistedSequence) {
+      throw new Error('Failed to load created sequence')
+    }
+
+    const persistedSteps = await executor<SequenceStep>(
+      `SELECT *
+       FROM sequence_steps
+       WHERE sequence_id = $1
+       ORDER BY step_index`,
+      [sequence.id]
+    )
+
+    return {
+      ...persistedSequence,
+      steps: persistedSteps.rows,
+    }
   })
 }
 
@@ -598,33 +620,55 @@ export async function updateSequence(
 
     for (const [index, step] of input.steps.entries()) {
       await executor(
-        `INSERT INTO sequence_steps (
-          sequence_id,
-          step_index,
-          day_delay,
-          touch_label,
-          variant_key,
-          recipient_strategy,
-          cc_mode,
-          subject,
-          body
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          sequenceId,
-          index + 1,
-          Math.max(step.day, 0),
-          step.touchLabel ?? `touch_${index + 1}`,
-          step.variantKey ?? 'primary',
-          step.recipientStrategy ?? 'primary',
-          step.ccMode ?? 'none',
-          step.subject.trim(),
-          step.body,
-        ]
+	        `INSERT INTO sequence_steps (
+	          sequence_id,
+	          step_index,
+	          day_delay,
+	          touch_label,
+	          variant_key,
+	          recipient_strategy,
+	          cc_mode,
+	          subject,
+	          body
+	        )
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+	        [
+	          sequenceId,
+	          index + 1,
+	          Math.max(step.day, 0),
+	          step.touchLabel ?? `touch_${index + 1}`,
+	          step.variantKey ?? 'primary',
+	          step.recipientStrategy ?? 'primary',
+	          step.ccMode ?? 'none',
+	          step.subject.trim(),
+	          step.body,
+	        ]
       )
     }
 
-    return fetchSequences(clientId, sequenceId).then((sequences) => sequences[0]!)
+    const persisted = await executor<Sequence>(
+      `SELECT *
+       FROM sequences
+       WHERE client_id = $1 AND id = $2`,
+      [clientId, sequenceId]
+    )
+    const persistedSequence = firstRow(persisted)
+    if (!persistedSequence) {
+      throw new Error('Failed to load updated sequence')
+    }
+
+    const persistedSteps = await executor<SequenceStep>(
+      `SELECT *
+       FROM sequence_steps
+       WHERE sequence_id = $1
+       ORDER BY step_index`,
+      [sequenceId]
+    )
+
+    return {
+      ...persistedSequence,
+      steps: persistedSteps.rows,
+    }
   })
 }
 
@@ -2133,7 +2177,9 @@ export function getNextBusinessWindow(timezone: string | null | undefined, now =
   }
 
   if (!timezone) {
-    return new Date(now.getTime() + 60 * 60 * 1000)
+    // If we don't know the contact timezone yet, don't block sending.
+    // Timezone-based sending can be enabled once contacts have timezone data.
+    return null
   }
 
   try {

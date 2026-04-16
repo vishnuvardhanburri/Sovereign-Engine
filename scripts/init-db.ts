@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { query, closePool } from '@/lib/db'
@@ -14,4 +15,3 @@ main().catch(async (error) => {
   await closePool()
   process.exit(1)
 })
-
