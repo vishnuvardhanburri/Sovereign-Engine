@@ -1,9 +1,11 @@
 import 'dotenv/config'
-import { Resend } from 'resend'
-import * as backendModule from '../lib/backend.ts'
-import * as dbModule from '../lib/db.ts'
-import * as redisModule from '../lib/redis.ts'
-import * as envModule from '../lib/env.ts'
+import * as backendModule from '../lib/backend'
+import * as dbModule from '../lib/db'
+import * as redisModule from '../lib/redis'
+import * as envModule from '../lib/env'
+import { evaluateQueueDecision } from '../lib/agents/execution/decision-agent'
+import { loadBackendAgentPrompt } from '../lib/agents/agent-prompt'
+import { sendMessage } from '../lib/agents/execution/sender-agent'
 
 const appEnv =
   (envModule as any).appEnv ?? (envModule as any).default?.appEnv
@@ -16,28 +18,23 @@ if (typeof validateWorkerEnv !== 'function' || !appEnv) {
 
 validateWorkerEnv()
 
-const resend = new Resend(appEnv.resendApiKey())
-
 const backend = ((backendModule as any).default ?? backendModule) as any
 const db = ((dbModule as any).default ?? dbModule) as any
 const redis = ((redisModule as any).default ?? redisModule) as any
 
-const buildSendMessage = backend.buildSendMessage as typeof import('../lib/backend.ts').buildSendMessage
 const claimQueueJob = backend.claimQueueJob as typeof import('../lib/backend.ts').claimQueueJob
 const deferQueueJob = backend.deferQueueJob as typeof import('../lib/backend.ts').deferQueueJob
-const getNextBusinessWindow = backend.getNextBusinessWindow as typeof import('../lib/backend.ts').getNextBusinessWindow
-const getRandomSendDelaySeconds = backend.getRandomSendDelaySeconds as typeof import('../lib/backend.ts').getRandomSendDelaySeconds
-const isSuppressed = backend.isSuppressed as typeof import('../lib/backend.ts').isSuppressed
 const loadQueueExecutionContext = backend.loadQueueExecutionContext as typeof import('../lib/backend.ts').loadQueueExecutionContext
 const markQueueJobCompleted = backend.markQueueJobCompleted as typeof import('../lib/backend.ts').markQueueJobCompleted
 const markQueueJobFailed = backend.markQueueJobFailed as typeof import('../lib/backend.ts').markQueueJobFailed
 const markQueueJobSkipped = backend.markQueueJobSkipped as typeof import('../lib/backend.ts').markQueueJobSkipped
 const popQueuedJob = backend.popQueuedJob as typeof import('../lib/backend.ts').popQueuedJob
 const promoteReadyQueueJobs = backend.promoteReadyQueueJobs as typeof import('../lib/backend.ts').promoteReadyQueueJobs
-const selectBestIdentity = backend.selectBestIdentity as typeof import('../lib/backend.ts').selectBestIdentity
 
 const closePool = db.closePool as typeof import('../lib/db.ts').closePool
 const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRedis
+
+const backendAgentPrompt = loadBackendAgentPrompt()
 
 let shuttingDown = false
 
@@ -64,112 +61,60 @@ async function processOnce() {
     return
   }
 
-  if (
-    context.contact.status === 'bounced' ||
-    context.contact.status === 'unsubscribed' ||
-    context.contact.status === 'replied'
-  ) {
-    await markQueueJobSkipped(context, `contact is ${context.contact.status}`)
+  const decision = await evaluateQueueDecision(context, backendAgentPrompt)
+
+  if (decision.action === 'skip') {
+    await markQueueJobSkipped(context, decision.reason)
     return
   }
 
-  if (await isSuppressed(context.job.client_id, context.contact.email)) {
-    await markQueueJobSkipped(context, 'suppressed email')
+  if (decision.action === 'defer') {
+    await deferQueueJob(context, decision.scheduledAt, decision.reason)
     return
   }
 
-  if (context.campaign.status === 'completed') {
-    await markQueueJobSkipped(context, 'campaign completed')
-    return
-  }
+  if (decision.action === 'send') {
+    try {
+      const response = await sendMessage({
+        fromEmail: `Xavira Orbit <${decision.selection.identity.email}>`,
+        toEmail: context.job.recipient_email || context.contact.email,
+        cc: context.job.cc_emails ?? undefined,
+        subject: decision.message.subject,
+        html: decision.message.html,
+        text: decision.message.text,
+        headers: {
+          'X-Campaign-Id': String(context.campaign.id),
+          'X-Queue-Job-Id': String(context.job.id),
+          'List-Unsubscribe': `<${decision.message.unsubscribeUrl}>`,
+        },
+      })
 
-  if (context.campaign.status !== 'active') {
-    await deferQueueJob(
-      context,
-      new Date(Date.now() + 5 * 60 * 1000),
-      `campaign is ${context.campaign.status}`
-    )
-    return
-  }
+      if (!response.success) {
+        await markQueueJobFailed(context, response.error ?? 'smtp send failed')
+        console.error(
+          `[Worker] smtp error queue_job=${context.job.id} to=${context.contact.email}: ${response.error}`
+        )
+        return
+      }
 
-  const selection = await selectBestIdentity(context.job.client_id)
-  if (!selection) {
-    await deferQueueJob(
-      context,
-      new Date(Date.now() + 60 * 1000),
-      'no active identity available'
-    )
-    return
-  }
-
-  if (selection.identity.last_sent_at) {
-    const randomDelaySeconds = getRandomSendDelaySeconds()
-    const nextAllowedAt =
-      new Date(selection.identity.last_sent_at).getTime() + randomDelaySeconds * 1000
-
-    if (nextAllowedAt > Date.now()) {
-      await deferQueueJob(
-        context,
-        new Date(nextAllowedAt),
-        `identity cooling down for ${randomDelaySeconds}s`
+      await markQueueJobCompleted(context, decision.selection, response.providerMessageId ?? null)
+      console.log(
+        `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} identity=${decision.selection.identity.email}`
       )
-      return
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'unknown worker send failure'
+      await markQueueJobFailed(context, message)
+      console.error(`[Worker] failed queue_job=${context.job.id}:`, error)
     }
-  }
-
-  const nextBusinessWindow = getNextBusinessWindow(context.contact.timezone)
-  if (nextBusinessWindow) {
-    await deferQueueJob(context, nextBusinessWindow, 'outside contact business hours')
-    return
-  }
-
-  const message = await buildSendMessage(context)
-  if (message.spamFlags.length >= 2) {
-    await deferQueueJob(
-      context,
-      new Date(Date.now() + 6 * 60 * 60 * 1000),
-      `spam-risk copy: ${message.spamFlags.join(', ')}`
-    )
-    return
-  }
-
-  try {
-    const response = await resend.emails.send({
-      from: `Xavira Orbit <${selection.identity.email}>`,
-      to: context.job.recipient_email || context.contact.email,
-      cc: context.job.cc_emails ?? undefined,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-      headers: {
-        'X-Campaign-Id': String(context.campaign.id),
-        'X-Queue-Job-Id': String(context.job.id),
-        'List-Unsubscribe': `<${message.unsubscribeUrl}>`,
-      },
-    })
-
-    if (response.error) {
-      await markQueueJobFailed(context, response.error.message)
-      console.error(
-        `[Worker] provider error queue_job=${context.job.id} to=${context.contact.email}: ${response.error.message}`
-      )
-      return
-    }
-
-    await markQueueJobCompleted(context, selection, response.data?.id ?? null)
-    console.log(
-      `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} identity=${selection.identity.email}`
-    )
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'unknown worker send failure'
-    await markQueueJobFailed(context, message)
-    console.error(`[Worker] failed queue_job=${context.job.id}:`, error)
   }
 }
 
 async function main() {
   console.log('[Worker] starting Xavira Orbit worker')
+  console.log('[Worker] loaded backend agent prompt', {
+    length: backendAgentPrompt.length,
+  })
 
   while (!shuttingDown) {
     try {
