@@ -38,10 +38,15 @@ import {
   markContactUnsubscribed,
   parseUnsubscribeToken,
 } from '@/lib/compliance'
-import { enrichContactProfile } from '@/lib/integrations/enrichment'
 import { classifyReplyWithAi } from '@/lib/integrations/openrouter'
+import { enrichContactProfile } from '@/lib/agents/data/lead-agent'
 import { verifyEmailAddress } from '@/lib/integrations/zerobounce'
-import { buildPersonalizedMessage, isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
+import { enrichContactWithFreeData } from '@/lib/integrations/free-enrichment'
+import { buildPersonalizedMessage } from '@/lib/agents/intelligence/personalization-agent'
+import { recalculateDomainHealth, refreshDomainRiskLimits } from '@/lib/agents/data/risk-agent'
+import { suggestSubjectLines } from '@/lib/agents/intelligence/subject-generation-agent'
+import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
+export { recalculateDomainHealth } from '@/lib/agents/data/risk-agent'
 
 export interface PaginationInput {
   page?: number
@@ -257,6 +262,7 @@ export async function bulkCreateContacts(
        timezone,
        source,
        custom_fields,
+       enrichment,
        verification_status,
        status
      )
@@ -271,6 +277,7 @@ export async function bulkCreateContacts(
        NULLIF(timezone, ''),
        NULLIF(source, ''),
        custom_fields::jsonb,
+       enrichment::jsonb,
        'pending',
        'active'
      FROM UNNEST(
@@ -282,8 +289,9 @@ export async function bulkCreateContacts(
        $7::text[],
        $8::text[],
        $9::text[],
-       $10::text[]
-     ) AS t(email, email_domain, name, company, company_domain, title, timezone, source, custom_fields)
+       $10::text[],
+       $11::text[]
+     ) AS t(email, email_domain, name, company, company_domain, title, timezone, source, custom_fields, enrichment)
      ON CONFLICT (client_id, email) DO UPDATE
      SET name = COALESCE(NULLIF(EXCLUDED.name, ''), contacts.name),
          company = COALESCE(NULLIF(EXCLUDED.company, ''), contacts.company),
@@ -293,6 +301,7 @@ export async function bulkCreateContacts(
          source = COALESCE(NULLIF(EXCLUDED.source, ''), contacts.source),
          email_domain = COALESCE(EXCLUDED.email_domain, contacts.email_domain),
          custom_fields = COALESCE(contacts.custom_fields, '{}'::jsonb) || COALESCE(EXCLUDED.custom_fields, '{}'::jsonb),
+         enrichment = COALESCE(contacts.enrichment, '{}'::jsonb) || COALESCE(EXCLUDED.enrichment, '{}'::jsonb),
          updated_at = CURRENT_TIMESTAMP
      RETURNING *`,
     [
@@ -306,6 +315,11 @@ export async function bulkCreateContacts(
       timezones,
       sources,
       customFields,
+      deduped.map((c) => JSON.stringify(enrichContactWithFreeData({
+        email: c.email,
+        name: c.name || null,
+        company: c.company || null,
+      }))),
     ]
   )
 
@@ -1065,40 +1079,6 @@ export async function listIdentities(
     Number(count?.count ?? 0),
     page,
     limit
-  )
-}
-
-export async function recalculateDomainHealth(
-  clientId: number,
-  domainId: number
-): Promise<Domain | null> {
-  const domain = await queryOne<Domain>(
-    `SELECT *
-     FROM domains
-     WHERE client_id = $1 AND id = $2`,
-    [clientId, domainId]
-  )
-
-  if (!domain) {
-    return null
-  }
-
-  const bounceRate =
-    domain.sent_count > 0
-      ? Number(((domain.bounce_count / domain.sent_count) * 100).toFixed(2))
-      : 0
-  const healthScore = clamp(Math.round(100 - bounceRate * 8), 0, 100)
-  const nextStatus = bounceRate > 5 ? 'paused' : domain.status
-
-  return queryOne<Domain>(
-    `UPDATE domains
-     SET bounce_rate = $3,
-         health_score = $4,
-         status = $5,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE client_id = $1 AND id = $2
-     RETURNING *`,
-    [clientId, domainId, bounceRate, healthScore, nextStatus]
   )
 }
 
@@ -2098,52 +2078,7 @@ export async function runDailyMaintenance(clientId?: number) {
     params
   )
 
-  const domains = await query<Domain>(
-    `SELECT *
-     FROM domains
-     ${where}`,
-    params
-  )
-
-  for (const domain of domains.rows) {
-    const identityCountRow = await queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM identities
-       WHERE client_id = $1
-         AND domain_id = $2
-         AND status = 'active'`,
-      [domain.client_id, domain.id]
-    )
-
-    const identityCount = Math.max(Number(identityCountRow?.count ?? 0), 1)
-    const warmupMultiplier = Math.min(Math.max(Number(domain.warmup_stage ?? 1), 1), 8)
-    const perIdentityLimit = Math.min(
-      domain.health_score >= 90 ? 400 : domain.health_score >= 75 ? 300 : 200,
-      warmupMultiplier * 50
-    )
-
-    await query(
-      `UPDATE domains
-       SET daily_limit = $3,
-           warmup_stage = CASE
-             WHEN status = 'warming' AND bounce_rate <= 2 THEN LEAST(warmup_stage + 1, 8)
-             ELSE warmup_stage
-           END,
-           status = CASE
-             WHEN NOT (spf_valid AND dkim_valid AND dmarc_valid) THEN 'paused'
-             WHEN bounce_rate > 5 THEN 'paused'
-             WHEN status = 'paused' AND bounce_rate <= 5 THEN 'active'
-             ELSE status
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE client_id = $1 AND id = $2`,
-      [domain.client_id, domain.id, identityCount * perIdentityLimit]
-    )
-
-    await recalculateDomainHealth(domain.client_id, domain.id)
-  }
-
-  return { domainsProcessed: domains.rowCount }
+  return refreshDomainRiskLimits(clientId)
 }
 
 export async function buildSendMessage(context: QueueExecutionContext) {
@@ -2169,6 +2104,14 @@ export async function buildSendMessage(context: QueueExecutionContext) {
     spamFlags: personalized.spamFlags,
     unsubscribeUrl,
   }
+}
+
+export async function generateSubjectSuggestions(input: {
+  offer: string
+  company?: string | null
+  angle: 'pattern' | 'pain' | 'authority'
+}) {
+  return suggestSubjectLines(input)
 }
 
 export function getNextBusinessWindow(timezone: string | null | undefined, now = new Date()) {

@@ -6,14 +6,24 @@ export interface RedisQueueJobPayload {
   client_id: number
   contact_id: number
   campaign_id: number
+  domain_id?: number
   sequence_step: number
   scheduled_at: string
+  attempts?: number
+  max_attempts?: number
+  [key: string]: unknown
 }
 
-// Redis list queue (FIFO) used by the worker.
 const READY_QUEUE_KEY = 'email:queue'
-// ZSET used for delayed retries and scheduled sends.
 const SCHEDULED_QUEUE_KEY = 'email:queue:scheduled'
+
+function readyQueueKey(clientId: number) {
+  return `email:queue:${clientId}`
+}
+
+function scheduledQueueKey(clientId: number) {
+  return `email:queue:${clientId}:scheduled`
+}
 
 let redisClient: any
 let connectPromise: Promise<any> | undefined
@@ -45,26 +55,48 @@ async function getRedisClient(): Promise<any> {
 }
 
 export async function enqueueQueueJobs(
-  jobs: RedisQueueJobPayload[]
+  jobs: Array<RedisQueueJobPayload | Record<string, unknown>>
 ): Promise<void> {
   if (jobs.length === 0) {
     return
   }
 
   const client = await getRedisClient()
-  const multi = client.multi()
   const now = Date.now()
+  const grouped = new Map<number, { ready: string[]; scheduled: Array<{ score: number; value: string }> }>()
 
   for (const job of jobs) {
     const serialized = JSON.stringify(job)
-    const scheduledAt = new Date(job.scheduled_at).getTime()
+    const scheduledAt = new Date(job.scheduled_at as string).getTime()
+    const clientId = Number(job.client_id)
+    if (Number.isNaN(clientId)) {
+      throw new Error('enqueueQueueJobs: client_id must be a valid number')
+    }
+    const group = grouped.get(clientId) ?? { ready: [], scheduled: [] }
 
     if (scheduledAt <= now) {
-      multi.rPush(READY_QUEUE_KEY, serialized)
+      group.ready.push(serialized)
     } else {
-      multi.zAdd(SCHEDULED_QUEUE_KEY, {
-        score: scheduledAt,
-        value: serialized,
+      group.scheduled.push({ score: scheduledAt, value: serialized })
+    }
+
+    grouped.set(clientId, group)
+  }
+
+  const multi = client.multi()
+
+  for (const [clientId, group] of grouped.entries()) {
+    const readyKey = readyQueueKey(clientId)
+    const scheduleKey = scheduledQueueKey(clientId)
+
+    for (const item of group.ready) {
+      multi.rPush(readyKey, item)
+    }
+
+    for (const item of group.scheduled) {
+      multi.zAdd(scheduleKey, {
+        score: item.score,
+        value: item.value,
       })
     }
   }
@@ -72,7 +104,7 @@ export async function enqueueQueueJobs(
   await multi.exec()
 }
 
-export async function enqueueQueueJob(job: RedisQueueJobPayload): Promise<void> {
+export async function enqueueQueueJob(job: RedisQueueJobPayload | Record<string, unknown>): Promise<void> {
   await enqueueQueueJobs([job])
 }
 

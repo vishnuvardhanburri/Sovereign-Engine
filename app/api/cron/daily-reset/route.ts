@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { runDailyMaintenance } from '@/lib/backend'
-import { query } from '@/lib/db'
 import { appEnv } from '@/lib/env'
-import { runDailyOperatorCycle } from '@/lib/operator'
+import { runDailyScheduler } from '@/lib/agents/execution/scheduler'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,24 +9,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const result = await runDailyMaintenance()
-    const clients = await query<{ id: number }>(
-      `SELECT id
-       FROM clients
-       WHERE operator_enabled = TRUE`
-    )
-
-    const reports = []
-    for (const client of clients.rows) {
-      reports.push(await runDailyOperatorCycle(Number(client.id)))
-    }
+    const result = await runDailyScheduler()
 
     return NextResponse.json({
-      success: true,
       ...result,
-      telegram_reports: reports.map((report) => ({
+      telegram_reports: result.reports?.map((report) => ({
         client: report.client.name,
-        delivered: report.delivery.delivered,
+        delivered: report.delivery?.delivered,
       })),
     })
   } catch (error) {

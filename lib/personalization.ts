@@ -88,6 +88,27 @@ export function enforceFiveLineEmail(body: string) {
   return lines.join('\n')
 }
 
+export function ensureQuestionEnding(body: string) {
+  const lines = body
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) {
+    return 'Would you be open to a quick chat?'
+  }
+
+  const lastIndex = lines.length - 1
+  let lastLine = lines[lastIndex]
+
+  if (!lastLine.endsWith('?')) {
+    lastLine = lastLine.replace(/[.!]+$/g, '').trim()
+    lines[lastIndex] = `${lastLine || 'Would you be open to a quick chat'}?`
+  }
+
+  return lines.join('\n')
+}
+
 export function detectSpamSignals(content: string) {
   const lowered = content.toLowerCase()
   return SPAM_TERMS.filter((term) => lowered.includes(term))
@@ -102,6 +123,8 @@ export async function buildPersonalizedMessage(input: {
   const needsAiIntro = input.step.body.includes('{{AIIntro}}')
   let renderedBody = renderVariables(input.step.body, input.contact)
   const renderedSubject = renderVariables(input.step.subject, input.contact)
+
+  renderedBody = ensureQuestionEnding(renderedBody)
 
   if (!needsAiIntro) {
     return {
@@ -122,6 +145,7 @@ export async function buildPersonalizedMessage(input: {
     input.step.body.replaceAll('{{AIIntro}}', intro),
     input.contact
   )
+  renderedBody = ensureQuestionEnding(renderedBody)
 
   return {
     subject: renderedSubject,

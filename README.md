@@ -33,6 +33,7 @@ See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization doc
 - **Identity Management**: Create email identities per domain
 - **Health Scoring**: Real-time health metrics (0-100 based on bounce/reply rates)
 - **Rate Limiting**: Token bucket algorithm with 60-120s jitter between sends
+- **Modular Agent Swarm**: layered data, execution, and intelligence agents coordinate via DB, queue, and events
 - **Auto Pause**: Domains automatically pause if bounce rate exceeds 5%
 - **Limit Scaling**: Daily limits scale from 50 to 500 emails based on domain health
 - **Queue Management**: Redis-backed job queue for reliable email delivery
