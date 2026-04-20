@@ -13,6 +13,9 @@ export interface SendMessageRequest {
   correlationId?: string
   campaignId?: number
   contactId?: number
+  clientId?: number
+  sequenceStep?: number
+  scheduledAt?: string
 }
 
 export interface SendMessageResult {
@@ -23,7 +26,13 @@ export interface SendMessageResult {
 }
 
 export async function sendMessage(request: SendMessageRequest): Promise<SendMessageResult> {
-  const correlationId = request.correlationId || generateIdempotencyKey({ ...request })
+  const correlationId = request.correlationId || generateIdempotencyKey({
+    client_id: request.clientId ?? request.campaignId ?? 0,
+    contact_id: request.contactId ?? 0,
+    campaign_id: request.campaignId ?? 0,
+    sequence_step: request.sequenceStep ?? 0,
+    scheduled_at: request.scheduledAt ?? new Date().toISOString(),
+  })
   const logger = new StructuredLogger(correlationId)
   
   logger.log('info', 'Send message attempt', {

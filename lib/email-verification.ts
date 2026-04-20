@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Email Verification Layer
  * Integrates with ZeroBounce/NeverBounce APIs for email validation

@@ -17,14 +17,6 @@ export interface RedisQueueJobPayload {
 const READY_QUEUE_KEY = 'email:queue'
 const SCHEDULED_QUEUE_KEY = 'email:queue:scheduled'
 
-function readyQueueKey(clientId: number) {
-  return `email:queue:${clientId}`
-}
-
-function scheduledQueueKey(clientId: number) {
-  return `email:queue:${clientId}:scheduled`
-}
-
 let redisClient: any
 let connectPromise: Promise<any> | undefined
 
@@ -63,42 +55,34 @@ export async function enqueueQueueJobs(
 
   const client = await getRedisClient()
   const now = Date.now()
-  const grouped = new Map<number, { ready: string[]; scheduled: Array<{ score: number; value: string }> }>()
+  const readyJobs: string[] = []
+  const scheduledJobs: Array<{ score: number; value: string }> = []
 
   for (const job of jobs) {
     const serialized = JSON.stringify(job)
     const scheduledAt = new Date(job.scheduled_at as string).getTime()
-    const clientId = Number(job.client_id)
-    if (Number.isNaN(clientId)) {
+    if (Number.isNaN(Number(job.client_id))) {
       throw new Error('enqueueQueueJobs: client_id must be a valid number')
     }
-    const group = grouped.get(clientId) ?? { ready: [], scheduled: [] }
 
     if (scheduledAt <= now) {
-      group.ready.push(serialized)
+      readyJobs.push(serialized)
     } else {
-      group.scheduled.push({ score: scheduledAt, value: serialized })
+      scheduledJobs.push({ score: scheduledAt, value: serialized })
     }
-
-    grouped.set(clientId, group)
   }
 
   const multi = client.multi()
 
-  for (const [clientId, group] of grouped.entries()) {
-    const readyKey = readyQueueKey(clientId)
-    const scheduleKey = scheduledQueueKey(clientId)
+  for (const item of readyJobs) {
+    multi.rPush(READY_QUEUE_KEY, item)
+  }
 
-    for (const item of group.ready) {
-      multi.rPush(readyKey, item)
-    }
-
-    for (const item of group.scheduled) {
-      multi.zAdd(scheduleKey, {
-        score: item.score,
-        value: item.value,
-      })
-    }
+  for (const item of scheduledJobs) {
+    multi.zAdd(SCHEDULED_QUEUE_KEY, {
+      score: item.score,
+      value: item.value,
+    })
   }
 
   await multi.exec()

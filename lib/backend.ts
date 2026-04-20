@@ -111,7 +111,6 @@ export interface QueueExecutionContext {
   contact: Contact
   sequenceStep: SequenceStep
   idempotencyKey?: string
-  idempotencyKey?: string
 }
 
 export interface ContactImportOptions {

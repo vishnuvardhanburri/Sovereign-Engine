@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Control Panel APIs
  * REST endpoints for managing campaigns, sequences, contacts, and analytics

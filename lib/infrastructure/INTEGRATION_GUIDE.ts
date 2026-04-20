@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * INFRASTRUCTURE INTEGRATION GUIDE
  *

@@ -13,6 +13,15 @@ interface ExecuteRequest {
   campaignId?: string
 }
 
+type QueueEmail = {
+  id: string
+  to: string
+  subject: string
+  body: string
+  campaign_id: string
+  contact_id: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: ExecuteRequest = await request.json()
@@ -26,41 +35,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Get emails to send
-    let emailQueue: any[] = []
+    let emailQueue: QueueEmail[] = []
 
     if (emailIds) {
       // Get specific emails
-      const result = await query<any>(`
+      const result = await query<QueueEmail>(`
         SELECT id, recipient_email as "to", subject, body, campaign_id, contact_id
         FROM emails
         WHERE id = ANY($1) AND status = 'pending'
         ORDER BY created_at ASC
       `, [emailIds])
 
-      emailQueue = result.rows.map(row => ({
-        id: row.id,
-        to: row.to,
-        subject: row.subject,
-        body: row.body,
-        campaign_id: row.campaign_id,
-        contact_id: row.contact_id,
+      emailQueue = result.rows.map((row) => ({
+        ...row,
+        campaign_id: String(row.campaign_id),
+        contact_id: String(row.contact_id),
       }))
     } else if (campaignId) {
       // Get all pending emails for campaign
-      const result = await query<any>(`
+      const result = await query<QueueEmail>(`
         SELECT id, recipient_email as "to", subject, body, campaign_id, contact_id
         FROM emails
         WHERE campaign_id = $1 AND status = 'pending'
         ORDER BY created_at ASC
       `, [campaignId])
 
-      emailQueue = result.rows.map(row => ({
-        id: row.id,
-        to: row.to,
-        subject: row.subject,
-        body: row.body,
-        campaign_id: row.campaign_id,
-        contact_id: row.contact_id,
+      emailQueue = result.rows.map((row) => ({
+        ...row,
+        campaign_id: String(row.campaign_id),
+        contact_id: String(row.contact_id),
       }))
     }
 

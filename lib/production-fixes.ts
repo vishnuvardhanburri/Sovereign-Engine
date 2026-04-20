@@ -1,12 +1,14 @@
-// @ts-nocheck
 // PRODUCTION READINESS FIXES - BACKEND
 // Critical backend fixes for 50K+ emails/day
 
 import { query, transaction } from '@/lib/db'
 import crypto from 'crypto'
+import type { Contact, Domain, Identity, QueueJob, SequenceStep } from '@/lib/db/types'
 
 // 1. IDEMPOTENCY KEY GENERATION
-export function generateIdempotencyKey(job: any): string {
+type IdempotencyJob = Pick<QueueJob, 'client_id' | 'contact_id' | 'campaign_id' | 'sequence_step' | 'scheduled_at'>
+
+export function generateIdempotencyKey(job: IdempotencyJob): string {
   const payload = `${job.client_id}:${job.contact_id}:${job.campaign_id}:${job.sequence_step}:${job.scheduled_at}`
   return crypto.createHash('sha256').update(payload).digest('hex').substring(0, 32)
 }
@@ -21,7 +23,7 @@ export class CircuitBreaker {
   async checkCircuit(entityId: string, entityType: 'identity' | 'domain'): Promise<boolean> {
     const table = entityType === 'identity' ? 'identities' : 'domains'
     const result = await query(`SELECT consecutive_failures, circuit_breaker_until FROM ${table} WHERE id = $1`, [entityId])
-    const row = result.rows[0]
+    const row = result.rows[0] as { circuit_breaker_until: string | null } | undefined
     
     if (!row) return false
     
@@ -71,13 +73,14 @@ export function calculateBackoffDelay(attempt: number): number {
 // 4. EMAIL VALIDATION PIPELINE
 export async function validateEmailPreSend(email: string, clientId: number): Promise<{valid: boolean, score: number, reason?: string}> {
   // Check if already validated recently
-  const result = await query(
+  const result = await query<{ email_validation_score: number | null }>(
     `SELECT email_validation_score FROM contacts WHERE client_id = $1 AND email = $2 AND email_validated_at > NOW() - INTERVAL '24 hours'`,
     [clientId, email]
   )
-  
-  if (result.rows[0]?.email_validation_score) {
-    return { valid: result.rows[0].email_validation_score > 0.7, score: result.rows[0].email_validation_score }
+
+  const cachedValidation = result.rows[0]
+  if (cachedValidation?.email_validation_score) {
+    return { valid: cachedValidation.email_validation_score > 0.7, score: cachedValidation.email_validation_score }
   }
   
   // Perform validation (simplified - integrate with ZeroBounce/Reacher)
@@ -123,7 +126,7 @@ export async function shouldStopSequence(clientId: number, contactId: number, ca
 // 6. A/B ASSIGNMENT CONSISTENCY
 export async function assignABVariant(clientId: number, contactId: number, campaignId: number): Promise<string> {
   // Check if already assigned
-  const existing = await query(
+  const existing = await query<{ ab_variant: string }>(
     `SELECT ab_variant FROM queue_jobs WHERE client_id = $1 AND contact_id = $2 AND campaign_id = $3 AND ab_variant IS NOT NULL LIMIT 1`,
     [clientId, contactId, campaignId]
   )
@@ -167,7 +170,7 @@ export class StructuredLogger {
     this.correlationId = correlationId || crypto.randomUUID()
   }
   
-  log(level: 'info' | 'warn' | 'error', message: string, metadata?: any) {
+  log(level: 'info' | 'warn' | 'error', message: string, metadata?: Record<string, unknown>) {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -182,7 +185,7 @@ export class StructuredLogger {
 
 // 9. DOMAIN WARMUP LOGIC
 export async function calculateWarmupLimit(domainId: number): Promise<number> {
-  const result = await query(
+  const result = await query<{ daily_limit: number; warmup_ramp_percent?: number; warmup_last_increased_at?: string | null }>(
     `SELECT daily_limit, warmup_ramp_percent, warmup_last_increased_at FROM domains WHERE id = $1`,
     [domainId]
   )
@@ -211,7 +214,12 @@ export async function calculateWarmupLimit(domainId: number): Promise<number> {
 }
 
 // 10. HEALTH-BASED ROUTING
-export async function selectHealthiestIdentity(clientId: number): Promise<any> {
+export interface IdentitySelection {
+  identity: Identity & { reputation_score: number; domain_reputation?: number | null }
+  domain: Domain
+}
+
+export async function selectHealthiestIdentity(clientId: number): Promise<IdentitySelection | null> {
   const result = await query(`
     SELECT i.*, d.reputation_score as domain_reputation
     FROM identities i
@@ -227,12 +235,21 @@ export async function selectHealthiestIdentity(clientId: number): Promise<any> {
     LIMIT 1
   `, [clientId])
   
-  return result.rows[0]
+  const row = result.rows[0] as IdentitySelection['identity'] | undefined
+  if (!row) return null
+  return { identity: row, domain: row as unknown as Domain }
 }
 
 // 11. AI OUTPUT VALIDATION
-export function validateAIMessage(message: any): {valid: boolean, reason?: string} {
-  if (!message || typeof message !== 'object') {
+type AIMessageLike = {
+  subject?: string
+  html?: string
+  text?: string
+  unsubscribeUrl?: string
+}
+
+export function validateAIMessage(message: AIMessageLike): {valid: boolean, reason?: string} {
+  if (!message) {
     return { valid: false, reason: 'invalid_structure' }
   }
   
@@ -252,7 +269,16 @@ export function validateAIMessage(message: any): {valid: boolean, reason?: strin
 }
 
 // 12. AI FALLBACK TEMPLATES
-export function getFallbackMessage(contact: any, sequenceStep: any): any {
+type FallbackContact = Pick<Contact, 'name' | 'company' | 'email'>
+type FallbackSequenceStep = Pick<SequenceStep, 'subject' | 'body'>
+
+export function getFallbackMessage(contact: FallbackContact, sequenceStep: FallbackSequenceStep): {
+  subject: string
+  html: string
+  text: string
+  unsubscribeUrl: string
+  spamFlags: string[]
+} {
   return {
     subject: sequenceStep.subject.replace('{name}', contact.name || 'there'),
     html: sequenceStep.body.replace('{name}', contact.name || 'there'),
@@ -263,7 +289,7 @@ export function getFallbackMessage(contact: any, sequenceStep: any): any {
 }
 
 // 13. METRICS COLLECTION
-export async function recordMetric(clientId: number, name: string, value: number, metadata?: any) {
+export async function recordMetric(clientId: number, name: string, value: number, metadata?: Record<string, unknown>) {
   await query(
     `INSERT INTO system_metrics (client_id, metric_name, metric_value, metadata) VALUES ($1, $2, $3, $4)`,
     [clientId, name, value, metadata || {}]

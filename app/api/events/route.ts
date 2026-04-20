@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createEvent, listEvents } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 
+type EventTypeFilter = 'queued' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'failed' | 'bounce' | 'reply' | 'complaint' | 'skipped' | 'retry' | 'unsubscribed'
+type CreateEventBody = {
+  type?: EventTypeFilter
+  campaign_id?: string | number | null
+  contact_id?: string | number | null
+  identity_id?: string | number | null
+  domain_id?: string | number | null
+  queue_job_id?: string | number | null
+  provider_message_id?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -13,7 +25,7 @@ export async function GET(request: NextRequest) {
     const events = await listEvents(clientId, {
       page: Number(searchParams.get('page') ?? 1),
       limit: Number(searchParams.get('limit') ?? 50),
-      eventType: (searchParams.get('type') as any) ?? undefined,
+      eventType: (searchParams.get('type') as EventTypeFilter | null) ?? undefined,
       campaignId: Number(searchParams.get('campaign_id') ?? 0) || undefined,
       identityId: Number(searchParams.get('identity_id') ?? 0) || undefined,
     })
@@ -27,7 +39,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as CreateEventBody
     const clientId = await resolveClientId({
       body,
       headers: request.headers,
@@ -54,4 +66,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create event' }, { status: 500 })
   }
 }
-

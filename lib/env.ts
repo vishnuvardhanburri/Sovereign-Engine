@@ -53,7 +53,6 @@ export const appEnv = {
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
   cronSecret: () => required('CRON_SECRET'),
   // AI Integration
-  openRouterApiKey: () => process.env.OPENROUTER_API_KEY || '',
   aiMaxTokensPerRequest: () => optionalInt('AI_MAX_TOKENS_PER_REQUEST', 2000),
   aiDailyCostLimit: () => optionalInt('AI_DAILY_COST_LIMIT', 50), // $50 default
   aiModelPreferences: () => {

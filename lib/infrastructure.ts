@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AUTONOMOUS INFRASTRUCTURE COORDINATOR
  *

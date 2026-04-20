@@ -7,6 +7,12 @@ import {
 import { peekQueue } from '@/lib/redis'
 import { resolveClientId } from '@/lib/client-context'
 
+type QueueStatusFilter = 'pending' | 'processing' | 'retry' | 'completed' | 'failed' | 'skipped'
+type QueueRequestBody = {
+  campaign_id?: string | number
+  contact_ids?: Array<string | number>
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -29,7 +35,7 @@ export async function GET(request: NextRequest) {
     const jobs = await listQueueJobs(clientId, {
       page: Number(searchParams.get('page') ?? 1),
       limit: Number(searchParams.get('limit') ?? 50),
-      status: (searchParams.get('status') as any) ?? undefined,
+      status: (searchParams.get('status') as QueueStatusFilter | null) ?? undefined,
     })
 
     return NextResponse.json(jobs)
@@ -41,7 +47,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as QueueRequestBody
     const clientId = await resolveClientId({
       body,
       headers: request.headers,
@@ -58,7 +64,7 @@ export async function POST(request: NextRequest) {
       clientId,
       Number(body.campaign_id),
       Array.isArray(body.contact_ids)
-        ? body.contact_ids.map((value: unknown) => Number(value)).filter(Boolean)
+        ? body.contact_ids.map((value) => Number(value)).filter(Boolean)
         : undefined
     )
 
@@ -71,4 +77,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to enqueue campaign' }, { status: 500 })
   }
 }
-

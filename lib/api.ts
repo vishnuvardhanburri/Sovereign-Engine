@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 export interface Campaign {
   id: string
   name: string
@@ -67,6 +69,56 @@ export interface AnalyticsData {
   sentCount: number
 }
 
+const campaignSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  name: z.string(),
+  sequence_id: z.union([z.string(), z.number()]).transform(String),
+  sequence_name: z.string(),
+  contact_count: z.coerce.number().nonnegative(),
+  status: z.enum(['draft', 'active', 'paused', 'completed']),
+  sent_count: z.coerce.number().nonnegative(),
+  reply_count: z.coerce.number().nonnegative(),
+  open_count: z.coerce.number().nonnegative(),
+  bounce_count: z.coerce.number().nonnegative(),
+  created_at: z.string(),
+})
+
+const contactSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  email: z.string().email(),
+  name: z.string().nullable().optional().default(''),
+  company: z.string().nullable().optional().default(''),
+  status: z.enum(['active', 'replied', 'bounced', 'unsubscribed']),
+  created_at: z.string(),
+})
+
+const sequenceSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  name: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  steps: z.array(
+    z.object({
+      id: z.union([z.string(), z.number()]).transform(String),
+      day_delay: z.coerce.number().nonnegative(),
+      subject: z.string(),
+      body: z.string(),
+    })
+  ).default([]),
+})
+
+const replySchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  from_email: z.string().email(),
+  from_name: z.string().nullable().optional().default(''),
+  subject: z.string(),
+  date: z.string(),
+  status: z.enum(['unread', 'interested', 'not_interested']),
+  campaign_id: z.union([z.string(), z.number()]).nullable().optional(),
+  contact_id: z.union([z.string(), z.number()]).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -77,112 +129,118 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(body.error || `Request failed for ${url}`)
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || `Request failed for ${url}`)
   }
 
-  return response.json()
+  return (await response.json()) as T
 }
 
-function toCampaign(row: any): Campaign {
+function toCampaign(row: unknown): Campaign {
+  const parsed = campaignSchema.parse(row)
   return {
-    id: String(row.id),
-    name: row.name,
-    sequenceId: String(row.sequence_id),
-    sequenceName: row.sequence_name,
-    contactCount: Number(row.contact_count ?? 0),
-    status: row.status,
-    sent: Number(row.sent_count ?? 0),
-    replies: Number(row.reply_count ?? 0),
-    openRate:
-      Number(row.sent_count ?? 0) > 0
-        ? Math.round((Number(row.open_count ?? 0) / Number(row.sent_count)) * 100)
-        : 0,
-    bounceRate:
-      Number(row.sent_count ?? 0) > 0
-        ? Number(
-            ((Number(row.bounce_count ?? 0) / Number(row.sent_count)) * 100).toFixed(2)
-          )
-        : 0,
-    createdAt: new Date(row.created_at),
+    id: parsed.id,
+    name: parsed.name,
+    sequenceId: parsed.sequence_id,
+    sequenceName: parsed.sequence_name,
+    contactCount: parsed.contact_count,
+    status: parsed.status,
+    sent: parsed.sent_count,
+    replies: parsed.reply_count,
+    openRate: parsed.sent_count > 0 ? Math.round((parsed.open_count / parsed.sent_count) * 100) : 0,
+    bounceRate: parsed.sent_count > 0 ? Number(((parsed.bounce_count / parsed.sent_count) * 100).toFixed(2)) : 0,
+    createdAt: new Date(parsed.created_at),
   }
 }
 
-function toContact(row: any): Contact {
+function toContact(row: unknown): Contact {
+  const parsed = contactSchema.parse(row)
   return {
-    id: String(row.id),
-    email: row.email,
-    name: row.name ?? '',
-    company: row.company ?? '',
-    status: row.status,
-    addedAt: new Date(row.created_at),
+    id: parsed.id,
+    email: parsed.email,
+    name: parsed.name ?? '',
+    company: parsed.company ?? '',
+    status: parsed.status,
+    addedAt: new Date(parsed.created_at),
   }
 }
 
-function toSequence(row: any): Sequence {
+function toSequence(row: unknown): Sequence {
+  const parsed = sequenceSchema.parse(row)
   return {
-    id: String(row.id),
-    name: row.name,
-    steps: (row.steps ?? []).map((step: any) => ({
-      id: String(step.id),
-      day: Number(step.day_delay ?? 0),
+    id: parsed.id,
+    name: parsed.name,
+    steps: parsed.steps.map((step) => ({
+      id: step.id,
+      day: step.day_delay,
       subject: step.subject,
       body: step.body,
     })),
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
+    createdAt: new Date(parsed.created_at),
+    updatedAt: new Date(parsed.updated_at),
   }
 }
 
-function toReply(row: any): Reply {
-  const metadata = row.metadata ?? {}
-  const messages = Array.isArray(metadata.messages)
-    ? metadata.messages.map((message: any, index: number) => ({
-        id: String(message.id ?? `${row.id}-${index}`),
-        from: message.from ?? row.from_email,
-        to: message.to ?? '',
-        subject: message.subject ?? row.subject,
-        body: message.body ?? '',
-        date: new Date(message.date ?? row.date),
-        isIncoming: message.isIncoming ?? true,
-      }))
-    : [
-        {
-          id: `${row.id}-0`,
-          from: row.from_email,
-          to: '',
-          subject: row.subject,
-          body: metadata.body ?? '',
-          date: new Date(row.date),
-          isIncoming: true,
-        },
-      ]
+function toReply(row: unknown): Reply {
+  const parsed = replySchema.parse(row)
+  const metadata = parsed.metadata ?? {}
+  const rawMessages = Array.isArray((metadata as { messages?: unknown }).messages)
+    ? ((metadata as { messages?: unknown[] }).messages as unknown[])
+    : []
+
+  const messages: ReplyMessage[] =
+    rawMessages.length > 0
+      ? rawMessages.map((message, index) => {
+          const data = message as Record<string, unknown>
+          return {
+            id: String(data.id ?? `${parsed.id}-${index}`),
+            from: String(data.from ?? parsed.from_email),
+            to: String(data.to ?? ''),
+            subject: String(data.subject ?? parsed.subject),
+            body: String(data.body ?? ''),
+            date: new Date(String(data.date ?? parsed.date)),
+            isIncoming: data.isIncoming === false ? false : true,
+          }
+        })
+      : [
+          {
+            id: `${parsed.id}-0`,
+            from: parsed.from_email,
+            to: '',
+            subject: parsed.subject,
+            body: '',
+            date: new Date(parsed.date),
+            isIncoming: true,
+          },
+        ]
 
   return {
-    id: String(row.id),
-    fromEmail: row.from_email,
-    fromName: row.from_name ?? row.from_email,
-    subject: row.subject,
-    date: new Date(row.date),
-    status: row.status,
-    campaignId: String(row.campaign_id ?? ''),
-    contactId: String(row.contact_id ?? ''),
+    id: parsed.id,
+    fromEmail: parsed.from_email,
+    fromName: parsed.from_name || parsed.from_email,
+    subject: parsed.subject,
+    date: new Date(parsed.date),
+    status: parsed.status,
+    campaignId: String(parsed.campaign_id ?? ''),
+    contactId: String(parsed.contact_id ?? ''),
     messages,
   }
 }
 
+type ActivityRow = { timestamp: string; [key: string]: unknown }
+
 export const api = {
   campaigns: {
-    async getAll() {
-      const rows = await fetchJson<any[]>('/api/campaigns')
+    async getAll(): Promise<Campaign[]> {
+      const rows = await fetchJson<unknown[]>('/api/campaigns')
       return rows.map(toCampaign)
     },
-    async getById(id: string) {
-      const row = await fetchJson<any>(`/api/campaigns/${id}`)
+    async getById(id: string): Promise<Campaign> {
+      const row = await fetchJson<unknown>(`/api/campaigns/${id}`)
       return toCampaign(row)
     },
-    async create(data: { name: string; sequenceId: string; sequenceName?: string }) {
-      const row = await fetchJson<any>('/api/campaigns', {
+    async create(data: { name: string; sequenceId: string; sequenceName?: string }): Promise<Campaign> {
+      const row = await fetchJson<unknown>('/api/campaigns', {
         method: 'POST',
         body: JSON.stringify({
           name: data.name,
@@ -190,12 +248,12 @@ export const api = {
         }),
       })
       return toCampaign({
-        ...row,
+        ...(row as Record<string, unknown>),
         sequence_name: data.sequenceName ?? '',
       })
     },
-    async updateStatus(id: string, status: Campaign['status']) {
-      const row = await fetchJson<any>(`/api/campaigns/${id}`, {
+    async updateStatus(id: string, status: Campaign['status']): Promise<Campaign> {
+      const row = await fetchJson<unknown>(`/api/campaigns/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       })
@@ -203,34 +261,34 @@ export const api = {
     },
   },
   contacts: {
-    async getAll() {
-      const response = await fetchJson<any>('/api/contacts?limit=100')
+    async getAll(): Promise<Contact[]> {
+      const response = await fetchJson<{ data?: unknown[] }>('/api/contacts?limit=100')
       return (response.data ?? []).map(toContact)
     },
-    async bulkCreate(data: Array<{ email: string; name: string; company: string }>) {
-      const rows = await fetchJson<any[]>('/api/contacts', {
+    async bulkCreate(data: Array<{ email: string; name: string; company: string }>): Promise<Contact[]> {
+      const rows = await fetchJson<unknown[]>('/api/contacts', {
         method: 'POST',
         body: JSON.stringify({ contacts: data }),
       })
       return rows.map(toContact)
     },
-    async delete(id: string) {
+    async delete(id: string): Promise<{ success: boolean }> {
       return fetchJson<{ success: boolean }>(`/api/contacts/${id}`, {
         method: 'DELETE',
       })
     },
   },
   sequences: {
-    async getAll() {
-      const rows = await fetchJson<any[]>('/api/sequences')
+    async getAll(): Promise<Sequence[]> {
+      const rows = await fetchJson<unknown[]>('/api/sequences')
       return rows.map(toSequence)
     },
-    async getById(id: string) {
-      const row = await fetchJson<any>(`/api/sequences/${id}`)
+    async getById(id: string): Promise<Sequence> {
+      const row = await fetchJson<unknown>(`/api/sequences/${id}`)
       return toSequence(row)
     },
-    async create(data: { name: string; steps: SequenceStep[] }) {
-      const row = await fetchJson<any>('/api/sequences', {
+    async create(data: { name: string; steps: SequenceStep[] }): Promise<Sequence> {
+      const row = await fetchJson<unknown>('/api/sequences', {
         method: 'POST',
         body: JSON.stringify({
           name: data.name,
@@ -243,8 +301,8 @@ export const api = {
       })
       return toSequence(row)
     },
-    async update(id: string, data: { name: string; steps: SequenceStep[] }) {
-      const row = await fetchJson<any>(`/api/sequences/${id}`, {
+    async update(id: string, data: { name: string; steps: SequenceStep[] }): Promise<Sequence> {
+      const row = await fetchJson<unknown>(`/api/sequences/${id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: data.name,
@@ -259,39 +317,38 @@ export const api = {
     },
   },
   replies: {
-    async getAll() {
-      const response = await fetchJson<any>('/api/replies?limit=100')
+    async getAll(): Promise<Reply[]> {
+      const response = await fetchJson<{ data?: unknown[] }>('/api/replies?limit=100')
       return (response.data ?? []).map(toReply)
     },
-    async getById(id: string) {
-      const row = await fetchJson<any>(`/api/replies/${id}`)
+    async getById(id: string): Promise<Reply> {
+      const row = await fetchJson<unknown>(`/api/replies/${id}`)
       return toReply(row)
     },
     async updateStatus(
       id: string,
       status: 'unread' | 'interested' | 'not_interested'
-    ) {
-      const row = await fetchJson<any>(`/api/replies/${id}`, {
+    ): Promise<{ success: boolean }> {
+      return fetchJson<{ success: boolean }>(`/api/replies/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       })
-      return row
     },
   },
   analytics: {
-    async getAll() {
+    async getAll(): Promise<AnalyticsData[]> {
       return fetchJson<AnalyticsData[]>('/api/analytics')
     },
-    async getSummary() {
+    async getSummary(): Promise<AnalyticsData[]> {
       return fetchJson<AnalyticsData[]>('/api/analytics')
     },
-    async getChartData() {
+    async getChartData(): Promise<Array<{ date: string; sent: number }>> {
       return fetchJson<Array<{ date: string; sent: number }>>('/api/dashboard/chart')
     },
   },
   activity: {
-    async getRecent() {
-      const rows = await fetchJson<any[]>('/api/dashboard/activity')
+    async getRecent(): Promise<Array<Omit<ActivityRow, 'timestamp'> & { timestamp: Date }>> {
+      const rows = await fetchJson<ActivityRow[]>('/api/dashboard/activity')
       return rows.map((row) => ({
         ...row,
         timestamp: new Date(row.timestamp),
@@ -299,7 +356,12 @@ export const api = {
     },
   },
   dashboard: {
-    async getStats() {
+    async getStats(): Promise<{
+      emailsSentToday: number
+      replies: number
+      openRate: number
+      bounceRate: number
+    }> {
       return fetchJson<{
         emailsSentToday: number
         replies: number
@@ -307,11 +369,11 @@ export const api = {
         bounceRate: number
       }>('/api/dashboard/stats')
     },
-    async getChartData() {
+    async getChartData(): Promise<Array<{ date: string; sent: number }>> {
       return fetchJson<Array<{ date: string; sent: number }>>('/api/dashboard/chart')
     },
-    async getActivityFeed() {
-      const rows = await fetchJson<any[]>('/api/dashboard/activity')
+    async getActivityFeed(): Promise<Array<Omit<ActivityRow, 'timestamp'> & { timestamp: Date }>> {
+      const rows = await fetchJson<ActivityRow[]>('/api/dashboard/activity')
       return rows.map((row) => ({
         ...row,
         timestamp: new Date(row.timestamp),
@@ -319,19 +381,24 @@ export const api = {
     },
   },
   inbox: {
-    async getReplies() {
-      const response = await fetchJson<any>('/api/replies?limit=100')
+    async getReplies(): Promise<Reply[]> {
+      const response = await fetchJson<{ data?: unknown[] }>('/api/replies?limit=100')
       return (response.data ?? []).map(toReply)
     },
   },
   domains: {
-    async getAll() {
-      return fetchJson<any[]>('/api/domains')
+    async getAll(): Promise<unknown[]> {
+      return fetchJson<unknown[]>('/api/domains')
     },
   },
 }
 
-export const api_getStats = async () => {
+export const api_getStats = async (): Promise<{
+  emailsSentToday: number
+  replies: number
+  openRate: number
+  bounceRate: number
+}> => {
   return fetchJson<{
     emailsSentToday: number
     replies: number
@@ -340,6 +407,6 @@ export const api_getStats = async () => {
   }>('/api/dashboard/stats')
 }
 
-export const api_getChartData = async () => {
+export const api_getChartData = async (): Promise<Array<{ date: string; sent: number }>> => {
   return fetchJson<Array<{ date: string; sent: number }>>('/api/dashboard/chart')
 }

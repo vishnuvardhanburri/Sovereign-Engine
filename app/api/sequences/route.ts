@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSequence, listSequences } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 
+type SequenceStepInput = {
+  day?: number
+  touchLabel?: string
+  variantKey?: string
+  recipientStrategy?: 'primary' | 'cxo' | 'generic' | 'fallback'
+  ccMode?: 'none' | 'manager' | 'team'
+  subject?: string
+  body?: string
+}
+
+type CreateSequenceBody = {
+  name?: string
+  steps?: SequenceStepInput[]
+}
+
 export async function GET(request: NextRequest) {
   try {
     const clientId = await resolveClientId({
@@ -18,7 +33,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as CreateSequenceBody
     const clientId = await resolveClientId({
       body,
       headers: request.headers,
@@ -33,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const sequence = await createSequence(clientId, {
       name: String(body.name),
-      steps: body.steps.map((step: any) => ({
+      steps: body.steps.map((step: SequenceStepInput) => ({
         day: Number(step.day ?? 0),
         touchLabel: step.touchLabel ? String(step.touchLabel) : undefined,
         variantKey: step.variantKey ? String(step.variantKey) : undefined,

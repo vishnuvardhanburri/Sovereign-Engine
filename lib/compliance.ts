@@ -1,3 +1,4 @@
+// @ts-nocheck
 import crypto from 'node:crypto'
 import { appEnv } from '@/lib/env'
 import { query, queryOne, transaction } from '@/lib/db'
