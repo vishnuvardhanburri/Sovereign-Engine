@@ -6,7 +6,7 @@ import * as envModule from '../lib/env'
 import { evaluateQueueDecision } from '../lib/agents/execution/decision-agent'
 import { loadBackendAgentPrompt } from '../lib/agents/agent-prompt'
 import { sendMessage } from '../lib/agents/execution/sender-agent'
-import { coordinator } from '../lib/infrastructure'
+import { executeControlLoop, ControlLoopEnforcer } from '../lib/control-loop-enforcer'
 
 const appEnv =
   (envModule as any).appEnv ?? (envModule as any).default?.appEnv
@@ -42,6 +42,32 @@ let infrastructureHealthy = true
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Get email queue for campaign (for control loop enforcer)
+ */
+async function getEmailQueueForCampaign(campaignId: string | number): Promise<any[]> {
+  try {
+    const result = await db.query(`
+      SELECT id, recipient_email as "to", subject, body, campaign_id, contact_id
+      FROM emails
+      WHERE campaign_id = $1 AND status = 'pending'
+      ORDER BY created_at ASC
+    `, [campaignId])
+
+    return result.rows.map(row => ({
+      id: row.id,
+      to: row.to,
+      subject: row.subject,
+      body: row.body,
+      campaign_id: row.campaign_id,
+      contact_id: row.contact_id,
+    }))
+  } catch (error) {
+    console.error('[Worker] Failed to get email queue:', error)
+    return []
+  }
 }
 
 /**
@@ -104,6 +130,38 @@ async function processOnce() {
   }
 
   const decision = await evaluateQueueDecision(context, backendAgentPrompt)
+
+  // SPECIAL: Handle control loop enforcer jobs
+  if (context.job.type === 'control_loop_enforcer') {
+    try {
+      console.log(`[Worker] Executing control loop enforcer for job ${context.job.id}`)
+
+      // Get target from job metadata
+      const target = context.job.metadata?.target || 50000
+
+      // Get email queue for this campaign
+      const emailQueue = await getEmailQueueForCampaign(context.campaign.id)
+
+      if (emailQueue.length === 0) {
+        await markQueueJobSkipped(context, 'No emails in queue for control loop')
+        return
+      }
+
+      // Execute control loop enforcer
+      const result = await executeControlLoop(emailQueue, target)
+
+      // Mark job as completed with result
+      await markQueueJobCompleted(context, null, JSON.stringify(result))
+
+      console.log(`[Worker] Control loop completed: ${result.sent}/${result.target} emails sent`)
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Control loop enforcer failed'
+      await markQueueJobFailed(context, message)
+      console.error(`[Worker] Control loop error:`, error)
+    }
+    return
+  }
 
   if (decision.action === 'skip') {
     await markQueueJobSkipped(context, decision.reason)
