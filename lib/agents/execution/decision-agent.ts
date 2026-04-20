@@ -6,6 +6,7 @@ import {
   isSuppressed,
   selectBestIdentity,
 } from '@/lib/backend'
+import { validateEmailPreSend, shouldStopSequence, validateAIMessage, getFallbackMessage, circuitBreaker, recordMetric } from '@/lib/production-fixes'
 
 export type QueueDecision =
   | { action: 'skip'; reason: string }
@@ -27,12 +28,24 @@ export async function evaluateQueueDecision(
     )
   }
 
+  // PRODUCTION FIX: Stop-on-reply check
+  const shouldStop = await shouldStopSequence(context.job.client_id, context.contact.id, context.campaign.id)
+  if (shouldStop) {
+    return { action: 'skip', reason: 'sequence stopped - reply received' }
+  }
+
   if (
     context.contact.status === 'bounced' ||
     context.contact.status === 'unsubscribed' ||
     context.contact.status === 'replied'
   ) {
     return { action: 'skip', reason: `contact is ${context.contact.status}` }
+  }
+
+  // PRODUCTION FIX: Email validation pipeline
+  const emailValidation = await validateEmailPreSend(context.contact.email, context.job.client_id)
+  if (!emailValidation.valid) {
+    return { action: 'skip', reason: `invalid email: ${emailValidation.reason}` }
   }
 
   if (
@@ -58,12 +71,25 @@ export async function evaluateQueueDecision(
     }
   }
 
+  // PRODUCTION FIX: Health-based routing with circuit breaker
   const selection = await selectBestIdentity(context.job.client_id)
   if (!selection) {
     return {
       action: 'defer',
       reason: 'no active identity available',
       scheduledAt: new Date(Date.now() + 60 * 1000),
+    }
+  }
+
+  // Check circuit breakers
+  const identityCircuit = await circuitBreaker.checkCircuit(String(selection.identity.id), 'identity')
+  const domainCircuit = await circuitBreaker.checkCircuit(String(selection.domain.id), 'domain')
+  
+  if (!identityCircuit || !domainCircuit) {
+    return {
+      action: 'defer',
+      reason: 'sender in circuit break recovery',
+      scheduledAt: new Date(Date.now() + 5 * 60 * 1000),
     }
   }
 
@@ -90,7 +116,15 @@ export async function evaluateQueueDecision(
     }
   }
 
-  const message = await buildSendMessage(context)
+  let message = await buildSendMessage(context)
+  
+  // PRODUCTION FIX: AI output validation
+  const validation = validateAIMessage(message)
+  if (!validation.valid) {
+    // Use fallback template instead of failing
+    message = getFallbackMessage(context.contact, context.sequenceStep)
+  }
+  
   if (message.spamFlags.length >= 2) {
     return {
       action: 'defer',

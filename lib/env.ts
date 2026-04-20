@@ -52,6 +52,26 @@ export const appEnv = {
   workerIdleSleepMs: () => optionalInt('WORKER_IDLE_SLEEP_MS', 2000),
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
   cronSecret: () => required('CRON_SECRET'),
+  // AI Integration
+  openRouterApiKey: () => process.env.OPENROUTER_API_KEY || '',
+  aiMaxTokensPerRequest: () => optionalInt('AI_MAX_TOKENS_PER_REQUEST', 2000),
+  aiDailyCostLimit: () => optionalInt('AI_DAILY_COST_LIMIT', 50), // $50 default
+  aiModelPreferences: () => {
+    const prefs = process.env.AI_MODEL_PREFERENCES || 'spam_detection:meta-llama/llama-3.1-8b-instruct,reply_analysis:anthropic/claude-3-haiku,personalization:anthropic/claude-3-sonnet'
+    const result: Record<string, string[]> = {}
+    for (const pref of prefs.split(',')) {
+      const [task, models] = pref.split(':')
+      if (task && models) {
+        result[task.trim()] = models.split('|').map(m => m.trim())
+      }
+    }
+    return result
+  },
+  // Scraping
+  scrapingEnabled: () => process.env.SCRAPING_ENABLED !== 'false',
+  scrapingRateLimitMs: () => optionalInt('SCRAPING_RATE_LIMIT_MS', 2000),
+  scrapingTimeoutMs: () => optionalInt('SCRAPING_TIMEOUT_MS', 30000),
+  scrapingMaxConcurrency: () => optionalInt('SCRAPING_MAX_CONCURRENCY', 3),
 }
 
 export function validateApiEnv(): void {

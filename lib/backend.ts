@@ -46,6 +46,23 @@ import { buildPersonalizedMessage } from '@/lib/agents/intelligence/personalizat
 import { recalculateDomainHealth, refreshDomainRiskLimits } from '@/lib/agents/data/risk-agent'
 import { suggestSubjectLines } from '@/lib/agents/intelligence/subject-generation-agent'
 import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
+// PRODUCTION READINESS FIXES
+import {
+  generateIdempotencyKey,
+  circuitBreaker,
+  calculateBackoffDelay,
+  validateEmailPreSend,
+  shouldStopSequence,
+  assignABVariant,
+  linkToThread,
+  selectHealthiestIdentity,
+  validateAIMessage,
+  getFallbackMessage,
+  recordMetric,
+  createAlert,
+  moveToDeadLetter,
+  StructuredLogger
+} from '@/lib/production-fixes'
 export { recalculateDomainHealth } from '@/lib/agents/data/risk-agent'
 
 export interface PaginationInput {
@@ -93,6 +110,8 @@ export interface QueueExecutionContext {
   campaign: Campaign
   contact: Contact
   sequenceStep: SequenceStep
+  idempotencyKey?: string
+  idempotencyKey?: string
 }
 
 export interface ContactImportOptions {
@@ -1760,80 +1779,8 @@ export async function isSuppressed(clientId: number, email: string) {
 }
 
 export async function selectBestIdentity(clientId: number) {
-  const row = await queryOne<any>(
-    `SELECT
-       i.*,
-       d.id AS domain_id,
-       d.domain,
-       d.status AS domain_status,
-       d.warmup_stage,
-       d.spf_valid,
-       d.dkim_valid,
-       d.dmarc_valid,
-       d.daily_limit AS domain_daily_limit,
-       d.sent_today AS domain_sent_today,
-       d.sent_count AS domain_sent_count,
-       d.bounce_count AS domain_bounce_count,
-       d.health_score,
-       d.bounce_rate,
-       d.last_reset_at,
-       d.created_at AS domain_created_at,
-       d.updated_at AS domain_updated_at
-     FROM identities i
-     JOIN domains d ON d.id = i.domain_id
-     WHERE i.client_id = $1
-       AND i.status = 'active'
-       AND d.status = 'active'
-       AND i.sent_today < i.daily_limit
-       AND d.sent_today < d.daily_limit
-     ORDER BY
-       (CASE WHEN d.spf_valid AND d.dkim_valid AND d.dmarc_valid THEN 1 ELSE 0 END) DESC,
-       d.health_score DESC,
-       i.last_sent_at ASC NULLS FIRST,
-       i.id ASC
-     LIMIT 1`,
-    [clientId]
-  )
-
-  if (!row) {
-    return null
-  }
-
-  return {
-    identity: {
-      id: row.id,
-      client_id: row.client_id,
-      domain_id: row.domain_id,
-      email: row.email,
-      daily_limit: row.daily_limit,
-      sent_today: row.sent_today,
-      sent_count: row.sent_count,
-      last_sent_at: row.last_sent_at,
-      status: row.status,
-      last_reset_at: row.last_reset_at,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    } satisfies Identity,
-    domain: {
-      id: row.domain_id,
-      client_id: row.client_id,
-      domain: row.domain,
-      status: row.domain_status,
-      warmup_stage: row.warmup_stage,
-      spf_valid: row.spf_valid,
-      dkim_valid: row.dkim_valid,
-      dmarc_valid: row.dmarc_valid,
-      daily_limit: row.domain_daily_limit,
-      sent_today: row.domain_sent_today,
-      sent_count: row.domain_sent_count,
-      bounce_count: row.domain_bounce_count,
-      health_score: row.health_score,
-      bounce_rate: row.bounce_rate,
-      last_reset_at: row.last_reset_at,
-      created_at: row.domain_created_at,
-      updated_at: row.domain_updated_at,
-    } satisfies Domain,
-  } satisfies SendIdentitySelection
+  const selection = await selectHealthiestIdentity(clientId)
+  return selection as SendIdentitySelection | null
 }
 
 export function getRandomSendDelaySeconds() {
@@ -1958,8 +1905,10 @@ export async function markQueueJobFailed(
   errorMessage: string
 ) {
   const nextAttempt = context.job.attempts + 1
+
+  // PRODUCTION FIX: Use exponential backoff instead of fixed delay
   if (nextAttempt < context.job.max_attempts) {
-    const retryDelaySeconds = 60 * 2 ** Math.max(context.job.attempts, 0)
+    const retryDelaySeconds = calculateBackoffDelay(context.job.attempts)
     const scheduledAt = new Date(Date.now() + retryDelaySeconds * 1000)
 
     await query(
@@ -1993,23 +1942,15 @@ export async function markQueueJobFailed(
         context.campaign.id,
         context.contact.id,
         context.job.id,
-        { error: errorMessage, attempt: nextAttempt },
+        { error: errorMessage, attempt: nextAttempt, backoff_seconds: retryDelaySeconds },
       ]
     )
 
     return 'retry'
   }
 
-  await query(
-    `UPDATE queue_jobs
-     SET status = 'failed',
-         attempts = attempts + 1,
-         last_error = $3,
-         completed_at = CURRENT_TIMESTAMP,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE client_id = $1 AND id = $2`,
-    [context.job.client_id, context.job.id, errorMessage]
-  )
+  // PRODUCTION FIX: Move to dead letter queue instead of permanent failure
+  await moveToDeadLetter(context.job.id, errorMessage)
 
   await query(
     `INSERT INTO events (
@@ -2026,11 +1967,11 @@ export async function markQueueJobFailed(
       context.campaign.id,
       context.contact.id,
       context.job.id,
-      { error: errorMessage, attempt: nextAttempt },
+      { error: errorMessage, attempt: nextAttempt, moved_to_dead_letter: true },
     ]
   )
 
-  return 'failed'
+  return 'dead_letter'
 }
 
 export async function deferQueueJob(

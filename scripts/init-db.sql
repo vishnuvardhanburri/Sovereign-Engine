@@ -350,3 +350,521 @@ ALTER TABLE queue_jobs
 UPDATE contacts
 SET email_domain = LOWER(SPLIT_PART(email, '@', 2))
 WHERE email_domain IS NULL;
+
+ALTER TABLE contacts
+  ADD COLUMN IF NOT EXISTS email_validation_score NUMERIC(4,3),
+  ADD COLUMN IF NOT EXISTS email_validated_at TIMESTAMP;
+
+ALTER TABLE queue_jobs
+  ADD COLUMN IF NOT EXISTS sequence_stopped BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS ab_variant TEXT,
+  ADD COLUMN IF NOT EXISTS ab_assignment_id TEXT,
+  ADD COLUMN IF NOT EXISTS dead_letter_reason TEXT;
+
+ALTER TABLE identities
+  ADD COLUMN IF NOT EXISTS reputation_score NUMERIC(5,2) NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS consecutive_failures INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS circuit_breaker_until TIMESTAMP;
+
+ALTER TABLE domains
+  ADD COLUMN IF NOT EXISTS reputation_score NUMERIC(5,2) NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS consecutive_failures INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS circuit_breaker_until TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS warmup_ramp_percent INT NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS warmup_last_increased_at TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS email_threads (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  contact_id BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  campaign_id BIGINT REFERENCES campaigns(id) ON DELETE SET NULL,
+  thread_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message_count INT NOT NULL DEFAULT 1,
+  last_message_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (client_id, thread_id)
+);
+
+CREATE TABLE IF NOT EXISTS system_metrics (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  metric_name TEXT NOT NULL,
+  metric_value NUMERIC NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  alert_type TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  message TEXT NOT NULL,
+  resolved BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Role Management System Tables
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  domain TEXT,
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  subscription JSONB NOT NULL DEFAULT '{}'::jsonb,
+  owner_id TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS first_name TEXT,
+  ADD COLUMN IF NOT EXISTS last_name TEXT,
+  ADD COLUMN IF NOT EXISTS organization_id TEXT,
+  ADD COLUMN IF NOT EXISTS role_id TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS suspended_reason TEXT,
+  ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS suspended_by TEXT,
+  ADD COLUMN IF NOT EXISTS last_login TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS created_by TEXT;
+
+CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  organization_id TEXT, -- NULL for system roles
+  is_system_role BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'admin')),
+  joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  added_by TEXT NOT NULL,
+  PRIMARY KEY (team_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS access_control (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  granted_by TEXT NOT NULL,
+  granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP,
+  PRIMARY KEY (user_id, resource_type, resource_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ip_address TEXT,
+  user_agent TEXT,
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- API Management Tables
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  last_used TIMESTAMP,
+  expires_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  method TEXT NOT NULL,
+  status_code INT NOT NULL,
+  response_time INT, -- milliseconds
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Notification System Tables
+CREATE TABLE IF NOT EXISTS notification_channels (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL CHECK (type IN ('email', 'slack', 'webhook', 'sms')),
+  name TEXT NOT NULL,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notification_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  event_type TEXT NOT NULL,
+  conditions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  channels JSONB NOT NULL DEFAULT '[]'::jsonb,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  cooldown_minutes INT NOT NULL DEFAULT 60,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notification_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  severity TEXT NOT NULL DEFAULT 'medium' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id TEXT,
+  campaign_id TEXT,
+  sequence_id TEXT,
+  contact_id TEXT,
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent BOOLEAN NOT NULL DEFAULT FALSE,
+  sent_at TIMESTAMP,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS notification_history (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES notification_events(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'pending')),
+  sent_at TIMESTAMP,
+  error TEXT,
+  response JSONB
+);
+
+-- Delivery Optimization Tables
+CREATE TABLE IF NOT EXISTS delivery_configs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS delivery_domain_configs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  domain_id TEXT NOT NULL,
+  priority INT NOT NULL DEFAULT 1,
+  max_hourly_sends INT NOT NULL DEFAULT 1000,
+  health_score DECIMAL(3,2) NOT NULL DEFAULT 1.0,
+  last_health_check TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consecutive_failures INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (organization_id, domain_id)
+);
+
+CREATE TABLE IF NOT EXISTS delivery_ip_configs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  ip TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  reputation DECIMAL(3,2) NOT NULL DEFAULT 1.0,
+  last_health_check TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consecutive_failures INT NOT NULL DEFAULT 0,
+  daily_send_limit INT NOT NULL DEFAULT 50000,
+  current_day_sends INT NOT NULL DEFAULT 0,
+  day_reset TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (organization_id, ip)
+);
+
+CREATE TABLE IF NOT EXISTS delivery_events (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  ip TEXT,
+  campaign_id TEXT,
+  sequence_id TEXT,
+  result TEXT NOT NULL CHECK (result IN ('delivered', 'bounced', 'complained', 'unsubscribed')),
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Guaranteed Output Engine Tables
+CREATE TABLE IF NOT EXISTS output_engine_configs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS queued_emails (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  campaign_id TEXT,
+  sequence_id TEXT,
+  contact_id TEXT NOT NULL,
+  email_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('critical', 'high', 'normal', 'low')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'sent', 'failed', 'retry')),
+  retry_count INT NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMP,
+  processing_at TIMESTAMP,
+  sent_at TIMESTAMP,
+  failure_reason TEXT,
+  expires_at TIMESTAMP,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_users_organization ON users(organization_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_teams_organization ON teams(organization_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_api_keys_organization ON api_keys(organization_id);
+CREATE INDEX IF NOT EXISTS idx_api_requests_user ON api_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_requests_timestamp ON api_requests(timestamp);
+CREATE INDEX IF NOT EXISTS idx_notification_events_org ON notification_events(organization_id);
+CREATE INDEX IF NOT EXISTS idx_notification_events_timestamp ON notification_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_delivery_events_org ON delivery_events(organization_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_events_timestamp ON delivery_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_queued_emails_org ON queued_emails(organization_id);
+CREATE INDEX IF NOT EXISTS idx_queued_emails_status ON queued_emails(status);
+CREATE INDEX IF NOT EXISTS idx_queued_emails_priority ON queued_emails(priority);
+CREATE INDEX IF NOT EXISTS idx_queued_emails_created ON queued_emails(created_at);
+
+-- AI Integration Tables
+CREATE TABLE IF NOT EXISTS ai_models (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  cost_per_token DECIMAL(10,8) NOT NULL,
+  max_tokens INT NOT NULL,
+  capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
+  priority INT NOT NULL DEFAULT 1,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_requests (
+  id TEXT PRIMARY KEY,
+  task TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_length INT NOT NULL,
+  tokens_used INT NOT NULL DEFAULT 0,
+  cost DECIMAL(10,4) NOT NULL DEFAULT 0,
+  success BOOLEAN NOT NULL DEFAULT FALSE,
+  error TEXT,
+  cached BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for AI tables
+CREATE INDEX IF NOT EXISTS idx_ai_requests_task ON ai_requests(task);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_model ON ai_requests(model);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_created ON ai_requests(created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_models_active ON ai_models(active, priority DESC);
+
+-- Scraping Tables
+CREATE TABLE IF NOT EXISTS scraping_requests (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('company', 'person', 'contact_page', 'linkedin', 'general')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  anti_detection BOOLEAN NOT NULL DEFAULT TRUE,
+  max_depth INT DEFAULT 1,
+  selectors JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  duration_ms INT,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scraped_contacts (
+  id TEXT PRIMARY KEY,
+  scraping_request_id TEXT REFERENCES scraping_requests(id) ON DELETE CASCADE,
+  emails JSONB NOT NULL DEFAULT '[]'::jsonb,
+  phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  addresses JSONB NOT NULL DEFAULT '[]'::jsonb,
+  social_profiles JSONB NOT NULL DEFAULT '{}'::jsonb,
+  job_title TEXT,
+  company TEXT,
+  website TEXT,
+  bio TEXT,
+  location TEXT,
+  industry TEXT,
+  company_size TEXT,
+  revenue TEXT,
+  technologies JSONB NOT NULL DEFAULT '[]'::jsonb,
+  confidence DECIMAL(3,2) NOT NULL DEFAULT 0,
+  source_url TEXT NOT NULL,
+  scraped_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for scraping tables
+CREATE INDEX IF NOT EXISTS idx_scraping_requests_status ON scraping_requests(status);
+CREATE INDEX IF NOT EXISTS idx_scraping_requests_created ON scraping_requests(created_at);
+CREATE INDEX IF NOT EXISTS idx_scraped_contacts_company ON scraped_contacts(company);
+CREATE INDEX IF NOT EXISTS idx_scraped_contacts_confidence ON scraped_contacts(confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_scraped_contacts_scraped_at ON scraped_contacts(scraped_at);
+
+-- Advanced AI Pro Database Schema Extensions
+
+-- Autonomous Campaigns Table
+CREATE TABLE IF NOT EXISTS autonomous_campaigns (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'learning', -- learning, optimizing, peaking, declining
+  config JSONB,
+  performance JSONB DEFAULT '{}',
+  optimizations JSONB DEFAULT '{}',
+  next_actions JSONB DEFAULT '[]',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Optimization Actions Log
+CREATE TABLE IF NOT EXISTS optimization_actions (
+  id SERIAL PRIMARY KEY,
+  campaign_id VARCHAR(255) NOT NULL REFERENCES autonomous_campaigns(id) ON DELETE CASCADE,
+  action_type VARCHAR(100) NOT NULL,
+  action_data JSONB,
+  executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  result VARCHAR(50) DEFAULT 'pending', -- pending, success, failed
+  error TEXT,
+  predicted_impact DECIMAL(3,2)
+);
+
+-- Campaign Metrics for Optimization
+CREATE TABLE IF NOT EXISTS campaign_metrics (
+  id SERIAL PRIMARY KEY,
+  campaign_id VARCHAR(255) NOT NULL,
+  open_rate DECIMAL(5,4),
+  click_rate DECIMAL(5,4),
+  reply_rate DECIMAL(5,4),
+  bounce_rate DECIMAL(5,4),
+  unsubscribe_rate DECIMAL(5,4),
+  spam_complaints INTEGER DEFAULT 0,
+  conversions INTEGER DEFAULT 0,
+  revenue DECIMAL(10,2) DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- A/B Tests Table
+CREATE TABLE IF NOT EXISTS ab_tests (
+  id SERIAL PRIMARY KEY,
+  campaign_id VARCHAR(255) NOT NULL,
+  test_type VARCHAR(100) NOT NULL, -- subject_line, content, send_time, etc.
+  variations JSONB NOT NULL,
+  winner VARCHAR(255),
+  confidence DECIMAL(3,2),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  completed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Contact Segments for Personalization
+CREATE TABLE IF NOT EXISTS contact_segments (
+  id SERIAL PRIMARY KEY,
+  campaign_id VARCHAR(255) NOT NULL,
+  segment_name VARCHAR(255) NOT NULL,
+  criteria JSONB NOT NULL,
+  contact_count INTEGER DEFAULT 0,
+  performance JSONB DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- AI Predictions Cache
+CREATE TABLE IF NOT EXISTS ai_predictions (
+  id SERIAL PRIMARY KEY,
+  prediction_type VARCHAR(100) NOT NULL, -- performance, personalization, conversion
+  input_hash VARCHAR(255) UNIQUE NOT NULL,
+  input_data JSONB NOT NULL,
+  prediction JSONB NOT NULL,
+  confidence DECIMAL(3,2),
+  actual_result JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  validated_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Competitive Intelligence Cache
+CREATE TABLE IF NOT EXISTS competitive_intelligence (
+  id SERIAL PRIMARY KEY,
+  industry VARCHAR(255) NOT NULL,
+  target_market VARCHAR(255),
+  strategy_hash VARCHAR(255) UNIQUE NOT NULL,
+  intelligence_data JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 days')
+);
+
+-- Voice Commands Log
+CREATE TABLE IF NOT EXISTS voice_commands (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(255),
+  command TEXT NOT NULL,
+  response TEXT,
+  confidence DECIMAL(3,2),
+  executed_action VARCHAR(255),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for Performance
+CREATE INDEX IF NOT EXISTS idx_autonomous_campaigns_status ON autonomous_campaigns(status);
+CREATE INDEX IF NOT EXISTS idx_optimization_actions_campaign ON optimization_actions(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_metrics_campaign ON campaign_metrics(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_metrics_created ON campaign_metrics(created_at);
+CREATE INDEX IF NOT EXISTS idx_ab_tests_campaign ON ab_tests(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_contact_segments_campaign ON contact_segments(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_ai_predictions_type ON ai_predictions(prediction_type);
+CREATE INDEX IF NOT EXISTS idx_ai_predictions_hash ON ai_predictions(input_hash);
+CREATE INDEX IF NOT EXISTS idx_competitive_intelligence_expires ON competitive_intelligence(expires_at);
+
+-- Update existing tables to support new features
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS autonomous_mode BOOLEAN DEFAULT false;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optimization_status VARCHAR(50) DEFAULT 'manual';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ai_predictions JSONB DEFAULT '{}';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS performance_trend VARCHAR(20) DEFAULT 'stable';
+
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_score DECIMAL(3,2);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS conversion_probability DECIMAL(3,2);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS personalization_profile JSONB DEFAULT '{}';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS segment_tags TEXT[];
+
+-- Insert sample data for testing
+INSERT INTO autonomous_campaigns (id, name, status, config) 
+VALUES ('demo-campaign-1', 'Demo Autonomous Campaign', 'learning', '{"industry": "technology", "target_audience": "developers"}')
+ON CONFLICT (id) DO NOTHING;

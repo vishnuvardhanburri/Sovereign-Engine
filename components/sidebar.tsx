@@ -15,17 +15,21 @@ import {
   LineChart,
   MessageCircle,
   Settings,
+  Bot,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
 
-const navItems: Array<{
+type NavItem = {
   href: string
   label: string
   icon: React.ComponentType<{ className?: string }>
   prefetch?: string
-}> = [
+}
+
+const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, prefetch: 'prefetchDashboard' },
+  { href: '/ai-assistant', label: 'AI Assistant', icon: Bot },
   { href: '/campaigns', label: 'Outbound Campaigns', icon: Mail, prefetch: 'prefetchCampaigns' },
   { href: '/domains', label: 'Sending Health', icon: Globe, prefetch: 'prefetchDomains' },
   { href: '/contacts', label: 'Prospects', icon: Users, prefetch: 'prefetchContacts' },
@@ -41,9 +45,7 @@ export function Sidebar() {
   const queryClient = useQueryClient()
   const prefetch = createPrefetchUtils(queryClient)
 
-  const handleNavClick = () => {
-    setOpen(false)
-  }
+  const handleNavClick = () => setOpen(false)
 
   const handleNavHover = async (prefetchKey: string | undefined) => {
     if (!prefetchKey) return
@@ -56,26 +58,19 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
       <div className="fixed top-0 left-0 right-0 z-40 md:hidden flex items-center justify-between bg-sidebar border-b border-sidebar-border px-4 py-3">
         <h1 className="font-bold text-lg">Xavira Orbit</h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setOpen(!open)}
-        >
+        <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
           {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </Button>
       </div>
 
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 w-64 bg-sidebar border-r border-sidebar-border transition-all duration-300 z-30 md:relative md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         } md:translate-x-0 md:top-0 top-16`}
       >
         <div className="flex flex-col h-full">
-          {/* Logo */}
           <div className="hidden md:flex items-center gap-2 px-6 py-4 border-b border-sidebar-border">
             <div className="w-8 h-8 rounded-md bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
               XO
@@ -86,7 +81,6 @@ export function Sidebar() {
             </div>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-4 py-4">
             <div className="space-y-2">
               {navItems.map((item) => {
@@ -112,7 +106,6 @@ export function Sidebar() {
             </div>
           </nav>
 
-          {/* Footer */}
           <div className="border-t border-sidebar-border px-4 py-4 space-y-2">
             <div className="text-xs text-sidebar-foreground">
               <p className="font-semibold">Xavira Orbit</p>
@@ -122,13 +115,7 @@ export function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile overlay */}
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      {open && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setOpen(false)} />}
     </>
   )
 }
