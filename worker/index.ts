@@ -6,6 +6,7 @@ import * as envModule from '../lib/env'
 import { evaluateQueueDecision } from '../lib/agents/execution/decision-agent'
 import { loadBackendAgentPrompt } from '../lib/agents/agent-prompt'
 import { sendMessage } from '../lib/agents/execution/sender-agent'
+import { coordinator } from '../lib/infrastructure'
 
 const appEnv =
   (envModule as any).appEnv ?? (envModule as any).default?.appEnv
@@ -37,9 +38,50 @@ const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRed
 const backendAgentPrompt = loadBackendAgentPrompt()
 
 let shuttingDown = false
+let infrastructureHealthy = true
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Monitor infrastructure in background
+ */
+async function monitorInfrastructure() {
+  setInterval(async () => {
+    try {
+      const state = await coordinator.getState()
+
+      // Check critical conditions
+      if (state.capacityUtilization > 90) {
+        console.warn('[Worker] ALERT: Capacity utilization > 90%')
+        infrastructureHealthy = false
+      }
+
+      // Check if system is paused
+      if (state.isPaused) {
+        console.warn('[Worker] WARNING: Infrastructure system is PAUSED')
+        infrastructureHealthy = false
+      }
+
+      // Check health issues
+      if (!state.systemHealth.isHealthy) {
+        console.warn('[Worker] System has issues:', state.systemHealth.issues)
+        infrastructureHealthy = false
+      }
+
+      // Reset healthy if issues resolved
+      if (
+        state.capacityUtilization < 85 &&
+        !state.isPaused &&
+        state.systemHealth.isHealthy
+      ) {
+        infrastructureHealthy = true
+      }
+    } catch (error) {
+      console.error('[Worker] Infrastructure monitoring error:', error)
+    }
+  }, 30000) // Check every 30 seconds
 }
 
 async function processOnce() {
@@ -75,6 +117,46 @@ async function processOnce() {
 
   if (decision.action === 'send') {
     try {
+      // Check infrastructure health before sending
+      if (!infrastructureHealthy) {
+        const state = await coordinator.getState()
+        if (state.isPaused) {
+          // Defer job if system is paused
+          await deferQueueJob(
+            context,
+            new Date(Date.now() + 5 * 60 * 1000),
+            'Infrastructure paused for maintenance'
+          )
+          return
+        }
+      }
+
+      // Use coordinator for sending (intelligent routing + failover)
+      const coordResult = await coordinator.send({
+        campaignId: String(context.campaign.id),
+        to: context.job.recipient_email || context.contact.email,
+        from: `Xavira Orbit <${decision.selection.identity.email}>`,
+        subject: decision.message.subject,
+        html: decision.message.html,
+        text: decision.message.text,
+        metadata: {
+          queueJobId: String(context.job.id),
+          contactId: String(context.contact.id),
+          campaignId: String(context.campaign.id),
+          sequenceId: context.job.sequence_id ? String(context.job.sequence_id) : undefined,
+          unsubscribeUrl: decision.message.unsubscribeUrl,
+        },
+      })
+
+      if (!coordResult.success) {
+        await markQueueJobFailed(context, coordResult.error || 'Coordinator send failed')
+        console.error(
+          `[Worker] coordinator error queue_job=${context.job.id} to=${context.contact.email}: ${coordResult.error}`
+        )
+        return
+      }
+
+      // Use traditional SMTP send as backup
       const response = await sendMessage({
         fromEmail: `Xavira Orbit <${decision.selection.identity.email}>`,
         toEmail: context.job.recipient_email || context.contact.email,
@@ -85,6 +167,8 @@ async function processOnce() {
         headers: {
           'X-Campaign-Id': String(context.campaign.id),
           'X-Queue-Job-Id': String(context.job.id),
+          'X-Coordinator-Inbox': coordResult.inboxUsed || 'unknown',
+          'X-Coordinator-Domain': coordResult.domainUsed || 'unknown',
           'List-Unsubscribe': `<${decision.message.unsubscribeUrl}>`,
         },
       })
@@ -99,7 +183,7 @@ async function processOnce() {
 
       await markQueueJobCompleted(context, decision.selection, response.providerMessageId ?? null)
       console.log(
-        `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} identity=${decision.selection.identity.email}`
+        `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} inbox=${coordResult.inboxUsed} domain=${coordResult.domainUsed}`
       )
     } catch (error) {
       const message =
@@ -111,10 +195,18 @@ async function processOnce() {
 }
 
 async function main() {
-  console.log('[Worker] starting Xavira Orbit worker')
+  console.log('[Worker] starting Xavira Orbit worker with autonomous infrastructure')
   console.log('[Worker] loaded backend agent prompt', {
     length: backendAgentPrompt.length,
   })
+
+  // Initialize coordinator
+  await coordinator.initialize()
+  console.log('[Worker] autonomous infrastructure initialized')
+
+  // Start infrastructure monitoring
+  monitorInfrastructure()
+  console.log('[Worker] infrastructure monitoring started')
 
   while (!shuttingDown) {
     try {
