@@ -176,7 +176,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <div className="text-xs text-muted-foreground">Emails pending</div>
+              <div className="text-xs text-muted-foreground">Emails in progress</div>
               <div className="mt-1 text-2xl font-semibold">
                 <AnimatedNumber value={queueSize} />
               </div>

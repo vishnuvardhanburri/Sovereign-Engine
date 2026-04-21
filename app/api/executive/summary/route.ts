@@ -47,6 +47,18 @@ export async function GET(request: NextRequest) {
       [clientId]
     )
 
+    const interested = await queryOne<{ interested: string | number | null }>(
+      `
+      SELECT COUNT(*)::text AS interested
+      FROM events
+      WHERE client_id = $1
+        AND event_type = 'reply'
+        AND created_at >= date_trunc('day', NOW())
+        AND COALESCE(metadata->>'reply_status','') = 'interested'
+      `,
+      [clientId]
+    )
+
     const blocked = await queryOne<{ blocked: string | number | null }>(
       `
       SELECT COUNT(*)::text AS blocked
@@ -77,12 +89,14 @@ export async function GET(request: NextRequest) {
     const bounceRateYesterday = rate(yBounces, ySent)
 
     const replyTrend = replyRateYesterday > 0 ? (replyRateToday - replyRateYesterday) / replyRateYesterday : 0
+    const interestedToday = Number(interested?.interested ?? 0) || 0
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
       today: {
         sent: todaySent,
         replies: todayReplies,
+        interestedReplies: interestedToday,
         bounces: todayBounces,
         replyRate: replyRateToday,
         bounceRate: bounceRateToday,
@@ -96,6 +110,7 @@ export async function GET(request: NextRequest) {
       },
       businessImpact: {
         estimatedConversationsToday: todayReplies,
+        estimatedOpportunities: interestedToday,
         replyTrendPct: replyTrend,
       },
       safety: {
@@ -108,4 +123,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to load executive summary' }, { status: 500 })
   }
 }
-

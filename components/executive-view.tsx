@@ -68,6 +68,25 @@ function statusFrom(health?: InfrastructureHealth, analytics?: InfrastructureAna
   }
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
+}
+
+function confidenceScore(input: {
+  bounceRateToday: number
+  replyTrendPct: number
+  systemHealthy: boolean
+  spamRate24h: number
+}): number {
+  let score = 70
+  if (input.systemHealthy) score += 18
+  score += clamp(input.replyTrendPct * 100 * 0.4, -12, 12)
+  score -= clamp(input.bounceRateToday * 100 * 6, 0, 45)
+  if (input.spamRate24h >= 3) score -= 18
+  else if (input.spamRate24h >= 1.5) score -= 8
+  return Math.round(clamp(score, 0, 100))
+}
+
 export function ExecutiveView(props: {
   health?: InfrastructureHealth
   analytics?: InfrastructureAnalytics
@@ -78,8 +97,28 @@ export function ExecutiveView(props: {
   const replyRate = props.executive?.today.replyRate ?? 0
   const bounceRate = props.executive?.today.bounceRate ?? 0
 
-  const impactConvos = props.executive?.businessImpact.estimatedConversationsToday ?? 0
+  const conversationsToday = props.executive?.businessImpact.estimatedConversationsToday ?? 0
+  const repliesToday = props.executive?.today.replies ?? 0
+  const opportunitiesToday = props.executive?.businessImpact.estimatedOpportunities ?? 0
   const replyTrend = props.executive?.businessImpact.replyTrendPct ?? 0
+
+  const spam24 = props.analytics?.metrics.health.avgSpamRate ?? 0
+  const conf = confidenceScore({
+    bounceRateToday: bounceRate,
+    replyTrendPct: replyTrend,
+    systemHealthy: props.health?.system.healthy ?? true,
+    spamRate24h: spam24,
+  })
+
+  const growthSignal =
+    replyTrend >= 0.08
+      ? 'Campaign performance improving'
+      : (props.health?.system.healthy ?? true) && (props.analytics?.metrics.healthyDomains ?? 0) > 0
+      ? 'Stability maintained across domains'
+      : 'Results stable'
+
+  const impactRiskWord = summary.label === 'HEALTHY' ? 'low' : summary.label === 'AT RISK' ? 'medium' : 'high'
+  const impactLine = `System generated ${conversationsToday} conversations today with ${impactRiskWord} risk.`
 
   const complianceLine = props.executive?.safety.complianceActive
     ? 'All compliance rules active'
@@ -103,6 +142,36 @@ export function ExecutiveView(props: {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="text-sm text-muted-foreground">{summary.sentence}</div>
+
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-semibold">Conversation Engine Output</div>
+                <div className="mt-1 text-xs text-muted-foreground">{impactLine}</div>
+              </div>
+              <Badge variant="outline" className={priorityTone(conf >= 80 ? 'GREEN' : conf >= 60 ? 'YELLOW' : 'RED')}>
+                Confidence {conf}/100
+              </Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="text-xs text-muted-foreground">Conversations started today</div>
+                <div className="mt-1 text-xl font-semibold">{conversationsToday}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="text-xs text-muted-foreground">Replies received</div>
+                <div className="mt-1 text-xl font-semibold">{repliesToday}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="text-xs text-muted-foreground">Estimated opportunities</div>
+                <div className="mt-1 text-xl font-semibold">{opportunitiesToday}</div>
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-muted-foreground">
+              Growth signal: <span className="text-foreground font-semibold">{growthSignal}</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <div className="text-xs text-muted-foreground">Today’s sends</div>
@@ -120,7 +189,7 @@ export function ExecutiveView(props: {
               <div className="text-xs text-muted-foreground">Business impact</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Estimated conversations today:{' '}
-                <span className="text-foreground font-semibold">{impactConvos}</span>
+                <span className="text-foreground font-semibold">{conversationsToday}</span>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Reply trend: <span className="text-foreground font-semibold">{pctDelta(replyTrend)}</span> vs yesterday
@@ -153,11 +222,10 @@ export function ExecutiveView(props: {
             ))
           )}
           <div className="text-xs text-muted-foreground">
-            Terms: “emails pending” means jobs waiting to be sent by the worker.
+            Terms: “emails in progress” means jobs waiting to be sent by the worker.
           </div>
         </CardContent>
       </Card>
     </div>
   )
 }
-

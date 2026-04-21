@@ -201,6 +201,7 @@ export interface ExecutiveSummary {
   today: {
     sent: number
     replies: number
+    interestedReplies: number
     bounces: number
     replyRate: number // 0..1
     bounceRate: number // 0..1
@@ -214,6 +215,7 @@ export interface ExecutiveSummary {
   }
   businessImpact: {
     estimatedConversationsToday: number
+    estimatedOpportunities: number
     replyTrendPct: number // -1..+inf
   }
   safety: {
@@ -425,6 +427,7 @@ const executiveSummarySchema: z.ZodType<ExecutiveSummary> = z.object({
   today: z.object({
     sent: z.coerce.number().nonnegative(),
     replies: z.coerce.number().nonnegative(),
+    interestedReplies: z.coerce.number().nonnegative(),
     bounces: z.coerce.number().nonnegative(),
     replyRate: z.coerce.number(),
     bounceRate: z.coerce.number(),
@@ -438,6 +441,7 @@ const executiveSummarySchema: z.ZodType<ExecutiveSummary> = z.object({
   }),
   businessImpact: z.object({
     estimatedConversationsToday: z.coerce.number().nonnegative(),
+    estimatedOpportunities: z.coerce.number().nonnegative(),
     replyTrendPct: z.coerce.number(),
   }),
   safety: z.object({
