@@ -14,7 +14,8 @@
     "test:next-level": "tsx scripts/test-next-level-features.ts",
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "worker:dev": "tsx worker/index.ts",
-    "db:init": "tsx scripts/init-db.ts"
+    "db:init": "tsx scripts/init-db.ts",
+    "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
