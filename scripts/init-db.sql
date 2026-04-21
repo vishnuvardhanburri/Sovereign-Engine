@@ -457,7 +457,7 @@ CREATE TABLE IF NOT EXISTS teams (
 
 CREATE TABLE IF NOT EXISTS team_members (
   team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'admin')),
   joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   added_by TEXT NOT NULL,
@@ -465,7 +465,7 @@ CREATE TABLE IF NOT EXISTS team_members (
 );
 
 CREATE TABLE IF NOT EXISTS access_control (
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   resource_type TEXT NOT NULL,
   resource_id TEXT NOT NULL,
   permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -477,7 +477,7 @@ CREATE TABLE IF NOT EXISTS access_control (
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id BIGINT NOT NULL,
   action TEXT NOT NULL,
   resource_type TEXT NOT NULL,
   resource_id TEXT NOT NULL,
@@ -491,7 +491,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE TABLE IF NOT EXISTS api_keys (
   id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   key TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -504,7 +504,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE TABLE IF NOT EXISTS api_requests (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id BIGINT NOT NULL,
   organization_id TEXT NOT NULL,
   endpoint TEXT NOT NULL,
   method TEXT NOT NULL,
