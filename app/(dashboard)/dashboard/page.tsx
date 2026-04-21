@@ -11,6 +11,7 @@ import {
   useInfrastructureAnalytics,
   useInfrastructureControl,
   useInfrastructureHealth,
+  useOperatorActions,
   usePatterns,
   useQueueStats,
   useRecentEvents,
@@ -25,6 +26,9 @@ import { AgentFeed } from '@/components/agent-feed'
 import { DomainReputation } from '@/components/domain-reputation'
 import { PatternLeaderboard } from '@/components/pattern-leaderboard'
 import { SystemHealth } from '@/components/system-health'
+import { RecentDecisions } from '@/components/recent-decisions'
+import { SelfHealActions } from '@/components/self-heal-actions'
+import { AnimatedNumber } from '@/components/animated-number'
 import { ArrowRight, PauseCircle, PlayCircle, RefreshCcw, ShieldAlert, Zap } from 'lucide-react'
 
 const DashboardSentChart = dynamic(
@@ -54,6 +58,7 @@ export default function DashboardPage() {
   const { data: events } = useRecentEvents(70)
   const { data: campaigns } = useCampaigns()
   const control = useInfrastructureControl()
+  const { data: operatorActions } = useOperatorActions(60)
 
   const [campaignToStart, setCampaignToStart] = useState<string>('')
   const [startOpen, setStartOpen] = useState(false)
@@ -118,6 +123,16 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">Live system state, safe execution, and instant controls.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
+            </span>
+            <span className="text-muted-foreground">System Running</span>
+          </div>
+          <Badge variant="outline" className="bg-white/5 text-slate-200 border-white/10">
+            Autonomous Mode: ACTIVE
+          </Badge>
           <Badge variant="outline" className={statusTone(systemStatus)}>
             System: {systemStatus}
           </Badge>
@@ -138,24 +153,44 @@ export default function DashboardPage() {
         <CardContent className="py-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <div className="text-xs text-muted-foreground">System State</div>
+              <div className="mt-1 text-sm font-semibold">{systemStatus}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Autonomous mode is enforcing safety rules.</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <div className="text-xs text-muted-foreground">Emails Sent Today</div>
-              <div className="mt-1 text-2xl font-semibold">{statsLoading ? '...' : (stats?.emailsSentToday ?? 0)}</div>
+              <div className="mt-1 text-2xl font-semibold">
+                {statsLoading ? '...' : <AnimatedNumber value={stats?.emailsSentToday ?? 0} />}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                replies: <span className="text-foreground">{stats?.replies ?? 0}</span>
+              </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <div className="text-xs text-muted-foreground">Queue Size</div>
-              <div className="mt-1 text-2xl font-semibold">{queueSize.toLocaleString()}</div>
+              <div className="mt-1 text-2xl font-semibold">
+                <AnimatedNumber value={queueSize} />
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                ready: <span className="text-foreground">{queue?.ready ?? 0}</span> · scheduled:{' '}
+                <span className="text-foreground">{queue?.scheduled ?? 0}</span>
+              </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <div className="text-xs text-muted-foreground">Active Domains</div>
-              <div className="mt-1 text-2xl font-semibold">{activeDomains}</div>
+              <div className="mt-1 text-2xl font-semibold">
+                <AnimatedNumber value={activeDomains} durationMs={450} />
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                utilization: <span className="text-foreground">{analytics?.metrics.capacity.utilization ?? 0}%</span>
+              </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
               <div className="text-xs text-muted-foreground">Open Rate</div>
               <div className="mt-1 text-2xl font-semibold">{stats ? `${stats.openRate}%` : '0%'}</div>
-            </div>
-            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <div className="text-xs text-muted-foreground">Bounce Rate</div>
-              <div className="mt-1 text-2xl font-semibold">{stats ? `${stats.bounceRate}%` : '0%'}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                bounce: <span className="text-foreground">{stats?.bounceRate ?? 0}%</span>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -255,6 +290,8 @@ export default function DashboardPage() {
         <div className="xl:col-span-1 space-y-6">
           <SystemHealth health={health} analytics={analytics} />
           <PatternLeaderboard patterns={patterns} />
+          <RecentDecisions analytics={analytics} actions={operatorActions} />
+          <SelfHealActions health={health} actions={operatorActions} />
         </div>
 
         <div className="xl:col-span-2 space-y-6">

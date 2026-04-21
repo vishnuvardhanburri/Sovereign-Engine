@@ -266,6 +266,15 @@ export const useRecentEvents = (limit = 50) => {
   })
 }
 
+export const useOperatorActions = (limit = 60) => {
+  return useQuery({
+    queryKey: ['operator-actions', limit],
+    queryFn: () => api.operator.getActions(limit),
+    refetchInterval: 9000,
+    staleTime: 2000,
+  })
+}
+
 export const useInfrastructureControl = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -276,6 +285,7 @@ export const useInfrastructureControl = () => {
         queryClient.invalidateQueries({ queryKey: ['infra-health'] }),
         queryClient.invalidateQueries({ queryKey: ['infra-analytics'] }),
         queryClient.invalidateQueries({ queryKey: ['queue-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['operator-actions'] }),
       ])
       if (result.success) toast.success('Action applied')
     },

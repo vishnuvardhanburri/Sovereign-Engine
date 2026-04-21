@@ -188,6 +188,14 @@ export interface PaginatedResponse<T> {
   }
 }
 
+export interface OperatorAction {
+  id: string
+  action_type: string
+  summary: string
+  payload: Record<string, unknown> | null
+  created_at: string
+}
+
 const campaignSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   name: z.string(),
@@ -358,6 +366,15 @@ const paginatedEventsSchema = z.object({
     totalPages: z.coerce.number(),
   }),
 })
+
+const operatorActionSchema: z.ZodType<OperatorAction> = z.object({
+  id: z.string(),
+  action_type: z.string(),
+  summary: z.string(),
+  payload: z.record(z.string(), z.unknown()).nullable(),
+  created_at: z.string(),
+})
+
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -664,6 +681,13 @@ export const api = {
     async getRecent(limit = 50): Promise<PaginatedResponse<EventRow>> {
       const res = await fetchJson<unknown>(`/api/events?limit=${limit}&page=1`)
       return paginatedEventsSchema.parse(res)
+    },
+  },
+  operator: {
+    async getActions(limit = 50): Promise<OperatorAction[]> {
+      const res = await fetchJson<{ data?: unknown[] }>(`/api/operator-actions?limit=${limit}`)
+      const rows = Array.isArray(res.data) ? res.data : []
+      return rows.map((row) => operatorActionSchema.parse(row))
     },
   },
 }

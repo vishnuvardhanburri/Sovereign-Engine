@@ -26,6 +26,37 @@ function badgeClass(level: ReturnType<typeof eventTone>): string {
   return 'bg-white/5 text-slate-200 border-white/10'
 }
 
+function tagLabel(level: ReturnType<typeof eventTone>): 'SUCCESS' | 'WARNING' | 'ERROR' | 'INFO' {
+  if (level === 'good') return 'SUCCESS'
+  if (level === 'warn') return 'WARNING'
+  if (level === 'bad') return 'ERROR'
+  return 'INFO'
+}
+
+function summarizeEvent(ev: EventRow): string {
+  const t = ev.event_type.toLowerCase()
+  const meta = ev.metadata ?? {}
+
+  const subject = typeof meta.subject === 'string' ? meta.subject : undefined
+  const reason = typeof meta.reason === 'string' ? meta.reason : undefined
+  const message = typeof meta.message === 'string' ? meta.message : undefined
+  const provider = typeof meta.provider === 'string' ? meta.provider : undefined
+
+  if (t === 'sent') return subject ? `Email sent: ${subject}` : 'Email sent'
+  if (t === 'delivered') return subject ? `Delivered: ${subject}` : 'Email delivered'
+  if (t === 'opened') return subject ? `Opened: ${subject}` : 'Email opened'
+  if (t === 'clicked') return subject ? `Clicked: ${subject}` : 'Link clicked'
+  if (t === 'reply') return reason ? `Reply classified: ${reason}` : (subject ? `Reply received: ${subject}` : 'Reply received')
+  if (t === 'bounce') return reason ? `Bounced: ${reason}` : 'Bounce detected'
+  if (t === 'failed') return message ? `Send failed: ${message}` : (provider ? `Send failed (${provider})` : 'Send failed')
+  if (t === 'retry') return message ? `Retry scheduled: ${message}` : 'Retry scheduled'
+  if (t === 'queued') return 'Job queued'
+  if (t === 'skipped') return reason ? `Skipped: ${reason}` : 'Skipped'
+  if (t === 'complaint') return 'Complaint signal received'
+  if (t === 'unsubscribed') return 'Unsubscribe recorded'
+  return ev.event_type.toUpperCase()
+}
+
 type FeedItem =
   | { kind: 'event'; id: string; at: string; label: string; detail?: string }
   | { kind: 'alert'; id: string; at: string; label: string; detail?: string }
@@ -42,15 +73,7 @@ export function AgentFeed(props: {
 
     for (const ev of props.events?.data ?? []) {
       const label = ev.event_type.toUpperCase()
-      const meta = ev.metadata ?? {}
-      const detail =
-        typeof meta.message === 'string'
-          ? meta.message
-          : typeof meta.reason === 'string'
-          ? meta.reason
-          : typeof meta.subject === 'string'
-          ? meta.subject
-          : undefined
+      const detail = summarizeEvent(ev)
 
       out.push({
         kind: 'event',
@@ -101,17 +124,16 @@ export function AgentFeed(props: {
             <div className="divide-y divide-white/5">
               {items.slice(-120).map((item) => {
                 const level = item.kind === 'event' ? eventTone(item.label) : 'warn'
+                const tag = tagLabel(level)
                 return (
                   <div key={item.id} className="px-3 py-2 flex items-start gap-3">
                     <div className="w-14 shrink-0 text-xs text-muted-foreground pt-1">{fmtTime(item.at)}</div>
                     <Badge variant="outline" className={`${badgeClass(level)} shrink-0`}>
-                      {item.kind === 'event' ? item.label : 'ALERT'}
+                      {tag}
                     </Badge>
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{item.kind === 'event' ? item.label : item.label}</div>
-                      {item.detail ? (
-                        <div className="text-xs text-muted-foreground truncate">{item.detail}</div>
-                      ) : null}
+                      <div className="text-xs text-muted-foreground truncate">{item.detail ?? ''}</div>
                     </div>
                   </div>
                 )
@@ -123,4 +145,3 @@ export function AgentFeed(props: {
     </Card>
   )
 }
-
