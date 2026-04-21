@@ -19,7 +19,7 @@ export default function CampaignDetailPage({
   params: { id: string }
 }) {
   const { data: campaign, isLoading: campaignLoading } = useCampaign(params.id)
-  const { data: sequence, isLoading: sequenceLoading } = useSequence(
+  const { data: sequence } = useSequence(
     campaign?.sequenceId || ''
   )
 

@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Table,
@@ -15,22 +14,13 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { MoreHorizontal, Pause, Play, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pause, Play } from 'lucide-react'
 
 interface Domain {
   id: number
@@ -48,7 +38,6 @@ interface Domain {
 
 export function DomainManager() {
   const queryClient = useQueryClient()
-  const [selectedDomain, setSelectedDomain] = useState<number | null>(null)
 
   const { data: domains = [], isLoading } = useQuery({
     queryKey: ['domains'],

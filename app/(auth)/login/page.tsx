@@ -35,7 +35,7 @@ export default function LoginPage() {
     try {
       await login(email, password)
       toast.success('Login successful!')
-    } catch (error) {
+    } catch {
       toast.error('Login failed')
     } finally {
       setIsLoading(false)

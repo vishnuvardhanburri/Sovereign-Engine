@@ -54,7 +54,6 @@ export default function InboxPage() {
 
   const interestedCount = replies?.filter((r: Reply) => r.status === 'interested').length || 0
   const notInterestedCount = replies?.filter((r: Reply) => r.status === 'not_interested').length || 0
-  const unreadCount = replies?.filter((r: Reply) => r.status === 'unread').length || 0
 
   return (
     <div className="space-y-6">

@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react'
+import { Mic, MicOff, VolumeX } from 'lucide-react'
 import { provideAICoaching } from '@/lib/xavira-ai-pro'
 
 interface VoiceAssistantProps {
@@ -19,7 +19,6 @@ export function VoiceAssistant({ onCommand, onResponse, context }: VoiceAssistan
   const [transcript, setTranscript] = useState('')
   const [isSupported] = useState(() => {
     if (typeof window === 'undefined') return false
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition) && Boolean(window.speechSynthesis)
   })
   

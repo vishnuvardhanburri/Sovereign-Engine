@@ -71,7 +71,7 @@ export function ReplyDetailModal({ reply }: ReplyDetailModalProps) {
 
         {/* Email Thread */}
         <div className="space-y-4">
-          {reply.messages.map((msg, idx) => (
+          {reply.messages.map((msg) => (
             <Card
               key={msg.id}
               className={`p-4 ${msg.isIncoming ? 'border-primary' : ''}`}

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { IdentitiesList } from '@/components/identities-list'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft } from 'lucide-react'

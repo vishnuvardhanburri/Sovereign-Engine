@@ -178,7 +178,7 @@ export function XaviraAIChat() {
         ]
       }])
       toast.success('Conversation history cleared')
-    } catch (error) {
+    } catch {
       toast.error('Failed to clear history')
     }
   }
