@@ -1,11 +1,11 @@
-import { generateSubjectLine } from '@/lib/ai/generator'
+import { generateSubjectLineLearned } from '@/lib/ai/generator'
 
 export async function suggestSubjectLines(input: {
   offer: string
   company?: string | null
   angle: 'pattern' | 'pain' | 'authority'
 }) {
-  return generateSubjectLine({
+  const out = await generateSubjectLineLearned({
     contact: {
       id: 0,
       client_id: 0,
@@ -28,5 +28,6 @@ export async function suggestSubjectLines(input: {
       updated_at: '',
     },
     angle: input.angle,
-  }).result.subject as string
+  })
+  return out.result.subject as string
 }

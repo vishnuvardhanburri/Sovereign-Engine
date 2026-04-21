@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createEvent, listEvents } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
+import { ingestPatternFeedback } from '@/lib/learning/feedback'
 
 type EventTypeFilter = 'queued' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'failed' | 'bounce' | 'reply' | 'complaint' | 'skipped' | 'retry' | 'unsubscribed'
 type CreateEventBody = {
@@ -59,6 +60,23 @@ export async function POST(request: NextRequest) {
       providerMessageId: body.provider_message_id ?? null,
       metadata: body.metadata ?? null,
     })
+
+    // Deterministic pattern learning: update stats from open/reply/bounce signals.
+    const meta = (body.metadata ?? {}) as Record<string, unknown>
+    const rawIds = Array.isArray(meta.pattern_ids)
+      ? (meta.pattern_ids as unknown[])
+      : (typeof meta.pattern_id === 'string' ? [meta.pattern_id] : [])
+    const patternIds = rawIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+
+    if (patternIds.length > 0) {
+      if (body.type === 'opened') {
+        await ingestPatternFeedback({ eventType: 'EMAIL_OPENED', patternIds })
+      } else if (body.type === 'reply') {
+        await ingestPatternFeedback({ eventType: 'EMAIL_REPLIED', patternIds })
+      } else if (body.type === 'bounce') {
+        await ingestPatternFeedback({ eventType: 'EMAIL_BOUNCED', patternIds })
+      }
+    }
 
     return NextResponse.json(event, { status: 201 })
   } catch (error) {

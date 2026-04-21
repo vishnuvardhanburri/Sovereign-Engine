@@ -1,6 +1,6 @@
 import type { Contact, SequenceStep } from '@/lib/db/types'
 import { renderVariables, enforceFiveLineEmail, detectSpamSignals } from '@/lib/personalization'
-import { generateIntroLine as generateDeterministicIntroLine } from '@/lib/ai/generator'
+import { generateIntroLineLearned } from '@/lib/ai/generator'
 import { enrichContactWithFreeData, formatEnrichmentForContext } from '@/lib/integrations/free-enrichment'
 import { analyzeEmailForSpamRisk } from '@/lib/agents/spam-filter-agent'
 
@@ -32,15 +32,21 @@ export async function buildPersonalizedMessage(input: {
   const needsAiIntro = input.step.body.includes('{{AIIntro}}')
   let renderedBody = renderVariables(input.step.body, enrichedContact)
   const renderedSubject = renderVariables(input.step.subject, enrichedContact)
+  const patternIds: string[] = []
 
   if (needsAiIntro) {
-    const intro = generateDeterministicIntroLine({
+    const introOut = await generateIntroLineLearned({
       contact: enrichedContact,
       company: enrichedContact.company,
       role: enrichedContact.title,
       offer: input.offerSummary,
       pain: input.painSummary,
-    }).result.intro as string
+    })
+    const intro = introOut.result.intro as string
+    const pid = introOut.result.pattern_id
+    if (typeof pid === 'string' && pid) {
+      patternIds.push(pid)
+    }
 
     renderedBody = renderVariables(
       input.step.body.replaceAll('{{AIIntro}}', intro),
@@ -64,6 +70,7 @@ export async function buildPersonalizedMessage(input: {
     spamFlags: detectSpamSignals(`${renderedSubject}\n${renderedBody}`),
     spamAnalysis,
     enrichedContact,
+    patternIds,
   }
 }
 
@@ -73,33 +80,34 @@ export async function buildIntroLine(input: {
   offer?: string | null
   pain?: string | null
 }) {
+  const out = await generateIntroLineLearned({
+    contact: {
+      id: 0,
+      client_id: 0,
+      email: 'placeholder@example.com',
+      email_domain: 'example.com',
+      name: null,
+      company: input.company ?? null,
+      company_domain: null,
+      title: input.role ?? null,
+      timezone: null,
+      source: null,
+      custom_fields: {},
+      enrichment: null,
+      verification_status: 'unknown',
+      verification_sub_status: null,
+      status: 'active',
+      unsubscribed_at: null,
+      bounced_at: null,
+      created_at: '',
+      updated_at: '',
+    },
+    company: input.company,
+    role: input.role,
+    offer: input.offer,
+    pain: input.pain,
+  })
   return {
-    intro: generateDeterministicIntroLine({
-      contact: {
-        id: 0,
-        client_id: 0,
-        email: 'placeholder@example.com',
-        email_domain: 'example.com',
-        name: null,
-        company: input.company ?? null,
-        company_domain: null,
-        title: input.role ?? null,
-        timezone: null,
-        source: null,
-        custom_fields: {},
-        enrichment: null,
-        verification_status: 'unknown',
-        verification_sub_status: null,
-        status: 'active',
-        unsubscribed_at: null,
-        bounced_at: null,
-        created_at: '',
-        updated_at: '',
-      },
-      company: input.company,
-      role: input.role,
-      offer: input.offer,
-      pain: input.pain,
-    }).result.intro as string,
+    intro: out.result.intro as string,
   }
 }

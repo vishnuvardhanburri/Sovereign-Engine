@@ -36,6 +36,8 @@ const promoteReadyQueueJobs = backend.promoteReadyQueueJobs as typeof import('..
 
 const closePool = db.closePool as typeof import('../lib/db.ts').closePool
 const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRedis
+const ackProcessingJob = redis.ackProcessingJob as typeof import('../lib/redis.ts').ackProcessingJob
+const reclaimExpiredJobs = redis.reclaimExpiredJobs as typeof import('../lib/redis.ts').reclaimExpiredJobs
 
 const backendAgentPrompt = loadBackendAgentPrompt()
 
@@ -114,6 +116,7 @@ async function monitorInfrastructure() {
 
 async function processOnce() {
   await promoteReadyQueueJobs()
+  await reclaimExpiredJobs(250)
   const queued = await popQueuedJob()
 
   if (!queued) {
@@ -123,11 +126,17 @@ async function processOnce() {
 
   const claimed = await claimQueueJob(queued.id, queued.client_id)
   if (!claimed) {
+    if (queued._raw) {
+      await ackProcessingJob(queued._raw)
+    }
     return
   }
 
   const context = await loadQueueExecutionContext(claimed.client_id, claimed.id)
   if (!context) {
+    if (queued._raw) {
+      await ackProcessingJob(queued._raw)
+    }
     return
   }
 
@@ -154,6 +163,9 @@ async function processOnce() {
 
       // Mark job as completed with result
       await markQueueJobCompleted(context, null, JSON.stringify(result))
+      if (queued._raw) {
+        await ackProcessingJob(queued._raw)
+      }
 
       console.log(`[Worker] Control loop completed: ${result.sent}/${result.target} emails sent`)
 
@@ -161,17 +173,26 @@ async function processOnce() {
       const message = error instanceof Error ? error.message : 'Control loop enforcer failed'
       await markQueueJobFailed(context, message)
       console.error(`[Worker] Control loop error:`, error)
+      if (queued._raw) {
+        await ackProcessingJob(queued._raw)
+      }
     }
     return
   }
 
   if (decision.action === 'skip') {
     await markQueueJobSkipped(context, decision.reason)
+    if (queued._raw) {
+      await ackProcessingJob(queued._raw)
+    }
     return
   }
 
   if (decision.action === 'defer') {
     await deferQueueJob(context, decision.scheduledAt, decision.reason)
+    if (queued._raw) {
+      await ackProcessingJob(queued._raw)
+    }
     return
   }
 
@@ -205,6 +226,7 @@ async function processOnce() {
           campaignId: String(context.campaign.id),
           sequenceId: context.job.sequence_id ? String(context.job.sequence_id) : undefined,
           unsubscribeUrl: decision.message.unsubscribeUrl,
+          pattern_ids: decision.message.pattern_ids ?? [],
         },
       })
 
@@ -215,6 +237,9 @@ async function processOnce() {
         await markQueueJobFailed(context, coordResult.error || 'Coordinator send failed')
         logger.log('error', 'Coordinator send failed', { error: coordResult.error })
         await recordMetric(context.campaign.id, 'send_coordinator_failed', 1)
+        if (queued._raw) {
+          await ackProcessingJob(queued._raw)
+        }
         return
       }
 
@@ -240,10 +265,16 @@ async function processOnce() {
         console.error(
           `[Worker] smtp error queue_job=${context.job.id} to=${context.contact.email}: ${response.error}`
         )
+        if (queued._raw) {
+          await ackProcessingJob(queued._raw)
+        }
         return
       }
 
       await markQueueJobCompleted(context, decision.selection, response.providerMessageId ?? null)
+      if (queued._raw) {
+        await ackProcessingJob(queued._raw)
+      }
       console.log(
         `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} inbox=${coordResult.inboxUsed} domain=${coordResult.domainUsed}`
       )
@@ -252,6 +283,9 @@ async function processOnce() {
         error instanceof Error ? error.message : 'unknown worker send failure'
       await markQueueJobFailed(context, message)
       console.error(`[Worker] failed queue_job=${context.job.id}:`, error)
+      if (queued._raw) {
+        await ackProcessingJob(queued._raw)
+      }
     }
   }
 }

@@ -1852,6 +1852,9 @@ export async function markQueueJobCompleted(
         {
           subject: renderTemplate(context.sequenceStep.subject, context.contact),
           sequence_step: context.sequenceStep.step_index,
+          pattern_ids: Array.isArray((context.job.metadata as any)?.pattern_ids)
+            ? (context.job.metadata as any).pattern_ids
+            : undefined,
         },
       ]
     )
@@ -2040,6 +2043,7 @@ export async function buildSendMessage(context: QueueExecutionContext) {
     text,
     spamFlags: personalized.spamFlags,
     unsubscribeUrl,
+    pattern_ids: personalized.patternIds,
   }
 }
 
@@ -2156,6 +2160,16 @@ export async function handleResendWebhook(payload: Record<string, unknown>, exte
     return { handled: true, skipped: true }
   }
 
+  const sentMeta = await queryOne<{ metadata: Record<string, unknown> }>(
+    `SELECT metadata
+     FROM events
+     WHERE client_id = $1 AND provider_message_id = $2 AND event_type = 'sent'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [linked.client_id, providerMessageId]
+  )
+  const learned = (sentMeta?.metadata ?? {}) as Record<string, unknown>
+
   await createEvent(linked.client_id, {
     eventType: normalizedType,
     campaignId: linked.campaign_id,
@@ -2167,6 +2181,7 @@ export async function handleResendWebhook(payload: Record<string, unknown>, exte
     metadata: {
       provider: 'resend',
       webhook_type: type,
+      pattern_ids: Array.isArray(learned.pattern_ids) ? learned.pattern_ids : undefined,
       ...(data as Record<string, unknown>),
     },
   })

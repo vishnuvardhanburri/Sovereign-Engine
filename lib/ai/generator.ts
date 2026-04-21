@@ -1,4 +1,5 @@
 import type { Contact, SequenceStep } from '@/lib/db/types'
+import { selectPattern } from '@/lib/learning/selector'
 
 export interface DeterministicGenerationResult {
   task: string
@@ -46,6 +47,21 @@ export function generateSubjectLine(input: {
   }
 }
 
+export async function generateSubjectLineLearned(input: {
+  contact: Contact
+  angle?: 'pattern' | 'pain' | 'authority'
+}): Promise<DeterministicGenerationResult> {
+  const chosen = await selectPattern({ type: 'subject', avoidUsedWithinMinutes: 30 })
+  if (!chosen) {
+    return generateSubjectLine(input)
+  }
+  return {
+    task: 'subject_generation',
+    result: { subject: render(chosen.content, input.contact), pattern_id: chosen.id },
+    source: chosen.status === 'testing' ? 'rule' : 'template',
+  }
+}
+
 export function generateIntroLine(input: {
   contact: Contact
   company?: string | null
@@ -63,6 +79,24 @@ export function generateIntroLine(input: {
     task: 'personalization_line',
     result: { intro: render(selected, input.contact) },
     source: 'template',
+  }
+}
+
+export async function generateIntroLineLearned(input: {
+  contact: Contact
+  company?: string | null
+  role?: string | null
+  offer?: string | null
+  pain?: string | null
+}): Promise<DeterministicGenerationResult> {
+  const chosen = await selectPattern({ type: 'intro', avoidUsedWithinMinutes: 30 })
+  if (!chosen) {
+    return generateIntroLine(input)
+  }
+  return {
+    task: 'personalization_line',
+    result: { intro: render(chosen.content, input.contact), pattern_id: chosen.id },
+    source: chosen.status === 'testing' ? 'rule' : 'template',
   }
 }
 
@@ -89,6 +123,40 @@ export function generateEmailFromTemplate(input: {
     result: {
       subject: render(input.step.subject, input.contact),
       text,
+    },
+    source: 'template',
+  }
+}
+
+export async function generateEmailFromTemplateLearned(input: {
+  contact: Contact
+  step: Pick<SequenceStep, 'subject' | 'body'>
+}): Promise<DeterministicGenerationResult> {
+  const [subject, intro] = await Promise.all([
+    generateSubjectLineLearned({ contact: input.contact, angle: 'pattern' }),
+    generateIntroLineLearned({ contact: input.contact, company: input.contact.company }),
+  ])
+
+  const greeting = pickDeterministic(GREETINGS, input.contact.email)
+  const introLine = String(intro.result.intro ?? 'reaching out with a quick idea')
+  const text = [
+    `${greeting} ${input.contact.name?.split(' ')[0] ?? 'there'},`,
+    introLine,
+    input.step.body
+      .replaceAll('{{name}}', input.contact.name?.split(' ')[0] ?? 'there')
+      .replaceAll('{{company}}', input.contact.company || 'your team'),
+  ]
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 5)
+    .join('\n')
+
+  return {
+    task: 'email_generation',
+    result: {
+      subject: String(subject.result.subject ?? render(input.step.subject, input.contact)),
+      text,
+      pattern_ids: [subject.result.pattern_id, intro.result.pattern_id].filter(Boolean),
     },
     source: 'template',
   }

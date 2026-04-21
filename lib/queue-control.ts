@@ -1,5 +1,5 @@
 import { query } from '@/lib/db'
-import { closeRedis, getQueueLength, removeQueueJobsForContact } from '@/lib/redis'
+import { closeRedis, getQueueLength, removeQueueJobsForContact, reclaimExpiredJobs } from '@/lib/redis'
 import { emitEvent } from '@/lib/events'
 
 const BLOCKLIST_KEY_PREFIX = 'contact:blocked:'
@@ -53,6 +53,8 @@ export async function cancelContactQueue(contactEmail: string): Promise<void> {
 }
 
 export async function restartQueueIfStuck(): Promise<void> {
+  // Always reclaim expired in-flight jobs first.
+  await reclaimExpiredJobs(500)
   const length = await getQueueLength()
   if (length > 0) {
     return

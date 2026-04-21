@@ -278,13 +278,15 @@ export function getFallbackMessage(contact: FallbackContact, sequenceStep: Fallb
   text: string
   unsubscribeUrl: string
   spamFlags: string[]
+  pattern_ids: string[]
 } {
   return {
     subject: sequenceStep.subject.replace('{name}', contact.name || 'there'),
     html: sequenceStep.body.replace('{name}', contact.name || 'there'),
     text: sequenceStep.body.replace('{name}', contact.name || 'there'),
     unsubscribeUrl: 'https://example.com/unsubscribe', // Would be generated
-    spamFlags: []
+    spamFlags: [],
+    pattern_ids: [],
   }
 }
 
