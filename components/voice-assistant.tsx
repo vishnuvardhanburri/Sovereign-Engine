@@ -17,10 +17,61 @@ export function VoiceAssistant({ onCommand, onResponse, context }: VoiceAssistan
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const [isSupported, setIsSupported] = useState(false)
+  const [isSupported] = useState(() => {
+    if (typeof window === 'undefined') return false
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition) && Boolean(window.speechSynthesis)
+  })
   
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
+
+  function speakResponse(text: string) {
+    if (!synthRef.current) return
+
+    setIsSpeaking(true)
+    
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 0.9
+    utterance.pitch = 1
+    utterance.volume = 0.8
+
+    utterance.onend = () => {
+      setIsSpeaking(false)
+    }
+
+    utterance.onerror = () => {
+      setIsSpeaking(false)
+    }
+
+    synthRef.current.speak(utterance)
+  }
+
+  async function handleVoiceCommand(command: string) {
+    setTranscript('')
+    onCommand(command)
+
+    try {
+      const coaching = await provideAICoaching(
+        command,
+        context || {},
+        []
+      )
+
+      speakResponse(coaching.coaching)
+      onResponse(coaching.coaching)
+
+      if (coaching.nextBestActions.length > 0) {
+        const actionResponse = `I suggest you ${coaching.nextBestActions[0].toLowerCase()}`
+        setTimeout(() => speakResponse(actionResponse), 2000)
+      }
+    } catch (error) {
+      console.error('Voice command processing error:', error)
+      const errorMessage = 'Sorry, I had trouble processing that command.'
+      speakResponse(errorMessage)
+      onResponse(errorMessage)
+    }
+  }
 
   useEffect(() => {
     // Check for browser support
@@ -28,8 +79,6 @@ export function VoiceAssistant({ onCommand, onResponse, context }: VoiceAssistan
     const SpeechSynthesis = window.speechSynthesis
 
     if (SpeechRecognition && SpeechSynthesis) {
-      setIsSupported(true)
-      
       // Initialize speech recognition
       recognitionRef.current = new SpeechRecognition()
       recognitionRef.current.continuous = false
@@ -72,56 +121,6 @@ export function VoiceAssistant({ onCommand, onResponse, context }: VoiceAssistan
       }
     }
   }, [])
-
-  const handleVoiceCommand = async (command: string) => {
-    setTranscript('')
-    onCommand(command)
-
-    try {
-      // Get AI coaching for the voice command
-      const coaching = await provideAICoaching(
-        command,
-        context || {},
-        [] // Could pass user history here
-      )
-
-      // Speak the response
-      speakResponse(coaching.coaching)
-      onResponse(coaching.coaching)
-
-      // Execute suggested actions
-      if (coaching.nextBestActions.length > 0) {
-        const actionResponse = `I suggest you ${coaching.nextBestActions[0].toLowerCase()}`
-        setTimeout(() => speakResponse(actionResponse), 2000)
-      }
-    } catch (error) {
-      console.error('Voice command processing error:', error)
-      const errorMessage = 'Sorry, I had trouble processing that command.'
-      speakResponse(errorMessage)
-      onResponse(errorMessage)
-    }
-  }
-
-  const speakResponse = (text: string) => {
-    if (!synthRef.current) return
-
-    setIsSpeaking(true)
-    
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 0.9
-    utterance.pitch = 1
-    utterance.volume = 0.8
-
-    utterance.onend = () => {
-      setIsSpeaking(false)
-    }
-
-    utterance.onerror = () => {
-      setIsSpeaking(false)
-    }
-
-    synthRef.current.speak(utterance)
-  }
 
   const startListening = () => {
     if (recognitionRef.current && !isListening) {

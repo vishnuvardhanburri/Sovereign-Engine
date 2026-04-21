@@ -35,12 +35,6 @@ export function NextLevelDashboard() {
   const [voiceCommands, setVoiceCommands] = useState<string[]>([])
   const [predictions, setPredictions] = useState<any[]>([])
 
-  useEffect(() => {
-    loadDashboardData()
-    const interval = setInterval(loadDashboardData, 30000) // Refresh every 30 seconds
-    return () => clearInterval(interval)
-  }, [])
-
   const loadDashboardData = async () => {
     try {
       const optimizationStats = await getOptimizationStats()
@@ -49,6 +43,12 @@ export function NextLevelDashboard() {
       console.error('Failed to load dashboard data:', error)
     }
   }
+
+  useEffect(() => {
+    loadDashboardData()
+    const interval = setInterval(loadDashboardData, 30000) // Refresh every 30 seconds
+    return () => clearInterval(interval)
+  }, [])
 
   const handleStartOptimization = async () => {
     try {

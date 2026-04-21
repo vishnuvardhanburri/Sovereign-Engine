@@ -2,6 +2,7 @@
 
 import { useDashboardStats, useChartData, useActivityFeed } from '@/lib/hooks'
 import Link from 'next/link'
+import type React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -15,22 +16,15 @@ import {
 } from 'recharts'
 import { Mail, MessageSquare, TrendingUp, AlertCircle, Activity, ArrowRight } from 'lucide-react'
 
-export default function DashboardPage() {
-  const { data: stats, isLoading: statsLoading } = useDashboardStats()
-  const { data: chartData, isLoading: chartLoading } = useChartData()
-  const { data: activities, isLoading: activitiesLoading } = useActivityFeed()
+type StatCardProps = {
+  title: string
+  value: number | string
+  icon: React.ComponentType<{ className: string }>
+  loading: boolean
+}
 
-  const StatCard = ({
-    title,
-    value,
-    icon: Icon,
-    loading,
-  }: {
-    title: string
-    value: number | string
-    icon: React.ComponentType<{ className: string }>
-    loading: boolean
-  }) => (
+function StatCard({ title, value, icon: Icon, loading }: StatCardProps) {
+  return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
@@ -45,6 +39,18 @@ export default function DashboardPage() {
       </CardContent>
     </Card>
   )
+}
+
+type ActivityItem = {
+  id: string | number
+  timestamp: string | Date
+  description: string
+}
+
+export default function DashboardPage() {
+  const { data: stats, isLoading: statsLoading } = useDashboardStats()
+  const { data: chartData, isLoading: chartLoading } = useChartData()
+  const { data: activities, isLoading: activitiesLoading } = useActivityFeed()
 
   return (
     <div className="space-y-6">
@@ -169,10 +175,10 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-3 text-sm">
-                {activities?.slice(0, 5).map((activity: any) => (
+                {(activities as ActivityItem[] | undefined)?.slice(0, 5).map((activity) => (
                   <div key={activity.id} className="border-l-2 border-primary pl-3 py-1">
                     <p className="font-medium text-xs text-muted-foreground">
-                      {activity.timestamp.toLocaleTimeString()}
+                      {new Date(activity.timestamp).toLocaleTimeString()}
                     </p>
                     <p className="text-sm">{activity.description}</p>
                   </div>

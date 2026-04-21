@@ -26,7 +26,7 @@ interface XaviraAIResponse {
   response: string
   actions: Array<{
     type: string
-    data: Record<string, any>
+    data: Record<string, unknown>
     priority: 'high' | 'medium' | 'low'
     description: string
   }>
@@ -41,33 +41,33 @@ interface XaviraAIResponse {
 }
 
 export function XaviraAIChat() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const welcomeMessage: Message = {
+      id: 'welcome',
+      role: 'assistant',
+      content:
+        "Hi. I can help you manage outbound campaigns:\n\n" +
+        "- Create and manage campaigns\n" +
+        "- Segment and review contacts\n" +
+        "- Draft template-based messages\n" +
+        "- Check spam and compliance\n" +
+        "- Review performance metrics\n\n" +
+        "What do you want to do?",
+      timestamp: new Date(),
+      suggestedCommands: [
+        'Create a new campaign for tech startups',
+        'Analyze my contact list',
+        'Generate email content for SaaS products',
+        'Check content for spam',
+        'Show campaign performance',
+      ],
+    }
+    return [welcomeMessage]
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-
-  // Initialize with welcome message
-  useEffect(() => {
-    if (!isInitialized) {
-      const welcomeMessage: Message = {
-        id: 'welcome',
-        role: 'assistant',
-        content: "👋 Hi! I'm Xavira AI, your intelligent assistant for cold email campaign management. I can help you with:\n\n• Creating and managing campaigns\n• Analyzing contacts and segmentation\n• Generating compelling email content\n• Spam detection and compliance\n• Web scraping for contact data\n• Performance analytics and insights\n\nWhat would you like to work on today?",
-        timestamp: new Date(),
-        suggestedCommands: [
-          "Create a new campaign for tech startups",
-          "Analyze my contact list",
-          "Generate email content for SaaS products",
-          "Check content for spam",
-          "Scrape contacts from a website"
-        ]
-      }
-      setMessages([welcomeMessage])
-      setIsInitialized(true)
-    }
-  }, [isInitialized])
 
   // Auto-scroll to bottom
   useEffect(() => {
