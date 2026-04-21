@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { hashPassword } from '@/lib/auth/password'
 import { assignUserToClient, upsertUser } from '@/lib/authz'
 import { appEnv } from '@/lib/env'
