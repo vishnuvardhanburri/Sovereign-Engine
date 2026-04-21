@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { api, api_getStats, api_getChartData } from '@/lib/api'
+import { api } from '@/lib/api'
 import { toast } from 'sonner'
 
 // Campaigns
@@ -207,7 +207,7 @@ export const useActivityFeed = () => {
 export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
-    queryFn: () => api_getStats(),
+    queryFn: () => api.dashboard.getStats(),
     placeholderData: keepPreviousData,
   })
 }
@@ -216,7 +216,71 @@ export const useDashboardStats = () => {
 export const useChartData = () => {
   return useQuery({
     queryKey: ['chart-data'],
-    queryFn: () => api_getChartData(),
+    queryFn: () => api.dashboard.getChartData(),
     placeholderData: keepPreviousData,
+  })
+}
+
+export const useQueueStats = () => {
+  return useQuery({
+    queryKey: ['queue-stats'],
+    queryFn: () => api.queue.getStats(),
+    refetchInterval: 8000,
+    staleTime: 2000,
+  })
+}
+
+export const useInfrastructureHealth = () => {
+  return useQuery({
+    queryKey: ['infra-health'],
+    queryFn: () => api.infrastructure.getHealth(),
+    refetchInterval: 8000,
+    staleTime: 2000,
+  })
+}
+
+export const useInfrastructureAnalytics = () => {
+  return useQuery({
+    queryKey: ['infra-analytics'],
+    queryFn: () => api.infrastructure.getAnalytics(),
+    refetchInterval: 12000,
+    staleTime: 4000,
+  })
+}
+
+export const usePatterns = () => {
+  return useQuery({
+    queryKey: ['patterns'],
+    queryFn: () => api.patterns.getAll(),
+    refetchInterval: 30000,
+    staleTime: 10000,
+  })
+}
+
+export const useRecentEvents = (limit = 50) => {
+  return useQuery({
+    queryKey: ['events', limit],
+    queryFn: () => api.events.getRecent(limit),
+    refetchInterval: 6000,
+    staleTime: 1500,
+  })
+}
+
+export const useInfrastructureControl = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ action, payload }: { action: Parameters<typeof api.infrastructure.control>[0]; payload?: Record<string, unknown> }) =>
+      api.infrastructure.control(action, payload ?? {}),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['infra-health'] }),
+        queryClient.invalidateQueries({ queryKey: ['infra-analytics'] }),
+        queryClient.invalidateQueries({ queryKey: ['queue-stats'] }),
+      ])
+      if (result.success) toast.success('Action applied')
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : 'Control action failed')
+    },
   })
 }

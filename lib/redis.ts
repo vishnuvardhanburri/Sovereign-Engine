@@ -176,6 +176,22 @@ export async function getQueueLength(): Promise<number> {
   return ready + scheduled + processing
 }
 
+export async function getQueueBreakdown(): Promise<{ ready: number; scheduled: number; processing: number; total: number }> {
+  const client = await getRedisClient()
+  const [ready, scheduled, processing] = await Promise.all([
+    client.lLen(READY_QUEUE_KEY),
+    client.zCard(SCHEDULED_QUEUE_KEY),
+    client.lLen(PROCESSING_QUEUE_KEY),
+  ])
+
+  return {
+    ready,
+    scheduled,
+    processing,
+    total: ready + scheduled + processing,
+  }
+}
+
 export async function peekQueue(limit = 10): Promise<RedisQueueJobPayload[]> {
   const client = await getRedisClient()
   const ready = await client.lRange(READY_QUEUE_KEY, 0, Math.max(limit - 1, 0))

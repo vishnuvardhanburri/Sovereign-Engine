@@ -4,7 +4,7 @@ import {
   listQueueJobs,
   promoteReadyQueueJobs,
 } from '@/lib/backend'
-import { peekQueue } from '@/lib/redis'
+import { getQueueBreakdown, peekQueue } from '@/lib/redis'
 import { resolveClientId } from '@/lib/client-context'
 
 type QueueStatusFilter = 'pending' | 'processing' | 'retry' | 'completed' | 'failed' | 'skipped'
@@ -25,6 +25,14 @@ export async function GET(request: NextRequest) {
     if (action === 'peek') {
       const jobs = await peekQueue(Number(searchParams.get('count') ?? 10))
       return NextResponse.json({ jobs, count: jobs.length })
+    }
+
+    if (action === 'stats') {
+      const breakdown = await getQueueBreakdown()
+      return NextResponse.json({
+        ...breakdown,
+        timestamp: new Date().toISOString(),
+      })
     }
 
     if (action === 'promote') {

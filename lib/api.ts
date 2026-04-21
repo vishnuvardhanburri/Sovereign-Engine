@@ -69,6 +69,125 @@ export interface AnalyticsData {
   sentCount: number
 }
 
+export interface QueueStats {
+  ready: number
+  scheduled: number
+  processing: number
+  total: number
+  timestamp: string
+}
+
+export interface InfrastructureHealth {
+  timestamp: string
+  status: 'paused' | 'running'
+  system: {
+    healthy: boolean
+    issues: unknown[]
+    capacityUtilization: number
+    targetCapacity: number
+    currentCapacity: number
+  }
+  metrics: {
+    domains: number
+    healthyDomains: number
+    inboxes: number
+    capacityUtilization: number
+    emailsSent24h: number
+    avgDeliveryTime: number
+    uptime: number
+  }
+  topDomains: Array<{
+    domain: string
+    health: string
+    sent24h: number
+    bounceRate: number
+    spamRate: number
+  }>
+  alerts: {
+    summary?: unknown
+    critical: unknown[]
+    recent: unknown[]
+  }
+}
+
+export interface InfrastructureAnalytics {
+  timestamp: string
+  metrics: {
+    domains: number
+    healthyDomains: number
+    inboxes: number
+    capacity: { total: number; used: number; utilization: number }
+    emails: { sent24h: number; avgDeliveryTime: number }
+    health: { uptime: number; avgBounceRate: number; avgSpamRate: number }
+  }
+  domains: Array<{
+    id: number
+    domain: string
+    health: string
+    paused: boolean
+    inboxes: number
+    sent24h: number
+    bounceRate: number
+    spamRate: number
+    avgDeliveryTime: number
+  }>
+  recommendations: Array<{
+    id: string
+    category: string
+    priority: string
+    title: string
+    description: string
+    action: string
+    estimatedImpact: string
+    confidence: number
+  }>
+}
+
+export type ControlAction = 'pause' | 'resume' | 'optimize' | 'heal' | 'scale'
+export interface ControlResult {
+  success: boolean
+  status?: string
+  action?: ControlAction
+  timestamp?: string
+  error?: string
+}
+
+export interface PatternRecord {
+  id: string
+  type: 'subject' | 'intro' | 'body'
+  content: string
+  usage_count: number
+  open_rate: number
+  reply_rate: number
+  bounce_rate: number
+  score: number
+  status: 'active' | 'testing' | 'disabled'
+  last_used_at: string | null
+}
+
+export interface EventRow {
+  id: string
+  event_type: string
+  created_at: string
+  campaign_id: string | null
+  contact_id: string | null
+  identity_id: string | null
+  domain_id: string | null
+  queue_job_id: string | null
+  provider_message_id: string | null
+  metadata: Record<string, unknown> | null
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
 const campaignSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   name: z.string(),
@@ -117,6 +236,127 @@ const replySchema = z.object({
   campaign_id: z.union([z.string(), z.number()]).nullable().optional(),
   contact_id: z.union([z.string(), z.number()]).nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
+const queueStatsSchema = z.object({
+  ready: z.coerce.number().nonnegative(),
+  scheduled: z.coerce.number().nonnegative(),
+  processing: z.coerce.number().nonnegative(),
+  total: z.coerce.number().nonnegative(),
+  timestamp: z.string(),
+})
+
+const infrastructureHealthSchema = z.object({
+  timestamp: z.string(),
+  status: z.enum(['paused', 'running']),
+  system: z.object({
+    healthy: z.boolean(),
+    issues: z.array(z.unknown()),
+    capacityUtilization: z.coerce.number(),
+    targetCapacity: z.coerce.number(),
+    currentCapacity: z.coerce.number(),
+  }),
+  metrics: z.object({
+    domains: z.coerce.number(),
+    healthyDomains: z.coerce.number(),
+    inboxes: z.coerce.number(),
+    capacityUtilization: z.coerce.number(),
+    emailsSent24h: z.coerce.number(),
+    avgDeliveryTime: z.coerce.number(),
+    uptime: z.coerce.number(),
+  }),
+  topDomains: z.array(z.object({
+    domain: z.string(),
+    health: z.string(),
+    sent24h: z.coerce.number(),
+    bounceRate: z.coerce.number(),
+    spamRate: z.coerce.number(),
+  })),
+  alerts: z.object({
+    summary: z.unknown().optional(),
+    critical: z.array(z.unknown()),
+    recent: z.array(z.unknown()),
+  }),
+})
+
+const infrastructureAnalyticsSchema = z.object({
+  timestamp: z.string(),
+  metrics: z.object({
+    domains: z.coerce.number(),
+    healthyDomains: z.coerce.number(),
+    inboxes: z.coerce.number(),
+    capacity: z.object({
+      total: z.coerce.number(),
+      used: z.coerce.number(),
+      utilization: z.coerce.number(),
+    }),
+    emails: z.object({
+      sent24h: z.coerce.number(),
+      avgDeliveryTime: z.coerce.number(),
+    }),
+    health: z.object({
+      uptime: z.coerce.number(),
+      avgBounceRate: z.coerce.number(),
+      avgSpamRate: z.coerce.number(),
+    }),
+  }),
+  domains: z.array(z.object({
+    id: z.coerce.number(),
+    domain: z.string(),
+    health: z.string(),
+    paused: z.boolean(),
+    inboxes: z.coerce.number(),
+    sent24h: z.coerce.number(),
+    bounceRate: z.coerce.number(),
+    spamRate: z.coerce.number(),
+    avgDeliveryTime: z.coerce.number(),
+  })),
+  recommendations: z.array(z.object({
+    id: z.string(),
+    category: z.string(),
+    priority: z.string(),
+    title: z.string(),
+    description: z.string(),
+    action: z.string(),
+    estimatedImpact: z.string(),
+    confidence: z.coerce.number(),
+  })).default([]),
+})
+
+const patternRecordSchema = z.object({
+  id: z.string(),
+  type: z.enum(['subject', 'intro', 'body']),
+  content: z.string(),
+  usage_count: z.coerce.number().nonnegative(),
+  open_rate: z.coerce.number(),
+  reply_rate: z.coerce.number(),
+  bounce_rate: z.coerce.number(),
+  score: z.coerce.number(),
+  status: z.enum(['active', 'testing', 'disabled']),
+  last_used_at: z.string().nullable(),
+})
+
+const eventRowSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  event_type: z.string(),
+  created_at: z.string(),
+  campaign_id: z.union([z.string(), z.number()]).nullable().optional().transform((v) => (v == null ? null : String(v))),
+  contact_id: z.union([z.string(), z.number()]).nullable().optional().transform((v) => (v == null ? null : String(v))),
+  identity_id: z.union([z.string(), z.number()]).nullable().optional().transform((v) => (v == null ? null : String(v))),
+  domain_id: z.union([z.string(), z.number()]).nullable().optional().transform((v) => (v == null ? null : String(v))),
+  queue_job_id: z.union([z.string(), z.number()]).nullable().optional().transform((v) => (v == null ? null : String(v))),
+  provider_message_id: z.string().nullable().optional().transform((v) => v ?? null),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional().transform((v) => v ?? null),
+})
+
+const paginatedEventsSchema = z.object({
+  data: z.array(eventRowSchema),
+  pagination: z.object({
+    page: z.coerce.number(),
+    limit: z.coerce.number(),
+    total: z.coerce.number(),
+    totalPages: z.coerce.number(),
+  }),
 })
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -389,6 +629,41 @@ export const api = {
   domains: {
     async getAll(): Promise<unknown[]> {
       return fetchJson<unknown[]>('/api/domains')
+    },
+  },
+  queue: {
+    async getStats(): Promise<QueueStats> {
+      const row = await fetchJson<unknown>('/api/queue?action=stats')
+      return queueStatsSchema.parse(row)
+    },
+  },
+  infrastructure: {
+    async getHealth(): Promise<InfrastructureHealth> {
+      const row = await fetchJson<unknown>('/api/infrastructure/health')
+      return infrastructureHealthSchema.parse(row)
+    },
+    async getAnalytics(): Promise<InfrastructureAnalytics> {
+      const row = await fetchJson<unknown>('/api/infrastructure/analytics')
+      return infrastructureAnalyticsSchema.parse(row)
+    },
+    async control(action: ControlAction, payload: Record<string, unknown> = {}): Promise<ControlResult> {
+      return fetchJson<ControlResult>('/api/infrastructure/control', {
+        method: 'POST',
+        body: JSON.stringify({ action, ...payload }),
+      })
+    },
+  },
+  patterns: {
+    async getAll(): Promise<PatternRecord[]> {
+      const res = await fetchJson<{ data?: unknown[] }>('/api/patterns')
+      const rows = Array.isArray(res.data) ? res.data : []
+      return rows.map((row) => patternRecordSchema.parse(row))
+    },
+  },
+  events: {
+    async getRecent(limit = 50): Promise<PaginatedResponse<EventRow>> {
+      const res = await fetchJson<unknown>(`/api/events?limit=${limit}&page=1`)
+      return paginatedEventsSchema.parse(res)
     },
   },
 }
