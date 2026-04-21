@@ -57,6 +57,7 @@ export const appEnv = {
   workerPollIntervalMs: () => optionalInt('WORKER_POLL_INTERVAL_MS', 1500),
   workerIdleSleepMs: () => optionalInt('WORKER_IDLE_SLEEP_MS', 2000),
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
+  infrastructureTargetDailyVolume: () => optionalInt('INFRASTRUCTURE_TARGET_DAILY_VOLUME', 50000),
   cronSecret: () => required('CRON_SECRET'),
   authSecret: () => process.env.AUTH_SECRET || process.env.CRON_SECRET || 'xavira-orbit-auth',
   // AI Integration

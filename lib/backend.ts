@@ -397,7 +397,38 @@ export function parseContactsCsv(csv: string): ContactInput[] {
     return []
   }
 
-  const headers = parseCsvRow(lines[0]).map((header) => header.trim().toLowerCase())
+  const rawHeaders = parseCsvRow(lines[0])
+  const headers = rawHeaders.map((header) =>
+    header
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '')
+  )
+
+  const headerIndex = new Map<string, number>()
+  headers.forEach((header, index) => headerIndex.set(header, index))
+
+  const pick = (record: Record<string, string>, keys: readonly string[]): string => {
+    for (const key of keys) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+    }
+    return ''
+  }
+
+  const KEY = {
+    email: ['email', 'email_address', 'emailaddress', 'work_email', 'workemail', 'e_mail'],
+    firstName: ['first_name', 'firstname', 'first'],
+    lastName: ['last_name', 'lastname', 'last'],
+    name: ['name', 'full_name', 'fullname'],
+    company: ['company', 'company_name', 'organization', 'organisation', 'account', 'employer'],
+    title: ['title', 'job_title', 'jobtitle', 'role', 'position'],
+    timezone: ['timezone', 'tz', 'time_zone', 'timez'],
+    linkedin: ['linkedin', 'linkedin_url', 'linkedinurl', 'profile', 'profile_url'],
+    source: ['source'],
+    companyDomain: ['company_domain', 'companydomain', 'domain', 'website', 'company_website'],
+  } as const
 
   return lines.slice(1).map((line) => {
     const values = parseCsvRow(line)
@@ -407,20 +438,43 @@ export function parseContactsCsv(csv: string): ContactInput[] {
       record[header] = values[index] ?? ''
     })
 
-    const reserved = new Set(['email', 'name', 'company', 'title', 'timezone', 'source', 'company_domain'])
+    const email = pick(record, KEY.email)
+    const name =
+      pick(record, KEY.name) ||
+      [pick(record, KEY.firstName), pick(record, KEY.lastName)].filter(Boolean).join(' ') ||
+      undefined
+    const company = pick(record, KEY.company) || undefined
+    const title = pick(record, KEY.title) || undefined
+    const timezone = pick(record, KEY.timezone) || undefined
+    const source = pick(record, KEY.source) || 'csv'
+    const companyDomain = pick(record, KEY.companyDomain) || undefined
+    const linkedin = pick(record, KEY.linkedin) || undefined
+
+    const reserved = new Set<string>([
+      ...KEY.email,
+      ...KEY.firstName,
+      ...KEY.lastName,
+      ...KEY.name,
+      ...KEY.company,
+      ...KEY.title,
+      ...KEY.timezone,
+      ...KEY.linkedin,
+      ...KEY.source,
+      ...KEY.companyDomain,
+    ])
     const customFields = Object.fromEntries(
       Object.entries(record).filter(([key, value]) => !reserved.has(key) && value)
     )
 
     return {
-      email: record.email || '',
-      name: record.name || undefined,
-      company: record.company || undefined,
-      title: record.title || undefined,
-      timezone: record.timezone || undefined,
-      source: record.source || 'csv',
-      companyDomain: record.company_domain || undefined,
-      customFields,
+      email,
+      name,
+      company,
+      title,
+      timezone,
+      source,
+      companyDomain,
+      customFields: linkedin ? { ...customFields, linkedin } : customFields,
     } satisfies ContactInput
   })
 }

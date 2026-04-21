@@ -86,7 +86,7 @@ class InfrastructureCoordinator {
 
       // Calculate capacity (50 emails per inbox per day)
       const currentCapacity = totalInboxes * 50
-      const targetCapacity = parseInt(env.INFRASTRUCTURE_TARGET_DAILY_VOLUME || '50000', 10)
+      const targetCapacity = appEnv.infrastructureTargetDailyVolume()
 
       // Get recent events for health check
       const recentEvents = await query<any>(`
@@ -542,10 +542,23 @@ class InfrastructureCoordinator {
 
   private async logEvent(emailId: string, type: string, domain?: string, inbox?: string, error?: string): Promise<void> {
     try {
-      await query(`
-        INSERT INTO events (email_id, type, domain, inbox, error, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-      `, [emailId, type, domain, inbox, error])
+      // Persist a minimal, schema-compatible event. Extra fields are kept in metadata.
+      await query(
+        `
+        INSERT INTO events (client_id, event_type, provider_message_id, metadata, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        `,
+        [
+          appEnv.defaultClientId(),
+          type,
+          emailId,
+          {
+            domain,
+            inbox,
+            error,
+          },
+        ]
+      )
     } catch (error) {
       console.error('[Coordinator] Event logging error:', error)
     }
@@ -553,10 +566,19 @@ class InfrastructureCoordinator {
 
   private async logInfrastructureEvent(type: string, details?: string): Promise<void> {
     try {
-      await query(`
-        INSERT INTO infrastructure_events (event_type, details, created_at)
-        VALUES ($1, $2, NOW())
-      `, [type, details])
+      // Use operator_actions as the durable infra event log.
+      await query(
+        `
+        INSERT INTO operator_actions (client_id, action_type, summary, payload, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        `,
+        [
+          appEnv.defaultClientId(),
+          'infra_event',
+          type,
+          details ? { details } : null,
+        ]
+      )
     } catch (error) {
       console.error('[Coordinator] Infrastructure event logging error:', error)
     }

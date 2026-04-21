@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useBulkCreateContacts } from '@/lib/hooks'
+import { useImportContactsCsv } from '@/lib/hooks'
 import {
   Dialog,
   DialogContent,
@@ -24,8 +24,9 @@ interface ParsedContact {
 export function UploadContactsModal() {
   const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState<ParsedContact[]>([])
+  const [rawCsv, setRawCsv] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { mutate: bulkCreate, isPending } = useBulkCreateContacts()
+  const { mutate: importCsv, isPending } = useImportContactsCsv()
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -34,15 +35,20 @@ export function UploadContactsModal() {
     const reader = new FileReader()
     reader.onload = (event) => {
       const content = event.target?.result as string
+      setRawCsv(content)
       const lines = content.split('\n').filter((l) => l.trim())
 
       const contacts: ParsedContact[] = []
       const seen = new Set<string>()
 
       lines.slice(1).forEach((line) => {
-        const [email, name, company] = line.split(',').map((s) => s.trim())
-        if (email && !seen.has(email)) {
-          seen.add(email)
+        const parts = line.split(',').map((s) => s.trim())
+        const email = parts.find((p) => p.includes('@')) || ''
+        const name = parts[1] || ''
+        const company = parts[2] || ''
+        const key = email.toLowerCase()
+        if (email && !seen.has(key)) {
+          seen.add(key)
           contacts.push({
             email,
             name: name || '',
@@ -57,11 +63,12 @@ export function UploadContactsModal() {
   }
 
   const handleUpload = () => {
-    if (preview.length === 0) return
+    if (!rawCsv.trim()) return
 
-    bulkCreate(preview, {
+    importCsv({ csv: rawCsv }, {
       onSuccess: () => {
         setPreview([])
+        setRawCsv('')
         setOpen(false)
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
@@ -82,7 +89,7 @@ export function UploadContactsModal() {
         <DialogHeader>
           <DialogTitle>Upload Contacts</DialogTitle>
           <DialogDescription>
-            Upload a CSV file with columns: email, name, company
+            Upload a CSV file. We will automatically detect columns like email, name, company, title, and timezone.
           </DialogDescription>
         </DialogHeader>
 
@@ -149,11 +156,11 @@ export function UploadContactsModal() {
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={isPending || preview.length === 0}
+              disabled={isPending || !rawCsv.trim()}
               className="gap-2"
             >
               {isPending && <Spinner className="w-4 h-4" />}
-              Upload {preview.length} Contacts
+              Import Prospects
             </Button>
           </div>
         </div>

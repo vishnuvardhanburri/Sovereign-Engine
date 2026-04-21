@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useContacts, useDeleteContact } from '@/lib/hooks'
 import { Contact } from '@/lib/api'
 import { UploadContactsModal } from '@/components/upload-contacts-modal'
+import { AddContactModal } from '@/components/add-contact-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -61,7 +62,10 @@ export default function ContactsPage() {
           <h1 className="text-3xl font-bold">Prospects</h1>
           <p className="text-muted-foreground">Import and manage your prospect database</p>
         </div>
-        <UploadContactsModal />
+        <div className="flex gap-2">
+          <AddContactModal />
+          <UploadContactsModal />
+        </div>
       </div>
 
       {/* Filters */}

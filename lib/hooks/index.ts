@@ -90,6 +90,21 @@ export const useBulkCreateContacts = () => {
   })
 }
 
+export const useImportContactsCsv = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { csv: string; dedupeByDomain?: boolean; verify?: boolean; enrich?: boolean }) =>
+      api.contacts.importCsv(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      toast.success(`${result.imported} prospects imported`)
+    },
+    onError: () => {
+      toast.error('Failed to import prospects')
+    },
+  })
+}
+
 export const useDeleteContact = () => {
   const queryClient = useQueryClient()
   return useMutation({

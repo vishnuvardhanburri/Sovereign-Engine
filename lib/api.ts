@@ -631,6 +631,16 @@ export const api = {
       })
       return rows.map(toContact)
     },
+    async importCsv(input: { csv: string; verify?: boolean; enrich?: boolean; dedupeByDomain?: boolean }): Promise<{ imported: number; contacts: Contact[] }> {
+      const result = await fetchJson<{ imported: number; contacts: unknown[] }>('/api/contacts/import', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+      return {
+        imported: result.imported,
+        contacts: (result.contacts ?? []).map(toContact),
+      }
+    },
     async delete(id: string): Promise<{ success: boolean }> {
       return fetchJson<{ success: boolean }>(`/api/contacts/${id}`, {
         method: 'DELETE',

@@ -386,5 +386,8 @@ export async function exportAlerts(filename: string = 'alerts-export.json'): Pro
 // Auto-start monitoring when imported
 if (typeof window === 'undefined') {
   // Server-side only
-  startMonitoring().catch(console.error)
+  // Avoid side effects during Next.js build workers.
+  if (process.env.NEXT_PHASE !== 'phase-production-build') {
+    startMonitoring().catch(console.error)
+  }
 }

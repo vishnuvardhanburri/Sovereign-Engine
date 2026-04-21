@@ -107,16 +107,27 @@ CREATE TABLE IF NOT EXISTS domains (
   dkim_valid BOOLEAN NOT NULL DEFAULT FALSE,
   dmarc_valid BOOLEAN NOT NULL DEFAULT FALSE,
   daily_limit INT NOT NULL DEFAULT 400,
+  -- Optional compatibility field used by some analytics/forecast queries.
+  -- Kept separate from daily_limit so we can evolve caps without breaking older installs.
+  daily_cap INT,
   sent_today INT NOT NULL DEFAULT 0,
   sent_count INT NOT NULL DEFAULT 0,
   bounce_count INT NOT NULL DEFAULT 0,
   health_score NUMERIC(5,2) NOT NULL DEFAULT 100,
   bounce_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+  -- Inbox placement signal (0..1). Defaults to 0 for new domains.
+  spam_rate NUMERIC(5,4) NOT NULL DEFAULT 0,
   last_reset_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (client_id, domain)
 );
+
+-- Backward compatible domain columns for existing databases.
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS daily_cap INT;
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS spam_rate NUMERIC(5,4) NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_domains_spam_rate ON domains(spam_rate DESC);
+CREATE INDEX IF NOT EXISTS idx_domains_bounce_rate ON domains(bounce_rate DESC);
 
 CREATE TABLE IF NOT EXISTS identities (
   id BIGSERIAL PRIMARY KEY,
@@ -195,6 +206,10 @@ CREATE TABLE IF NOT EXISTS events (
   ),
   provider_message_id TEXT,
   metadata JSONB,
+  -- Optional compatibility fields used by infrastructure analytics modules.
+  -- type mirrors event_type and delivered_at is used for delivery latency reporting.
+  type TEXT,
+  delivered_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -218,6 +233,26 @@ ALTER TABLE events
       'unsubscribed'
     )
   );
+
+-- Backward compatible columns for existing databases.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP;
+
+-- Keep events.type aligned to events.event_type so older analytics queries keep working.
+CREATE OR REPLACE FUNCTION xavira_sync_event_type() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.type := NEW.event_type;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_xavira_sync_event_type ON events;
+CREATE TRIGGER trg_xavira_sync_event_type
+BEFORE INSERT OR UPDATE OF event_type ON events
+FOR EACH ROW
+EXECUTE FUNCTION xavira_sync_event_type();
+
+UPDATE events SET type = event_type WHERE type IS NULL;
 
 CREATE TABLE IF NOT EXISTS operator_actions (
   id BIGSERIAL PRIMARY KEY,
