@@ -1775,6 +1775,37 @@ export async function isSuppressed(clientId: number, email: string) {
 }
 
 export async function selectBestIdentity(clientId: number) {
+  try {
+    const { selectSenderIdentity } = await import('@/lib/delivery/load-balancer')
+    const picked = await selectSenderIdentity(clientId, {})
+    if (picked) {
+      const row = await queryOne<{
+        identity: Identity
+        domain: Domain
+      }>(
+        `
+        SELECT
+          row_to_json(i.*) AS identity,
+          row_to_json(d.*) AS domain
+        FROM identities i
+        JOIN domains d ON d.id = i.domain_id AND d.client_id = i.client_id
+        WHERE i.client_id = $1
+          AND i.id = $2
+          AND d.id = $3
+          AND i.status = 'active'
+          AND d.status = 'active'
+        LIMIT 1
+        `,
+        [clientId, picked.identity_id, picked.domain_id]
+      )
+      if (row?.identity && row?.domain) {
+        return { identity: row.identity, domain: row.domain }
+      }
+    }
+  } catch {
+    // ignore and fallback
+  }
+
   const selection = await selectHealthiestIdentity(clientId)
   return selection as SendIdentitySelection | null
 }

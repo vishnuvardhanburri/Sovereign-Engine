@@ -3,6 +3,7 @@ import { readSystemMetrics } from '@/lib/metrics'
 import { query } from '@/lib/db'
 import { getDomainHealth } from '@/lib/delivery/intelligence'
 import { shouldPauseWarmup, getWarmupDailyCap } from '@/lib/warmup'
+import { applyCampaignStrategy, evaluateCampaignStrategy } from '@/lib/campaign/strategy'
 
 export interface ControlLoopDecision {
   send_rate_multiplier: number
@@ -16,6 +17,18 @@ function clamp(value: number, min: number, max: number): number {
 
 export async function runControlLoop(clientId: number): Promise<ControlLoopDecision> {
   const metrics = await readSystemMetrics(clientId, 60)
+
+  // Campaign strategy adjustments (deterministic).
+  const campaigns = await query<{ id: number }>(
+    `SELECT id FROM campaigns WHERE client_id = $1 AND status = 'active'`,
+    [clientId]
+  )
+  for (const c of campaigns.rows) {
+    const decision = await evaluateCampaignStrategy(clientId, c.id)
+    if (decision.action !== 'keep') {
+      await applyCampaignStrategy(clientId, decision)
+    }
+  }
 
   const domains = await query<{ id: number }>(
     `SELECT id FROM domains WHERE client_id = $1`,

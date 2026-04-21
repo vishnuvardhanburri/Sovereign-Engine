@@ -7,6 +7,8 @@ import {
   selectBestIdentity,
 } from '@/lib/backend'
 import { validateEmailPreSend, shouldStopSequence, validateAIMessage, getFallbackMessage, circuitBreaker, recordMetric } from '@/lib/production-fixes'
+import { ensureContactTimezone, getSendWindowNext } from '@/lib/scheduling/timezone'
+import { hasBeenContactedRecently } from '@/lib/contacts/memory'
 
 export type QueueDecision =
   | { action: 'skip'; reason: string }
@@ -32,6 +34,11 @@ export async function evaluateQueueDecision(
   const shouldStop = await shouldStopSequence(context.job.client_id, context.contact.id, context.campaign.id)
   if (shouldStop) {
     return { action: 'skip', reason: 'sequence stopped - reply received' }
+  }
+
+  // Cross-campaign contact memory: prevent re-contacting recently.
+  if (await hasBeenContactedRecently({ clientId: context.job.client_id, contactId: context.contact.id, withinDays: 30 })) {
+    return { action: 'skip', reason: 'contact already contacted recently' }
   }
 
   if (
@@ -107,7 +114,9 @@ export async function evaluateQueueDecision(
     }
   }
 
-  const nextBusinessWindow = getNextBusinessWindow(context.contact.timezone)
+  const tz = ensureContactTimezone(context.contact)
+  const nextBusinessWindow =
+    tz ? getSendWindowNext(tz) : getNextBusinessWindow(context.contact.timezone)
   if (nextBusinessWindow) {
     return {
       action: 'defer',
