@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
         resend: Boolean(process.env.RESEND_API_KEY),
         redis: Boolean(process.env.REDIS_URL),
         postgres: Boolean(process.env.DATABASE_URL),
-        openrouter: Boolean(appEnv.openRouterApiKey()),
         zerobounce: Boolean(appEnv.zeroBounceApiKey()),
         telegram: Boolean(appEnv.telegramBotToken()),
       },

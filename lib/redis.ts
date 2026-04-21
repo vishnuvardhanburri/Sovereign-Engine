@@ -154,6 +154,55 @@ export async function peekQueue(limit = 10): Promise<RedisQueueJobPayload[]> {
   return ready.map((item: string) => JSON.parse(item) as RedisQueueJobPayload)
 }
 
+export async function removeQueueJobsForContact(contactId: number): Promise<number> {
+  const client = await getRedisClient()
+  const readyItems = await client.lRange(READY_QUEUE_KEY, 0, -1)
+  const scheduledItems = await client.zRangeWithScores(SCHEDULED_QUEUE_KEY, 0, -1)
+  let removed = 0
+
+  const keepReady = readyItems.filter((item: string) => {
+    try {
+      const parsed = JSON.parse(item) as RedisQueueJobPayload
+      const match = parsed.contact_id === contactId
+      if (match) {
+        removed += 1
+      }
+      return !match
+    } catch {
+      return true
+    }
+  })
+
+  const keepScheduled = scheduledItems.filter((item: { score: number; value: string }) => {
+    try {
+      const parsed = JSON.parse(item.value) as RedisQueueJobPayload
+      const match = parsed.contact_id === contactId
+      if (match) {
+        removed += 1
+      }
+      return !match
+    } catch {
+      return true
+    }
+  })
+
+  const multi = client.multi()
+  multi.del(READY_QUEUE_KEY)
+  if (keepReady.length > 0) {
+    multi.rPush(READY_QUEUE_KEY, keepReady)
+  }
+  multi.del(SCHEDULED_QUEUE_KEY)
+  if (keepScheduled.length > 0) {
+    multi.zAdd(
+      SCHEDULED_QUEUE_KEY,
+      keepScheduled.map((item: { score: number; value: string }) => ({ score: item.score, value: item.value }))
+    )
+  }
+  await multi.exec()
+
+  return removed
+}
+
 export async function closeRedis(): Promise<void> {
   if (redisClient?.isOpen) {
     await redisClient.quit()

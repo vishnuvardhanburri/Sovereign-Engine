@@ -1,11 +1,10 @@
 // @ts-nocheck
 /**
  * Spam Protection Engine
- * Rule-based + AI spam detection and content filtering
+ * Rule-based spam detection and content filtering
  * Scores emails before sending and prevents spam delivery
  */
 
-import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
 
 export interface SpamAnalysisResult {
@@ -45,15 +44,10 @@ export interface SpamRules {
 }
 
 class SpamProtectionEngine {
-  private readonly openRouterApiKey: string
-  private readonly openRouterModel: string
   private readonly spamRules: SpamRules
   private readonly cache: Map<string, SpamAnalysisResult> = new Map()
 
   constructor() {
-    this.openRouterApiKey = appEnv.openRouterApiKey()
-    this.openRouterModel = appEnv.openRouterModel()
-
     // Default spam rules - can be configured via database
     this.spamRules = {
       blockedWords: [
@@ -105,23 +99,17 @@ class SpamProtectionEngine {
     flags.push(...ruleFlags)
     totalScore += ruleFlags.reduce((sum, flag) => sum + this.getFlagScore(flag), 0)
 
-    // AI analysis (if available)
+    // Deterministic analysis
     let aiAnalysis: AIAnalysisResult | undefined
-    if (this.openRouterApiKey) {
-      try {
-        aiAnalysis = await this.analyzeWithAI(subject, body)
-        const aiFlag: SpamFlag = {
-          type: 'ai',
-          severity: aiAnalysis.score > 70 ? 'high' : aiAnalysis.score > 40 ? 'medium' : 'low',
-          description: `AI detected spam likelihood: ${aiAnalysis.score}%`,
-          confidence: aiAnalysis.score / 100
-        }
-        flags.push(aiFlag)
-        totalScore += aiAnalysis.score * 0.8 // Weight AI score
-      } catch (error) {
-        console.error('AI spam analysis failed:', error)
-      }
+    aiAnalysis = this.analyzeDeterministically(subject, body)
+    const aiFlag: SpamFlag = {
+      type: 'ai',
+      severity: aiAnalysis.score > 70 ? 'high' : aiAnalysis.score > 40 ? 'medium' : 'low',
+      description: `Deterministic spam likelihood: ${aiAnalysis.score}%`,
+      confidence: aiAnalysis.score / 100
     }
+    flags.push(aiFlag)
+    totalScore += aiAnalysis.score * 0.8
 
     // Calculate final score and risk level
     const finalScore = Math.min(100, Math.max(0, totalScore))
@@ -238,72 +226,30 @@ class SpamProtectionEngine {
   }
 
   /**
-   * AI-powered spam analysis using OpenRouter
+   * Deterministic spam analysis using rule scoring
    */
-  private async analyzeWithAI(subject: string, body: string): Promise<AIAnalysisResult> {
-    const prompt = `
-Analyze this email for spam characteristics. Rate it on a scale of 0-100 where 100 is definitely spam.
+  private analyzeDeterministically(subject: string, body: string): AIAnalysisResult {
+    const text = `${subject} ${body}`.toLowerCase()
+    const signals = [
+      { pattern: /free money|guaranteed income|instant cash|act now|limited time/i, score: 18, label: 'pressure or promise language' },
+      { pattern: /!!!+|[A-Z]{6,}/, score: 12, label: 'aggressive formatting' },
+      { pattern: /click here|buy now|make money|risk free|no obligation/i, score: 14, label: 'sales pressure' },
+      { pattern: /viagra|casino|lottery|crypto rich/i, score: 20, label: 'blocked spam terms' },
+    ]
 
-Subject: ${subject}
+    const matchedSignals = signals.filter((signal) => signal.pattern.test(text))
+    const score = Math.min(100, matchedSignals.reduce((sum, signal) => sum + signal.score, 10))
 
-Body: ${body}
-
-Consider:
-- Urgency or pressure tactics
-- Unrealistic promises
-- Poor grammar or formatting
-- Generic greetings
-- Overuse of capital letters
-- Too many links or attachments
-- Commercial intent disguised as personal
-
-Return a JSON object with:
-{
-  "score": number (0-100),
-  "reasoning": "brief explanation",
-  "suggestions": ["array of improvement suggestions"]
-}
-`
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.openRouterApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.openRouterModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 500
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    const content = data.choices[0]?.message?.content
-
-    try {
-      const parsed = JSON.parse(content)
-      return {
-        provider: 'openrouter',
-        score: Math.min(100, Math.max(0, parsed.score || 0)),
-        reasoning: parsed.reasoning || 'AI analysis completed',
-        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
-        processedAt: new Date()
-      }
-    } catch (error) {
-      // Fallback if JSON parsing fails
-      return {
-        provider: 'openrouter',
-        score: 50, // Neutral score
-        reasoning: 'AI analysis parsing failed',
-        suggestions: ['Review email content manually'],
-        processedAt: new Date()
-      }
+    return {
+      provider: 'rule',
+      score,
+      reasoning: matchedSignals.length > 0
+        ? `Matched ${matchedSignals.map((signal) => signal.label).join(', ')}`
+        : 'No strong spam signals detected',
+      suggestions: matchedSignals.length > 0
+        ? ['Reduce promotional pressure', 'Remove spam-trigger language', 'Shorten aggressive claims']
+        : ['Keep the copy concise and specific'],
+      processedAt: new Date()
     }
   }
 

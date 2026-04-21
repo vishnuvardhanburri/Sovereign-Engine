@@ -38,7 +38,6 @@ import {
   markContactUnsubscribed,
   parseUnsubscribeToken,
 } from '@/lib/compliance'
-import { classifyReplyWithAi } from '@/lib/integrations/openrouter'
 import { enrichContactProfile } from '@/lib/agents/data/lead-agent'
 import { verifyEmailAddress } from '@/lib/integrations/zerobounce'
 import { enrichContactWithFreeData } from '@/lib/integrations/free-enrichment'
@@ -1177,14 +1176,12 @@ export async function createEvent(
   let replyStatus: 'unread' | 'interested' | 'not_interested' | undefined
 
   if (input.eventType === 'reply') {
-    const replyText = String(input.metadata?.body ?? input.metadata?.text ?? '')
-    const classified =
-      appEnv.openRouterApiKey() ? await classifyReplyWithAi(replyText) : classifyReplyText(replyText)
-    replyClassification = classified
+      const replyText = String(input.metadata?.body ?? input.metadata?.text ?? '')
+    replyClassification = classifyReplyText(replyText)
     replyStatus =
-      classified === 'interested'
+      replyClassification === 'interested'
         ? 'interested'
-        : classified === 'not_interested'
+        : replyClassification === 'not_interested'
         ? 'not_interested'
         : 'unread'
   }

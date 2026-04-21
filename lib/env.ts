@@ -36,6 +36,12 @@ export const appEnv = {
   smtpSecure: () => process.env.SMTP_SECURE === 'true',
   smtpUser: () => required('SMTP_USER'),
   smtpPass: () => required('SMTP_PASS'),
+  imapHost: () => process.env.IMAP_HOST || process.env.SMTP_HOST || '',
+  imapPort: () => optionalInt('IMAP_PORT', 993),
+  imapSecure: () => process.env.IMAP_SECURE !== 'false',
+  imapUser: () => process.env.IMAP_USER || process.env.SMTP_USER || '',
+  imapPass: () => process.env.IMAP_PASS || process.env.SMTP_PASS || '',
+  imapMailbox: () => process.env.IMAP_MAILBOX || 'INBOX',
   smtpFromEmail: () => process.env.SMTP_FROM_EMAIL || `no-reply@${process.env.SMTP_HOST?.split(':')[0] ?? 'xaviraorbit.com'}`,
   smtpTestMode: () => process.env.SMTP_TEST_MODE === 'true',
   smtpTestRecipients: () => {

@@ -1,5 +1,5 @@
 import { Contact, SequenceStep } from '@/lib/db/types'
-import { generateIntroLine } from '@/lib/integrations/openrouter'
+import { generateIntroLine as generateDeterministicIntroLine } from '@/lib/ai/generator'
 
 const SPAM_TERMS = [
   'guarantee',
@@ -134,12 +134,13 @@ export async function buildPersonalizedMessage(input: {
     }
   }
 
-  const intro = await generateIntroLine({
+  const intro = generateDeterministicIntroLine({
+    contact: input.contact,
     company: input.contact.company,
     role: input.contact.title,
     offer: input.offerSummary,
     pain: input.painSummary,
-  })
+  }).result.intro as string
 
   renderedBody = renderVariables(
     input.step.body.replaceAll('{{AIIntro}}', intro),

@@ -4,7 +4,6 @@
  * Classifies replies and triggers appropriate actions
  */
 
-import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
 
 export interface ReplyAnalysis {
@@ -62,13 +61,10 @@ export interface ReplyProcessingResult {
 }
 
 class ReplyIntelligenceEngine {
-  private readonly openRouterApiKey: string
-  private readonly openRouterModel: string
   private readonly cache: Map<string, ReplyAnalysis> = new Map()
 
   constructor() {
-    this.openRouterApiKey = appEnv.openRouterApiKey()
-    this.openRouterModel = appEnv.openRouterModel()
+    // deterministic rules only
   }
 
   /**
@@ -90,19 +86,8 @@ class ReplyIntelligenceEngine {
       return cached
     }
 
-    let aiAnalysis: AIAnalysis | undefined
-
-    // Use AI analysis if available
-    if (this.openRouterApiKey) {
-      try {
-        aiAnalysis = await this.analyzeWithAI(replySubject, replyBody, originalEmail)
-      } catch (error) {
-        console.error('AI reply analysis failed:', error)
-      }
-    }
-
-    // Rule-based classification as fallback/primary
-    const classification = aiAnalysis?.classification || this.classifyWithRules(replySubject, replyBody)
+    const aiAnalysis: AIAnalysis | undefined = undefined
+    const classification = this.classifyWithRules(replySubject, replyBody)
     const sentiment = this.analyzeSentiment(replyBody)
     const intent = this.analyzeIntent(replySubject, replyBody, classification)
     const keyPhrases = this.extractKeyPhrases(replyBody)
@@ -114,7 +99,7 @@ class ReplyIntelligenceEngine {
       contactEmail,
       campaignId,
       classification,
-      confidence: aiAnalysis?.confidence || this.calculateRuleConfidence(classification, replyBody),
+      confidence: this.calculateRuleConfidence(classification, replyBody),
       sentiment,
       urgency: intent.urgency,
       intent,
@@ -440,90 +425,6 @@ class ReplyIntelligenceEngine {
     const lengthBonus = Math.min(body.length / 1000, 0.2) // Up to 20% bonus for longer replies
 
     return Math.min(baseConfidence + lengthBonus, 0.95)
-  }
-
-  /**
-   * AI-powered reply analysis
-   */
-  private async analyzeWithAI(
-    subject: string,
-    body: string,
-    originalEmail?: { subject: string; body: string }
-  ): Promise<AIAnalysis> {
-    const context = originalEmail ?
-      `\nOriginal Email Subject: ${originalEmail.subject}\nOriginal Email Body: ${originalEmail.body.slice(0, 500)}` : ''
-
-    const prompt = `
-Analyze this email reply and classify it. Consider the context and provide a detailed analysis.
-
-Reply Subject: ${subject}
-Reply Body: ${body}${context}
-
-Classify the reply into one of these categories:
-- interested: Shows interest in the offer/product
-- not_interested: Declines or shows disinterest
-- out_of_office: Vacation or away message
-- question: Asks for more information
-- complaint: Expresses dissatisfaction
-- unsubscribe: Requests to stop emails
-- bounce: Delivery failure notice
-- auto_reply: Automated system response
-- unknown: Cannot classify
-
-Return a JSON object with:
-{
-  "classification": {
-    "type": "classification_type",
-    "subtype": "optional_subtype",
-    "reason": "brief explanation"
-  },
-  "sentiment": "positive|neutral|negative",
-  "intent": {
-    "primary": "engage|disengage|clarify|complain|unsubscribe|automated",
-    "secondary": ["array of secondary intents"],
-    "urgency": "low|medium|high"
-  },
-  "confidence": 0.0-1.0,
-  "reasoning": "detailed explanation of the analysis"
-}
-`
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.openRouterApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.openRouterModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 800
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    const content = data.choices[0]?.message?.content
-
-    try {
-      const parsed = JSON.parse(content)
-      return {
-        provider: 'openrouter',
-        model: this.openRouterModel,
-        classification: parsed.classification,
-        sentiment: parsed.sentiment,
-        intent: parsed.intent,
-        confidence: parsed.confidence,
-        reasoning: parsed.reasoning,
-        processedAt: new Date()
-      }
-    } catch (error) {
-      throw new Error('Failed to parse AI response')
-    }
   }
 
   /**

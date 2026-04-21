@@ -1,12 +1,8 @@
 /**
  * Xavira AI Assistant
  * Conversational AI assistant for cold email platform management
- * Uses OpenRouter for intelligent task execution and natural language processing
+ * Deterministic only, no external model dependencies.
  */
-
-import { aiIntegration } from './ai-integration'
-import { query } from './db'
-import { appEnv } from './env'
 
 export interface XaviraAIRequest {
   message: string
@@ -44,7 +40,7 @@ export class XaviraAIAssistant {
   private conversationHistory: Map<string, Array<{role: 'user' | 'assistant', content: string, timestamp: Date}>> = new Map()
 
   constructor() {
-    // AI integration is already initialized as singleton
+    // Deterministic assistant, no external dependencies.
   }
 
   /**
@@ -109,61 +105,29 @@ export class XaviraAIAssistant {
    * Analyze the intent behind the user's message
    */
   private async analyzeIntent(message: string, context?: XaviraAIRequest['context']): Promise<string> {
-    const prompt = `
-Analyze this user message and determine the primary intent. Return only the intent category:
-
-Message: "${message}"
-Context: ${JSON.stringify(context || {})}
-
-Intent categories:
-- campaign_management: Creating, editing, or managing email campaigns
-- contact_analysis: Analyzing or managing contact lists, segmentation
-- content_generation: Creating email content, subject lines, copy
-- spam_detection: Checking content for spam or compliance issues
-- reply_analysis: Analyzing email replies or responses
-- scraping: Finding or extracting contact information from websites
-- analytics: Getting performance metrics, reports, insights
-- general: General questions, help, or platform navigation
-
-Return only the category name, nothing else.
-    `
-
-    try {
-      const result = await aiIntegration.executeRequest({
-        prompt,
-        model: 'gpt-3.5-turbo',
-        maxTokens: 50,
-        temperature: 0.1,
-        task: 'personalization'
-      })
-
-      return result.content.trim().toLowerCase()
-    } catch (error) {
-      // Fallback intent detection
-      const lowerMessage = message.toLowerCase()
-      if (lowerMessage.includes('campaign') || lowerMessage.includes('create') || lowerMessage.includes('send')) {
-        return 'campaign_management'
-      }
-      if (lowerMessage.includes('contact') || lowerMessage.includes('list') || lowerMessage.includes('segment')) {
-        return 'contact_analysis'
-      }
-      if (lowerMessage.includes('content') || lowerMessage.includes('write') || lowerMessage.includes('copy')) {
-        return 'content_generation'
-      }
-      if (lowerMessage.includes('spam') || lowerMessage.includes('check') || lowerMessage.includes('compliance')) {
-        return 'spam_detection'
-      }
-      if (lowerMessage.includes('reply') || lowerMessage.includes('response') || lowerMessage.includes('analyze')) {
-        return 'reply_analysis'
-      }
-      if (lowerMessage.includes('scrape') || lowerMessage.includes('find') || lowerMessage.includes('extract')) {
-        return 'scraping'
-      }
-      if (lowerMessage.includes('report') || lowerMessage.includes('analytics') || lowerMessage.includes('performance')) {
-        return 'analytics'
-      }
-      return 'general'
+    const lowerMessage = message.toLowerCase()
+    if (lowerMessage.includes('campaign') || lowerMessage.includes('create') || lowerMessage.includes('send')) {
+      return 'campaign_management'
     }
+    if (lowerMessage.includes('contact') || lowerMessage.includes('list') || lowerMessage.includes('segment')) {
+      return 'contact_analysis'
+    }
+    if (lowerMessage.includes('content') || lowerMessage.includes('write') || lowerMessage.includes('copy')) {
+      return 'content_generation'
+    }
+    if (lowerMessage.includes('spam') || lowerMessage.includes('check') || lowerMessage.includes('compliance')) {
+      return 'spam_detection'
+    }
+    if (lowerMessage.includes('reply') || lowerMessage.includes('response') || lowerMessage.includes('analyze')) {
+      return 'reply_analysis'
+    }
+    if (lowerMessage.includes('scrape') || lowerMessage.includes('find') || lowerMessage.includes('extract')) {
+      return 'scraping'
+    }
+    if (lowerMessage.includes('report') || lowerMessage.includes('analytics') || lowerMessage.includes('performance')) {
+      return 'analytics'
+    }
+    return 'general'
   }
 
   /**
@@ -177,50 +141,21 @@ Current context:
 - Recent actions: ${request.context.recentActions?.join(', ') || 'None'}
 ` : ''
 
-    const prompt = `
-You are Xavira AI, an intelligent assistant for cold email campaign management. Respond naturally and helpfully.
-
-User message: "${request.message}"
-Detected intent: ${intent}
-${contextPrompt}
-
-Provide a helpful, conversational response that:
-1. Acknowledges the user's request
-2. Provides relevant information or asks clarifying questions
-3. Suggests next steps or actions
-4. Uses friendly, professional tone
-
-Keep response concise but informative.
-    `
-
-    try {
-      const result = await aiIntegration.executeRequest({
-        prompt,
-        model: 'gpt-4',
-        maxTokens: 300,
-        temperature: 0.7,
-        task: 'content_generation'
-      })
-
-      return result.content.trim()
-    } catch (error) {
-      // Fallback responses based on intent
-      switch (intent) {
-        case 'campaign_management':
-          return "I'd be happy to help you manage your email campaigns! What would you like to do - create a new campaign, edit an existing one, or check campaign performance?"
-        case 'contact_analysis':
-          return "Contact analysis is one of my specialties! I can help you segment your lists, find the best prospects, or analyze contact engagement. What specific analysis are you looking for?"
-        case 'content_generation':
-          return "I can help you create compelling email content! Whether it's subject lines, email copy, or personalized messages, just let me know what you need."
-        case 'spam_detection':
-          return "Spam detection and compliance are crucial for successful cold emailing. I can analyze your content for spam triggers and ensure it meets best practices."
-        case 'scraping':
-          return "I can help you find and extract contact information from websites. Just provide the URLs and I'll scrape for emails, phone numbers, and social profiles."
-        case 'analytics':
-          return "Let's dive into your campaign analytics! I can show you open rates, click-through rates, reply analysis, and performance insights."
-        default:
-          return "I'm here to help with your cold email campaigns! I can assist with campaign management, contact analysis, content creation, spam detection, web scraping, and analytics. What would you like to work on?"
-      }
+    switch (intent) {
+      case 'campaign_management':
+        return "I can help manage campaigns. Create, edit, or review performance."
+      case 'contact_analysis':
+        return "I can help segment contacts and analyze engagement."
+      case 'content_generation':
+        return "I can help with subject lines, email copy, and follow-ups."
+      case 'spam_detection':
+        return "I can review content for spam risks and compliance issues."
+      case 'scraping':
+        return "I can help extract contact details from approved sources."
+      case 'analytics':
+        return "I can summarize performance, reply trends, and open rates."
+      default:
+        return "I can help with campaign management, contact analysis, content, scraping, and analytics."
     }
   }
 

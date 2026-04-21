@@ -1,6 +1,6 @@
 import type { Contact, SequenceStep } from '@/lib/db/types'
 import { renderVariables, enforceFiveLineEmail, detectSpamSignals } from '@/lib/personalization'
-import { generateIntroLine } from '@/lib/integrations/openrouter'
+import { generateIntroLine as generateDeterministicIntroLine } from '@/lib/ai/generator'
 import { enrichContactWithFreeData, formatEnrichmentForContext } from '@/lib/integrations/free-enrichment'
 import { analyzeEmailForSpamRisk } from '@/lib/agents/spam-filter-agent'
 
@@ -34,12 +34,13 @@ export async function buildPersonalizedMessage(input: {
   const renderedSubject = renderVariables(input.step.subject, enrichedContact)
 
   if (needsAiIntro) {
-    const intro = await generateIntroLine({
+    const intro = generateDeterministicIntroLine({
+      contact: enrichedContact,
       company: enrichedContact.company,
       role: enrichedContact.title,
       offer: input.offerSummary,
       pain: input.painSummary,
-    })
+    }).result.intro as string
 
     renderedBody = renderVariables(
       input.step.body.replaceAll('{{AIIntro}}', intro),
@@ -72,5 +73,33 @@ export async function buildIntroLine(input: {
   offer?: string | null
   pain?: string | null
 }) {
-  return generateIntroLine(input)
+  return {
+    intro: generateDeterministicIntroLine({
+      contact: {
+        id: 0,
+        client_id: 0,
+        email: 'placeholder@example.com',
+        email_domain: 'example.com',
+        name: null,
+        company: input.company ?? null,
+        company_domain: null,
+        title: input.role ?? null,
+        timezone: null,
+        source: null,
+        custom_fields: {},
+        enrichment: null,
+        verification_status: 'unknown',
+        verification_sub_status: null,
+        status: 'active',
+        unsubscribed_at: null,
+        bounced_at: null,
+        created_at: '',
+        updated_at: '',
+      },
+      company: input.company,
+      role: input.role,
+      offer: input.offer,
+      pain: input.pain,
+    }).result.intro as string,
+  }
 }
