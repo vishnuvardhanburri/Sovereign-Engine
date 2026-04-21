@@ -275,6 +275,15 @@ export const useOperatorActions = (limit = 60) => {
   })
 }
 
+export const useExecutiveSummary = () => {
+  return useQuery({
+    queryKey: ['executive-summary'],
+    queryFn: () => api.executive.getSummary(),
+    refetchInterval: 8000,
+    staleTime: 2000,
+  })
+}
+
 export const useInfrastructureControl = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -286,6 +295,7 @@ export const useInfrastructureControl = () => {
         queryClient.invalidateQueries({ queryKey: ['infra-analytics'] }),
         queryClient.invalidateQueries({ queryKey: ['queue-stats'] }),
         queryClient.invalidateQueries({ queryKey: ['operator-actions'] }),
+        queryClient.invalidateQueries({ queryKey: ['executive-summary'] }),
       ])
       if (result.success) toast.success('Action applied')
     },

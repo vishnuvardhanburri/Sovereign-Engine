@@ -8,6 +8,7 @@ import {
   useCampaigns,
   useChartData,
   useDashboardStats,
+  useExecutiveSummary,
   useInfrastructureAnalytics,
   useInfrastructureControl,
   useInfrastructureHealth,
@@ -29,6 +30,7 @@ import { SystemHealth } from '@/components/system-health'
 import { RecentDecisions } from '@/components/recent-decisions'
 import { SelfHealActions } from '@/components/self-heal-actions'
 import { AnimatedNumber } from '@/components/animated-number'
+import { ExecutiveView } from '@/components/executive-view'
 import { ArrowRight, PauseCircle, PlayCircle, RefreshCcw, ShieldAlert, Zap } from 'lucide-react'
 
 const DashboardSentChart = dynamic(
@@ -54,6 +56,7 @@ export default function DashboardPage() {
   const { data: queue } = useQueueStats()
   const { data: health } = useInfrastructureHealth()
   const { data: analytics } = useInfrastructureAnalytics()
+  const { data: executive } = useExecutiveSummary()
   const { data: patterns } = usePatterns()
   const { data: events } = useRecentEvents(70)
   const { data: campaigns } = useCampaigns()
@@ -148,6 +151,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <ExecutiveView health={health} analytics={analytics} executive={executive} />
+
       {/* Global Status Bar */}
       <Card className="bg-white/5 backdrop-blur border-white/10">
         <CardContent className="py-4">
@@ -167,7 +172,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <div className="text-xs text-muted-foreground">Queue Size</div>
+              <div className="text-xs text-muted-foreground">Emails pending</div>
               <div className="mt-1 text-2xl font-semibold">
                 <AnimatedNumber value={queueSize} />
               </div>

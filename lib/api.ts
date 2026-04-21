@@ -196,6 +196,32 @@ export interface OperatorAction {
   created_at: string
 }
 
+export interface ExecutiveSummary {
+  timestamp: string
+  today: {
+    sent: number
+    replies: number
+    bounces: number
+    replyRate: number // 0..1
+    bounceRate: number // 0..1
+  }
+  yesterday: {
+    sent: number
+    replies: number
+    bounces: number
+    replyRate: number
+    bounceRate: number
+  }
+  businessImpact: {
+    estimatedConversationsToday: number
+    replyTrendPct: number // -1..+inf
+  }
+  safety: {
+    complianceActive: boolean
+    blockedContactsToday: number
+  }
+}
+
 const campaignSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   name: z.string(),
@@ -373,6 +399,32 @@ const operatorActionSchema: z.ZodType<OperatorAction> = z.object({
   summary: z.string(),
   payload: z.record(z.string(), z.unknown()).nullable(),
   created_at: z.string(),
+})
+
+const executiveSummarySchema: z.ZodType<ExecutiveSummary> = z.object({
+  timestamp: z.string(),
+  today: z.object({
+    sent: z.coerce.number().nonnegative(),
+    replies: z.coerce.number().nonnegative(),
+    bounces: z.coerce.number().nonnegative(),
+    replyRate: z.coerce.number(),
+    bounceRate: z.coerce.number(),
+  }),
+  yesterday: z.object({
+    sent: z.coerce.number().nonnegative(),
+    replies: z.coerce.number().nonnegative(),
+    bounces: z.coerce.number().nonnegative(),
+    replyRate: z.coerce.number(),
+    bounceRate: z.coerce.number(),
+  }),
+  businessImpact: z.object({
+    estimatedConversationsToday: z.coerce.number().nonnegative(),
+    replyTrendPct: z.coerce.number(),
+  }),
+  safety: z.object({
+    complianceActive: z.boolean(),
+    blockedContactsToday: z.coerce.number().nonnegative(),
+  }),
 })
 
 
@@ -688,6 +740,12 @@ export const api = {
       const res = await fetchJson<{ data?: unknown[] }>(`/api/operator-actions?limit=${limit}`)
       const rows = Array.isArray(res.data) ? res.data : []
       return rows.map((row) => operatorActionSchema.parse(row))
+    },
+  },
+  executive: {
+    async getSummary(): Promise<ExecutiveSummary> {
+      const row = await fetchJson<unknown>('/api/executive/summary')
+      return executiveSummarySchema.parse(row)
     },
   },
 }
