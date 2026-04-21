@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import Link from 'next/link'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('demo@example.com')
-  const [password, setPassword] = useState('password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const { user, login } = useAuth()
   const router = useRouter()
@@ -32,7 +33,7 @@ export default function LoginPage() {
 
     setIsLoading(true)
     try {
-      login(email, password)
+      await login(email, password)
       toast.success('Login successful!')
     } catch (error) {
       toast.error('Login failed')
@@ -98,14 +99,20 @@ export default function LoginPage() {
               >
                 {isLoading ? 'Signing in...' : 'Sign in'}
               </Button>
+
+              <Link
+                href="/demo"
+                className="block text-center text-sm text-slate-200 underline underline-offset-4 hover:text-white"
+              >
+                Book a demo
+              </Link>
             </form>
 
             <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-              <p className="text-xs text-slate-400 mb-3 font-medium">Demo Workspace Access</p>
-              <div className="space-y-1">
-                <p className="text-xs text-slate-300"><span className="text-slate-500">Email:</span> demo@example.com</p>
-                <p className="text-xs text-slate-300"><span className="text-slate-500">Password:</span> password</p>
-              </div>
+              <p className="text-xs text-slate-300 font-medium">Trusted by teams who care about deliverability</p>
+              <p className="text-xs text-slate-400 mt-2">
+                You own the infrastructure. Xavira Orbit runs a queue + worker system with strict stop-on-reply and suppression enforcement.
+              </p>
             </div>
           </CardContent>
         </Card>

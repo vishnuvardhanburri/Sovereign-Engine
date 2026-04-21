@@ -10,7 +10,8 @@ export interface AuthState {
   user: User | null
   token: string | null
   isLoading: boolean
-  login: (email: string, password: string) => void
+  login: (email: string, password: string) => Promise<void>
+  bootstrap: () => Promise<void>
   logout: () => void
   setUser: (user: User | null) => void
 }
@@ -26,25 +27,50 @@ export interface UIState {
 
 export const useAuth = create<AuthState>((set) => ({
   user: null,
-  token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
+  token: null,
   isLoading: false,
-  login: (email: string, password: string) => {
+  login: async (email: string, password: string) => {
     set({ isLoading: true })
-    // Simulate login delay
-    setTimeout(() => {
-      const mockUser = {
-        id: '1',
-        email,
-        name: email.split('@')[0],
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) {
+        throw new Error('login failed')
       }
-      const token = `token_${Date.now()}`
-      localStorage.setItem('token', token)
-      set({ user: mockUser, token, isLoading: false })
-    }, 500)
+      const data = (await res.json()) as { user?: { id: number; email: string } }
+      const user = data.user
+        ? { id: String(data.user.id), email: data.user.email, name: data.user.email.split('@')[0] }
+        : { id: '0', email, name: email.split('@')[0] }
+      set({ user, token: 'cookie', isLoading: false })
+    } catch {
+      set({ user: null, token: null, isLoading: false })
+      throw new Error('login failed')
+    }
+  },
+  bootstrap: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await fetch('/api/auth/me', { method: 'GET' })
+      const data = (await res.json()) as { user: { id: number; email: string } | null }
+      if (data.user) {
+        set({
+          user: { id: String(data.user.id), email: data.user.email, name: data.user.email.split('@')[0] },
+          token: 'cookie',
+          isLoading: false,
+        })
+      } else {
+        set({ user: null, token: null, isLoading: false })
+      }
+    } catch {
+      set({ user: null, token: null, isLoading: false })
+    }
   },
   logout: () => {
-    localStorage.removeItem('token')
-    set({ user: null, token: null })
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => null)
+    set({ user: null, token: null, isLoading: false })
   },
   setUser: (user) => set({ user }),
 }))

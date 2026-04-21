@@ -82,6 +82,17 @@ async function main() {
   appEnv.resendApiKey()
   appEnv.appBaseUrl()
 
+  // If local DB/Redis are not running, skip unless explicitly required.
+  try {
+    await queryOne<{ ok: number }>('SELECT 1 as ok')
+  } catch (error) {
+    if (process.env.REQUIRE_INTEGRATION_DB === 'true') {
+      throw error
+    }
+    console.warn('[IntegrationTest] Skipping: database is not reachable. Set REQUIRE_INTEGRATION_DB=true to enforce.')
+    return
+  }
+
   const recipientEmails = getRecipientEmails()
   await cleanup()
 

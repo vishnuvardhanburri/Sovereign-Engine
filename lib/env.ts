@@ -58,6 +58,7 @@ export const appEnv = {
   workerIdleSleepMs: () => optionalInt('WORKER_IDLE_SLEEP_MS', 2000),
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
   cronSecret: () => required('CRON_SECRET'),
+  authSecret: () => process.env.AUTH_SECRET || process.env.CRON_SECRET || 'xavira-orbit-auth',
   // AI Integration
   aiMaxTokensPerRequest: () => optionalInt('AI_MAX_TOKENS_PER_REQUEST', 2000),
   aiDailyCostLimit: () => optionalInt('AI_DAILY_COST_LIMIT', 50), // $50 default

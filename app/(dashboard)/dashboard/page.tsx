@@ -3,18 +3,15 @@
 import { useDashboardStats, useChartData, useActivityFeed } from '@/lib/hooks'
 import Link from 'next/link'
 import type React from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
 import { Mail, MessageSquare, TrendingUp, AlertCircle, Activity, ArrowRight } from 'lucide-react'
+
+const DashboardSentChart = dynamic(
+  () => import('@/components/dashboard-sent-chart').then((m) => m.DashboardSentChart),
+  { ssr: false, loading: () => <Skeleton className="h-80" /> }
+)
 
 type StatCardProps = {
   title: string
@@ -139,21 +136,7 @@ export default function DashboardPage() {
             {chartLoading ? (
               <Skeleton className="h-80" />
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData || []}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="sent"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <DashboardSentChart data={chartData || []} />
             )}
           </CardContent>
         </Card>
