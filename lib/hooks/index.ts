@@ -284,6 +284,15 @@ export const useExecutiveSummary = () => {
   })
 }
 
+export const useExecutiveForecast = (days = 5) => {
+  return useQuery({
+    queryKey: ['executive-forecast', days],
+    queryFn: () => api.executive.getForecast(days),
+    refetchInterval: 12000,
+    staleTime: 4000,
+  })
+}
+
 export const useInfrastructureControl = () => {
   const queryClient = useQueryClient()
   return useMutation({

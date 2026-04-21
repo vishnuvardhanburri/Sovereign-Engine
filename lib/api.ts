@@ -222,6 +222,25 @@ export interface ExecutiveSummary {
   }
 }
 
+export interface ExecutiveForecast {
+  timestamp: string
+  forecast: {
+    expectedRepliesToday: number
+    projectedBounceRisk: 'LOW' | 'MEDIUM' | 'HIGH'
+    estimatedSafeSendCapacityRemaining: number
+  }
+  trends: {
+    days: number
+    reply: { direction: 'up' | 'down'; changePct: number; text: string }
+    bounce: { direction: 'up' | 'down'; changePct: number; text: string }
+  }
+  earlyWarnings: string[]
+  baselines: {
+    avgReplyRate: number
+    avgBounceRate: number
+  }
+}
+
 const campaignSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   name: z.string(),
@@ -424,6 +443,33 @@ const executiveSummarySchema: z.ZodType<ExecutiveSummary> = z.object({
   safety: z.object({
     complianceActive: z.boolean(),
     blockedContactsToday: z.coerce.number().nonnegative(),
+  }),
+})
+
+const executiveForecastSchema = z.object({
+  timestamp: z.string(),
+  forecast: z.object({
+    expectedRepliesToday: z.coerce.number().nonnegative(),
+    projectedBounceRisk: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+    estimatedSafeSendCapacityRemaining: z.coerce.number().nonnegative(),
+  }),
+  trends: z.object({
+    days: z.coerce.number(),
+    reply: z.object({
+      direction: z.enum(['up', 'down']),
+      changePct: z.coerce.number(),
+      text: z.string(),
+    }),
+    bounce: z.object({
+      direction: z.enum(['up', 'down']),
+      changePct: z.coerce.number(),
+      text: z.string(),
+    }),
+  }),
+  earlyWarnings: z.array(z.string()).default([]),
+  baselines: z.object({
+    avgReplyRate: z.coerce.number(),
+    avgBounceRate: z.coerce.number(),
   }),
 })
 
@@ -746,6 +792,11 @@ export const api = {
     async getSummary(): Promise<ExecutiveSummary> {
       const row = await fetchJson<unknown>('/api/executive/summary')
       return executiveSummarySchema.parse(row)
+    },
+    async getForecast(days?: number): Promise<ExecutiveForecast> {
+      const qs = typeof days === 'number' ? `?days=${days}` : ''
+      const row = await fetchJson<unknown>(`/api/executive/forecast${qs}`)
+      return executiveForecastSchema.parse(row)
     },
   },
 }

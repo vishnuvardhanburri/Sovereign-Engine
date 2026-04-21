@@ -9,6 +9,7 @@ import {
   useChartData,
   useDashboardStats,
   useExecutiveSummary,
+  useExecutiveForecast,
   useInfrastructureAnalytics,
   useInfrastructureControl,
   useInfrastructureHealth,
@@ -31,6 +32,7 @@ import { RecentDecisions } from '@/components/recent-decisions'
 import { SelfHealActions } from '@/components/self-heal-actions'
 import { AnimatedNumber } from '@/components/animated-number'
 import { ExecutiveView } from '@/components/executive-view'
+import { ForecastPanel } from '@/components/forecast-panel'
 import { ArrowRight, PauseCircle, PlayCircle, RefreshCcw, ShieldAlert, Zap } from 'lucide-react'
 
 const DashboardSentChart = dynamic(
@@ -57,6 +59,7 @@ export default function DashboardPage() {
   const { data: health } = useInfrastructureHealth()
   const { data: analytics } = useInfrastructureAnalytics()
   const { data: executive } = useExecutiveSummary()
+  const { data: forecast } = useExecutiveForecast(5)
   const { data: patterns } = usePatterns()
   const { data: events } = useRecentEvents(70)
   const { data: campaigns } = useCampaigns()
@@ -152,6 +155,7 @@ export default function DashboardPage() {
       </div>
 
       <ExecutiveView health={health} analytics={analytics} executive={executive} />
+      <ForecastPanel forecast={forecast} />
 
       {/* Global Status Bar */}
       <Card className="bg-white/5 backdrop-blur border-white/10">
