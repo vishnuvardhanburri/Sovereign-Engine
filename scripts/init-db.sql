@@ -267,6 +267,34 @@ CREATE TABLE IF NOT EXISTS operator_actions (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Autonomous Copilot memory + approval ledger.
+CREATE TABLE IF NOT EXISTS copilot_memory (
+  id TEXT PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL CHECK (scope IN ('global', 'client', 'campaign', 'domain')),
+  scope_key TEXT,
+  kind TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_copilot_memory_client_created
+  ON copilot_memory (client_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS copilot_proposals (
+  id TEXT PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'cancelled')),
+  summary TEXT NOT NULL,
+  proposed_actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  confirmed_at TIMESTAMP,
+  executed_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_copilot_proposals_client_created
+  ON copilot_proposals (client_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,

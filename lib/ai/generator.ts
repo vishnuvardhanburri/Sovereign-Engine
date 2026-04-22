@@ -1,5 +1,7 @@
 import type { Contact, SequenceStep } from '@/lib/db/types'
 import { selectPattern } from '@/lib/learning/selector'
+import type { CopilotSystemContext } from '@/lib/ai/system-context'
+import type { CopilotDecisionOutput } from '@/lib/ai/decision-engine'
 
 export interface DeterministicGenerationResult {
   task: string
@@ -159,5 +161,62 @@ export async function generateEmailFromTemplateLearned(input: {
       pattern_ids: [subject.result.pattern_id, intro.result.pattern_id].filter(Boolean),
     },
     source: 'template',
+  }
+}
+
+/**
+ * AUTONOMOUS COPILOT RESPONSE (SYSTEM-AWARE, DETERMINISTIC)
+ *
+ * This is not a chatbot: it formats grounded system data into a tight operator brief.
+ *
+ * Response format:
+ * 1. Current state
+ * 2. Insight
+ * 3. Action
+ */
+export function generateCopilotBrief(input: {
+  context: CopilotSystemContext
+  decision: CopilotDecisionOutput
+}): DeterministicGenerationResult {
+  const { context, decision } = input
+
+  const stateLine = [
+    `System: ${context.systemStatus} (${context.riskLevel} risk)`,
+    `24h sent=${context.performance.last24h.sent}`,
+    `reply=${Math.round(context.performance.last24h.replyRate * 10000) / 100}%`,
+    `bounce=${Math.round(context.performance.last24h.bounceRate * 10000) / 100}%`,
+    `queue pending=${context.queue.pending}, retry=${context.queue.retry}`,
+  ].join(' · ')
+
+  const topIssue = decision.diagnoses[0]
+  const insightLine = topIssue
+    ? `${topIssue.issue}. ${topIssue.cause}`
+    : 'No anomalies detected from current system signals.'
+
+  const actionLines = decision.diagnoses
+    .flatMap((d) => d.recommendedActions)
+    .slice(0, 3)
+    .map((a) => `- ${a.title}: ${a.detail}`)
+
+  const text = [
+    `1) Current state`,
+    stateLine,
+    ``,
+    `2) Insight`,
+    insightLine,
+    ``,
+    `3) Action`,
+    actionLines.length ? actionLines.join('\n') : '- No action recommended right now.',
+  ].join('\n')
+
+  return {
+    task: 'copilot_brief',
+    result: {
+      text,
+      systemStatus: context.systemStatus,
+      riskLevel: context.riskLevel,
+      headline: decision.summary.headline,
+    },
+    source: 'rule',
   }
 }
