@@ -10,9 +10,14 @@ import {
   generateRecommendations,
   analyzePerformancePatterns,
 } from '@/lib/infrastructure-analytics'
+import { demoInfrastructureAnalyticsPayload, isDemoModeEnabled } from '@/lib/demo-mode'
 
 export async function GET(request: NextRequest) {
   try {
+    if (isDemoModeEnabled()) {
+      return NextResponse.json(demoInfrastructureAnalyticsPayload())
+    }
+
     const searchParams = request.nextUrl.searchParams
     const format = searchParams.get('format') || 'json' // json | report
 

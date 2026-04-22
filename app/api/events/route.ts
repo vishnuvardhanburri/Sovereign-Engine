@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createEvent, listEvents } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 import { ingestPatternFeedback } from '@/lib/learning/feedback'
+import { demoEventsPayload, isDemoModeEnabled } from '@/lib/demo-mode'
 
 type EventTypeFilter = 'queued' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'failed' | 'bounce' | 'reply' | 'complaint' | 'skipped' | 'retry' | 'unsubscribed'
 type CreateEventBody = {
@@ -18,6 +19,13 @@ type CreateEventBody = {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
+
+    if (isDemoModeEnabled()) {
+      const page = Number(searchParams.get('page') ?? 1) || 1
+      const limit = Number(searchParams.get('limit') ?? 50) || 50
+      return NextResponse.json(demoEventsPayload(page, limit))
+    }
+
     const clientId = await resolveClientId({
       searchParams,
       headers: request.headers,

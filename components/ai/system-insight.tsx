@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { useCampaigns, useExecutiveForecast, useExecutiveSummary, useInfrastructureAnalytics } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { ArrowDownRight, ArrowUpRight, Mail, Globe, MessageSquareText, AlertTriangle } from 'lucide-react'
+import { useViewMode } from '@/components/ai/view-mode'
 
 function pct(value01: number): string {
   return `${Math.round(value01 * 10000) / 100}%`
@@ -27,6 +28,7 @@ export function SystemInsightPanel() {
   const { data: forecast } = useExecutiveForecast(5)
   const { data: analytics } = useInfrastructureAnalytics()
   const { data: campaigns } = useCampaigns()
+  const { viewMode } = useViewMode()
 
   const replyDir = forecast?.trends.reply.direction ?? 'up'
   const bounceDir = forecast?.trends.bounce.direction ?? 'down'
@@ -114,6 +116,15 @@ export function SystemInsightPanel() {
           <div className="text-xs text-muted-foreground">Explanation</div>
           <div className="mt-1 text-sm">{explanation}</div>
         </div>
+
+        {viewMode === 'client' ? (
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-muted-foreground">What this means</div>
+            <div className="mt-1 text-sm">
+              The engine is monitoring reply and bounce signals in real time and adapting to protect domain health.
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

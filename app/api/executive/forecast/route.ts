@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveClientId } from '@/lib/client-context'
 import { query, queryOne } from '@/lib/db'
+import { demoExecutiveForecastPayload, isDemoModeEnabled } from '@/lib/demo-mode'
 
 type DayRateRow = {
   day: string
@@ -40,12 +41,17 @@ function trendText(kind: 'reply' | 'bounce', change: number, days: number): stri
 
 export async function GET(request: NextRequest) {
   try {
+    const days = Math.max(3, Math.min(5, Number(request.nextUrl.searchParams.get('days') ?? 5) || 5))
+    if (isDemoModeEnabled()) {
+      return NextResponse.json(demoExecutiveForecastPayload(days))
+    }
+
     const clientId = await resolveClientId({
       searchParams: request.nextUrl.searchParams,
       headers: request.headers,
     })
 
-    const days = Math.max(3, Math.min(5, Number(request.nextUrl.searchParams.get('days') ?? 5) || 5))
+    // (days already computed above)
 
     const daily = await query<DayRateRow>(
       `

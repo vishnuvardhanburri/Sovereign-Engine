@@ -1,6 +1,7 @@
 import { query } from '@/lib/db'
 import { appEnv } from '@/lib/env'
 import { loadPatternStore, PatternRecord } from '@/lib/ai/pattern-memory'
+import { getDemoState, isDemoModeEnabled } from '@/lib/demo-mode'
 
 export type CopilotSystemStatus = 'ACTIVE' | 'DEGRADED' | 'PAUSED' | 'SETUP_REQUIRED'
 export type CopilotRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -115,6 +116,97 @@ export async function buildSystemContext(input?: {
 }): Promise<CopilotSystemContext> {
   const clientId = input?.clientId ?? appEnv.defaultClientId()
   const now = input?.now ?? new Date()
+
+  if (isDemoModeEnabled()) {
+    const demo = getDemoState()
+    const replyRate = demo.beforeAfter.current.replyRate
+    const bounceRate = demo.beforeAfter.current.bounceRate
+    const overall = Math.min(0.35, bounceRate * 6 + 0.08) // low-ish risk
+    const riskLevel: CopilotRiskLevel = overall >= 0.4 ? 'MEDIUM' : 'LOW'
+    const systemStatus: CopilotSystemStatus = 'ACTIVE'
+
+    return {
+      systemStatus,
+      riskLevel,
+      campaigns: [
+        {
+          id: 12,
+          name: 'Demo: SaaS Founders',
+          status: 'active',
+          sequenceId: 4,
+          sequenceName: 'Cold outbound v2',
+          contactCount: 1200,
+          sentCount: 1180,
+          replyCount: Math.round(1180 * replyRate),
+          bounceCount: Math.round(1180 * bounceRate),
+          openCount: 620,
+          replyRate,
+          bounceRate,
+          openRate: 0.525,
+          lastEnqueuedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+        },
+      ],
+      domains: [
+        {
+          id: 3,
+          domain: 'atlasmail.io',
+          status: 'active',
+          dailyLimit: 2500,
+          dailyCap: 2500,
+          sentToday: 1240,
+          sentCount: 18240,
+          bounceCount: 420,
+          bounceRate: Math.round(bounceRate * 10000) / 100,
+          spamRate: 0.18,
+          healthScore: 92,
+          reputationScore: 90,
+          spfValid: true,
+          dkimValid: true,
+          dmarcValid: true,
+          warmupStage: 3,
+          pausedFlag: false,
+          circuitBreakerUntil: null,
+        },
+      ],
+      queue: {
+        pending: 84,
+        processing: 6,
+        retry: 12,
+        failed: 3,
+        completed24h: 4030,
+        avgScheduleLagSeconds: 4.2,
+        oldestPendingSeconds: 28.4,
+      },
+      performance: {
+        last24h: {
+          sent: 4100,
+          replies: Math.round(4100 * replyRate),
+          bounces: Math.round(4100 * bounceRate),
+          complaints: 0,
+          replyRate: Math.round(replyRate * 10000) / 10000,
+          bounceRate: Math.round(bounceRate * 10000) / 10000,
+        },
+        patterns: { top: [] },
+      },
+      infraRisk: {
+        bounce: Math.round(bounceRate * 10000) / 10000,
+        spam: 0.0018,
+        fatigue: 0.04,
+        overall: Math.round(overall * 10000) / 10000,
+        signals: ['Demo Mode: synthetic telemetry'],
+      },
+      recommendations: [
+        {
+          type: 'demo',
+          title: 'Rotate subject patterns',
+          detail: 'Reply softness detected. Rotate to Pattern C to reduce fatigue.',
+          severity: 'info',
+          suggestedTools: [{ tool: 'updateSequence', args: { sequenceId: 4 } }],
+        },
+      ],
+      timestamp: now.toISOString(),
+    }
+  }
 
   const [
     campaignsResult,
@@ -376,4 +468,3 @@ export async function buildSystemContext(input?: {
     timestamp: now.toISOString(),
   }
 }
-

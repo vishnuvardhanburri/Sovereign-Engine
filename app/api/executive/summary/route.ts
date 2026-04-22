@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveClientId } from '@/lib/client-context'
 import { queryOne } from '@/lib/db'
+import { isDemoModeEnabled, demoExecutiveSummaryPayload } from '@/lib/demo-mode'
 
 type RateRow = {
   sent: string | number | null
@@ -15,6 +16,10 @@ function rate(n: number, d: number): number {
 
 export async function GET(request: NextRequest) {
   try {
+    if (isDemoModeEnabled()) {
+      return NextResponse.json(demoExecutiveSummaryPayload())
+    }
+
     const clientId = await resolveClientId({
       searchParams: request.nextUrl.searchParams,
       headers: request.headers,

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCampaigns, useInfrastructureControl } from '@/lib/hooks'
 import { toast } from 'sonner'
 import { AlertTriangle, PauseCircle, RefreshCcw, ShieldAlert, Zap } from 'lucide-react'
+import { useViewMode } from '@/components/ai/view-mode'
 
 type ConfirmAction =
   | { kind: 'heal' }
@@ -29,6 +30,7 @@ async function pauseCampaign(campaignId: string): Promise<void> {
 export function QuickActionsPanel() {
   const control = useInfrastructureControl()
   const { data: campaigns } = useCampaigns()
+  const { viewMode } = useViewMode()
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pending, setPending] = useState<ConfirmAction | null>(null)
@@ -89,6 +91,11 @@ export function QuickActionsPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {viewMode === 'client' ? (
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-muted-foreground">
+            Client View is read-only. Switch to Operator Mode to execute actions.
+          </div>
+        ) : null}
         <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
           <div className="text-sm font-medium">Quick controls</div>
           <div className="grid grid-cols-1 gap-2">
@@ -96,7 +103,7 @@ export function QuickActionsPanel() {
               variant="outline"
               className="justify-start gap-2"
               onClick={() => openConfirm({ kind: 'heal' })}
-              disabled={control.isPending}
+              disabled={control.isPending || viewMode === 'client'}
             >
               <ShieldAlert className="h-4 w-4" />
               Apply Fix
@@ -105,7 +112,7 @@ export function QuickActionsPanel() {
               variant="outline"
               className="justify-start gap-2"
               onClick={() => openConfirm({ kind: 'optimize' })}
-              disabled={control.isPending}
+              disabled={control.isPending || viewMode === 'client'}
             >
               <RefreshCcw className="h-4 w-4" />
               Optimize Now
@@ -132,7 +139,7 @@ export function QuickActionsPanel() {
               variant="outline"
               className="justify-start gap-2 w-full"
               onClick={() => openConfirm({ kind: 'pauseCampaign', campaignId: selectedCampaignId })}
-              disabled={!selectedCampaignId}
+              disabled={!selectedCampaignId || viewMode === 'client'}
             >
               <PauseCircle className="h-4 w-4" />
               Pause Campaign
@@ -164,4 +171,3 @@ export function QuickActionsPanel() {
     </Card>
   )
 }
-

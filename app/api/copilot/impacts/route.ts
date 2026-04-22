@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { listImpacts, summarizeImpact } from '@/lib/ai/impact'
+import { demoImpactsPayload, isDemoModeEnabled } from '@/lib/demo-mode'
 
 export async function GET(req: NextRequest) {
   try {
     const limit = Math.max(1, Math.min(25, Number(req.nextUrl.searchParams.get('limit') ?? 10) || 10))
+
+    if (isDemoModeEnabled()) {
+      return NextResponse.json(demoImpactsPayload(limit))
+    }
+
     const impacts = await listImpacts({ limit })
     return NextResponse.json({
       ok: true,

@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { useInfrastructureAnalytics } from '@/lib/hooks'
+import { useExecutiveForecast, useExecutiveSummary, useInfrastructureAnalytics } from '@/lib/hooks'
 import { BrainCircuit, Sparkles } from 'lucide-react'
 
 function impactLabel(estimatedImpact: string): string {
@@ -19,8 +19,22 @@ function priorityTone(priority: string): string {
 }
 
 export function DecisionCorePanel() {
+  const { data: summary } = useExecutiveSummary()
+  const { data: forecast } = useExecutiveForecast(5)
   const { data: analytics } = useInfrastructureAnalytics()
   const recs = (analytics?.recommendations ?? []).slice(0, 2)
+
+  const explainChange = (category: string): string => {
+    const bounceNow = summary?.today?.bounceRate ?? 0
+    const bounceBase = forecast?.baselines?.avgBounceRate ?? 0
+    const replyNow = summary?.today?.replyRate ?? 0
+    const replyBase = forecast?.baselines?.avgReplyRate ?? 0
+
+    if (String(category).toLowerCase().includes('deliver')) {
+      return `Bounce changed from ${Math.round(bounceBase * 10000) / 100}% to ${Math.round(bounceNow * 10000) / 100}% (last 24h)`
+    }
+    return `Reply changed from ${Math.round(replyBase * 10000) / 100}% to ${Math.round(replyNow * 10000) / 100}% (last 24h)`
+  }
 
   return (
     <Card className="bg-white/5 backdrop-blur border-white/10 h-full">
@@ -60,12 +74,18 @@ export function DecisionCorePanel() {
                   <div className="text-xs">{r.category}</div>
                 </div>
                 <div className="rounded-md border border-white/10 bg-black/10 p-2">
+                  <div className="text-[11px] text-muted-foreground">Change detected</div>
+                  <div className="text-xs">{explainChange(r.category)}</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-black/10 p-2">
                   <div className="text-[11px] text-muted-foreground">Expected impact</div>
                   <div className="text-xs">{impactLabel(r.estimatedImpact)}</div>
                 </div>
-                <div className="rounded-md border border-white/10 bg-black/10 p-2">
-                  <div className="text-[11px] text-muted-foreground">Confidence</div>
-                  <div className="text-xs">{r.confidence}%</div>
+                <div className="rounded-md border border-white/10 bg-black/10 p-2 sm:col-span-3">
+                  <div className="text-[11px] text-muted-foreground">Why this action</div>
+                  <div className="text-xs">
+                    {r.action} · confidence {r.confidence}%
+                  </div>
                 </div>
               </div>
             </div>
@@ -75,4 +95,3 @@ export function DecisionCorePanel() {
     </Card>
   )
 }
-
