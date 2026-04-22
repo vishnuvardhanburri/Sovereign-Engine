@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS domains (
   status TEXT NOT NULL DEFAULT 'active' CHECK (
     status IN ('active', 'paused', 'warming')
   ),
+  -- Some infrastructure modules expect a paused flag (legacy compatibility).
+  paused BOOLEAN NOT NULL DEFAULT FALSE,
   warmup_stage INT NOT NULL DEFAULT 1,
   spf_valid BOOLEAN NOT NULL DEFAULT FALSE,
   dkim_valid BOOLEAN NOT NULL DEFAULT FALSE,
@@ -124,6 +126,7 @@ CREATE TABLE IF NOT EXISTS domains (
 );
 
 -- Backward compatible domain columns for existing databases.
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS daily_cap INT;
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS spam_rate NUMERIC(5,4) NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_domains_spam_rate ON domains(spam_rate DESC);

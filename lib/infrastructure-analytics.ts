@@ -317,9 +317,9 @@ export async function analyzePerformancePatterns(): Promise<PerformanceAnalysis>
       count: parseInt(r.count ?? '0', 10),
     }))
 
-    const peakHour = hours.reduce((max, h) =>
-      h.count > max.count ? h : max
-    )?.hour ?? 0
+    const peakHour = hours.length
+      ? hours.reduce((max, h) => (h.count > max.count ? h : max)).hour
+      : 0
 
     const totalEmails = hours.reduce((sum, h) => sum + h.count, 0)
     const avgLoad = totalEmails / 24
