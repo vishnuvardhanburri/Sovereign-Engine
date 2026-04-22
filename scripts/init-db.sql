@@ -295,6 +295,26 @@ CREATE TABLE IF NOT EXISTS copilot_proposals (
 CREATE INDEX IF NOT EXISTS idx_copilot_proposals_client_created
   ON copilot_proposals (client_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS copilot_settings (
+  client_id BIGINT PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+  autonomous_mode BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS copilot_action_impacts (
+  id TEXT PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  action_kind TEXT NOT NULL,
+  action_summary TEXT NOT NULL,
+  action_payload JSONB,
+  before_snapshot JSONB NOT NULL,
+  after_snapshot JSONB NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_copilot_action_impacts_client_created
+  ON copilot_action_impacts (client_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,

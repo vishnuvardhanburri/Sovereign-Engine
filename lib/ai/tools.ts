@@ -2,6 +2,7 @@ import { query, transaction } from '@/lib/db'
 import { appEnv } from '@/lib/env'
 import { buildSystemContext } from '@/lib/ai/system-context'
 import { loadPatternStore } from '@/lib/ai/pattern-memory'
+import { promoteReadyQueueJobs } from '@/lib/backend'
 
 export type CopilotToolResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -178,6 +179,56 @@ export async function adjustSendRate(input: {
   return { ok: true, data: { updated } }
 }
 
+export async function promoteQueue(input?: { clientId?: number }): Promise<CopilotToolResult<{ promoted: number }>> {
+  try {
+    // promoteReadyQueueJobs is already the canonical path (it handles Redis interactions).
+    const promoted = await promoteReadyQueueJobs()
+    return { ok: true, data: { promoted: Number(promoted ?? 0) || 0 } }
+  } catch (error) {
+    console.error('[CopilotTool] promoteQueue failed', error)
+    return { ok: false, error: 'Failed to promote queue jobs' }
+  }
+}
+
+export async function retryFailedQueueJobs(input?: {
+  clientId?: number
+  limit?: number
+}): Promise<CopilotToolResult<{ retried: number }>> {
+  const clientId = input?.clientId ?? appEnv.defaultClientId()
+  const limit = Math.max(1, Math.min(500, asInt(input?.limit) ?? 100))
+
+  const updated = await query<any>(
+    `
+    WITH candidates AS (
+      SELECT id
+      FROM queue_jobs
+      WHERE client_id = $1
+        AND status = 'failed'
+        AND attempts < max_attempts
+      ORDER BY updated_at DESC
+      LIMIT $2
+    )
+    UPDATE queue_jobs
+    SET status = 'retry', updated_at = NOW()
+    WHERE id IN (SELECT id FROM candidates)
+    RETURNING id
+  `,
+    [clientId, limit],
+  )
+
+  const retried = updated.rowCount ?? updated.rows.length
+
+  await query(
+    `
+    INSERT INTO operator_actions (client_id, action_type, summary, payload)
+    VALUES ($1, 'copilot.retry_failed_jobs', $2, $3)
+  `,
+    [clientId, `Moved ${retried} failed job(s) back to retry`, JSON.stringify({ retried, limit })],
+  )
+
+  return { ok: true, data: { retried } }
+}
+
 export async function updateSequence(input: {
   clientId?: number
   sequenceId: number
@@ -243,4 +294,3 @@ export async function updateSequence(input: {
     return { ok: true, data: { sequenceId } }
   })
 }
-

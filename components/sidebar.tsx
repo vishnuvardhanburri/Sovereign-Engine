@@ -29,7 +29,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, prefetch: 'prefetchDashboard' },
-  { href: '/ai-assistant', label: 'System Brain', icon: Bot },
+  { href: '/ai-assistant', label: 'Autonomous Engine', icon: Bot },
   { href: '/campaigns', label: 'Outbound Campaigns', icon: Mail, prefetch: 'prefetchCampaigns' },
   { href: '/domains', label: 'Sending Health', icon: Globe, prefetch: 'prefetchDomains' },
   { href: '/contacts', label: 'Prospects', icon: Users, prefetch: 'prefetchContacts' },

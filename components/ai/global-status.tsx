@@ -1,10 +1,13 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { useExecutiveForecast, useExecutiveSummary, useInfrastructureAnalytics } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 import { Activity, ShieldAlert } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 type GlobalStatus = 'HEALTHY' | 'AT_RISK' | 'DEGRADED'
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -59,6 +62,59 @@ export function GlobalStatusBar() {
   const { data: forecast } = useExecutiveForecast(5)
   const { data: analytics } = useInfrastructureAnalytics()
 
+  const [autonomousMode, setAutonomousMode] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        setSettingsLoading(true)
+        const res = await fetch('/api/copilot/settings')
+        const json = await res.json()
+        if (!mounted) return
+        if (res.ok && json.ok) {
+          setAutonomousMode(Boolean(json.data?.autonomousMode))
+        }
+      } catch {
+        // ignore
+      } finally {
+        if (mounted) setSettingsLoading(false)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  // When autonomous mode is ON, tick the safe executor periodically.
+  useEffect(() => {
+    if (!autonomousMode) return
+    const id = window.setInterval(() => {
+      fetch('/api/copilot/auto', { method: 'POST' }).catch(() => {})
+    }, 15000)
+    return () => window.clearInterval(id)
+  }, [autonomousMode])
+
+  const toggleAutonomous = async (next: boolean) => {
+    try {
+      setSettingsLoading(true)
+      const res = await fetch('/api/copilot/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autonomousMode: next }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Failed to update')
+      setAutonomousMode(Boolean(json.data?.autonomousMode))
+      toast.success(`Autonomous Mode ${next ? 'ON' : 'OFF'}`)
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update Autonomous Mode')
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
   const riskLevel = computeRiskLevel({
     projectedBounceRisk: forecast?.forecast.projectedBounceRisk,
     avgBounceRatePct: analytics?.metrics.health.avgBounceRate,
@@ -103,10 +159,18 @@ export function GlobalStatusBar() {
             <Badge variant="outline" className="border-white/10 bg-black/20 text-foreground">
               Confidence: {confidenceScore}
             </Badge>
+            <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 px-3 py-1.5">
+              <div className="text-xs text-muted-foreground">Autonomous Mode</div>
+              <Switch
+                checked={autonomousMode}
+                onCheckedChange={(v) => toggleAutonomous(Boolean(v))}
+                disabled={settingsLoading}
+              />
+              <div className="text-xs font-medium">{autonomousMode ? 'ON' : 'OFF'}</div>
+            </div>
           </div>
         </div>
       </CardContent>
     </Card>
   )
 }
-
