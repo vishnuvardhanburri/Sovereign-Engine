@@ -6,6 +6,7 @@ import { useUpdateReplyStatus } from '@/lib/hooks'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -54,6 +55,9 @@ export function ReplyDetailModal({ reply }: ReplyDetailModalProps) {
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Email Conversation</DialogTitle>
+          <DialogDescription>
+            Review the full thread and mark the lead as interested or not interested.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Contact Info */}

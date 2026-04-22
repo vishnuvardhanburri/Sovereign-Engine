@@ -133,13 +133,23 @@ async function runHealthCheck(config: AlertConfig) {
     }
 
     // Alert: Low capacity per domain
+    // In local/dev environments, it's common to have zero domains configured; treat that as setup info.
     if (state.healthyDomains === 0) {
-      addAlert({
-        severity: 'critical',
-        title: 'No Healthy Domains',
-        message: 'No healthy domains available for sending',
-        component: 'domains',
-      })
+      if (state.totalDomains === 0) {
+        addAlert({
+          severity: 'info',
+          title: 'No Domains Configured',
+          message: 'Add at least one domain to enable sending capacity and health checks.',
+          component: 'domains',
+        })
+      } else {
+        addAlert({
+          severity: 'critical',
+          title: 'No Healthy Domains',
+          message: 'No healthy domains available for sending',
+          component: 'domains',
+        })
+      }
     }
   } catch (error) {
     console.error('[Monitor] Health check failed:', error)
@@ -260,6 +270,23 @@ async function runDetailedAnalysis(config: AlertConfig) {
  * Add an alert to the list
  */
 function addAlert(alertData: Omit<Alert, 'id' | 'timestamp' | 'resolved'>) {
+  // Avoid spamming the same alert every polling tick.
+  // If we emitted the same alert recently, skip it.
+  const now = Date.now()
+  const lastSimilar = [...alerts]
+    .reverse()
+    .find(
+      (a) =>
+        !a.resolved &&
+        a.severity === alertData.severity &&
+        a.title === alertData.title &&
+        a.message === alertData.message
+    )
+
+  if (lastSimilar && now - lastSimilar.timestamp.getTime() < 60_000) {
+    return
+  }
+
   const alert: Alert = {
     id: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
     timestamp: new Date(),

@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AgentFeed } from '@/components/agent-feed'
 import { DomainReputation } from '@/components/domain-reputation'
@@ -226,6 +226,9 @@ export default function DashboardPage() {
             <DialogContent className="bg-slate-950 border-white/10">
               <DialogHeader>
                 <DialogTitle>Start a campaign</DialogTitle>
+                <DialogDescription>
+                  Choose a campaign to enqueue jobs. Sending happens in the worker process.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div className="text-sm text-muted-foreground">

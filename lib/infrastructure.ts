@@ -109,7 +109,7 @@ class InfrastructureCoordinator {
       }
 
       if (healthyDomains === 0) {
-        issues.push('No healthy domains available')
+        issues.push(totalDomains === 0 ? 'No domains configured' : 'No healthy domains available')
       }
 
       if (totalInboxes === 0) {
