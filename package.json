@@ -11,6 +11,7 @@
     "test:ai": "tsx scripts/test-ai-integration.ts",
     "test:xavira-ai": "tsx scripts/test-xavira-ai.ts",
     "demo:ai": "tsx scripts/demo-xavira-ai.ts",
+    "demo:check": "tsx scripts/demo-check.ts",
     "test:next-level": "tsx scripts/test-next-level-features.ts",
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "worker:dev": "tsx worker/index.ts",

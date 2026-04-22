@@ -404,15 +404,34 @@ const eventRowSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().optional().transform((v) => v ?? null),
 })
 
-const paginatedEventsSchema = z.object({
-  data: z.array(eventRowSchema),
-  pagination: z.object({
-    page: z.coerce.number(),
-    limit: z.coerce.number(),
-    total: z.coerce.number(),
-    totalPages: z.coerce.number(),
+const paginatedEventsSchema = z.union([
+  // Newer normalized shape used by most of the app.
+  z.object({
+    data: z.array(eventRowSchema),
+    pagination: z.object({
+      page: z.coerce.number(),
+      limit: z.coerce.number(),
+      total: z.coerce.number(),
+      totalPages: z.coerce.number(),
+    }),
   }),
-})
+  // Backend helper shape from lib/pagination.ts.
+  z.object({
+    data: z.array(eventRowSchema),
+    total: z.coerce.number(),
+    page: z.coerce.number(),
+    pageSize: z.coerce.number(),
+    totalPages: z.coerce.number(),
+  }).transform((v) => ({
+    data: v.data,
+    pagination: {
+      page: v.page,
+      limit: v.pageSize,
+      total: v.total,
+      totalPages: v.totalPages,
+    },
+  })),
+])
 
 const operatorActionSchema: z.ZodType<OperatorAction> = z.object({
   id: z.string(),
