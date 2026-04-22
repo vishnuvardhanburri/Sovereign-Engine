@@ -14,8 +14,8 @@ import { demoInfrastructureAnalyticsPayload, isDemoModeEnabled } from '@/lib/dem
 
 export async function GET(request: NextRequest) {
   try {
-    if (isDemoModeEnabled()) {
-      return NextResponse.json(demoInfrastructureAnalyticsPayload())
+    if (await isDemoModeEnabled()) {
+      return NextResponse.json(await demoInfrastructureAnalyticsPayload())
     }
 
     const searchParams = request.nextUrl.searchParams

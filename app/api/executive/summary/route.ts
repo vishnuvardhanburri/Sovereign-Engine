@@ -16,8 +16,8 @@ function rate(n: number, d: number): number {
 
 export async function GET(request: NextRequest) {
   try {
-    if (isDemoModeEnabled()) {
-      return NextResponse.json(demoExecutiveSummaryPayload())
+    if (await isDemoModeEnabled()) {
+      return NextResponse.json(await demoExecutiveSummaryPayload())
     }
 
     const clientId = await resolveClientId({

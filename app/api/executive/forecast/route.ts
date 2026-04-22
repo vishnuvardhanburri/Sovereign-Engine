@@ -42,8 +42,8 @@ function trendText(kind: 'reply' | 'bounce', change: number, days: number): stri
 export async function GET(request: NextRequest) {
   try {
     const days = Math.max(3, Math.min(5, Number(request.nextUrl.searchParams.get('days') ?? 5) || 5))
-    if (isDemoModeEnabled()) {
-      return NextResponse.json(demoExecutiveForecastPayload(days))
+    if (await isDemoModeEnabled()) {
+      return NextResponse.json(await demoExecutiveForecastPayload(days))
     }
 
     const clientId = await resolveClientId({

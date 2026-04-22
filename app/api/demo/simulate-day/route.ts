@@ -3,7 +3,7 @@ import { simulateOneDay } from '@/lib/demo-mode'
 
 export async function POST() {
   try {
-    const res = simulateOneDay()
+    const res = await simulateOneDay()
     if (!res.ok) {
       return NextResponse.json({ ok: false, error: res.error }, { status: 400 })
     }
@@ -13,4 +13,3 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'Failed to simulate day' }, { status: 500 })
   }
 }
-

@@ -3,8 +3,8 @@ import { getDemoState, getDemoModeStatus } from '@/lib/demo-mode'
 
 export async function GET() {
   try {
-    const status = getDemoModeStatus()
-    const state = getDemoState()
+    const status = await getDemoModeStatus()
+    const state = await getDemoState()
     return NextResponse.json({
       ok: true,
       data: {
@@ -18,4 +18,3 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'Failed to load demo state' }, { status: 500 })
   }
 }
-

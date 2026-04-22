@@ -6,8 +6,8 @@ export async function GET(req: NextRequest) {
   try {
     const limit = Math.max(1, Math.min(25, Number(req.nextUrl.searchParams.get('limit') ?? 10) || 10))
 
-    if (isDemoModeEnabled()) {
-      return NextResponse.json(demoImpactsPayload(limit))
+    if (await isDemoModeEnabled()) {
+      return NextResponse.json(await demoImpactsPayload(limit))
     }
 
     const impacts = await listImpacts({ limit })

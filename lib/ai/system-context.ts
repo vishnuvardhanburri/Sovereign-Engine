@@ -117,8 +117,8 @@ export async function buildSystemContext(input?: {
   const clientId = input?.clientId ?? appEnv.defaultClientId()
   const now = input?.now ?? new Date()
 
-  if (isDemoModeEnabled()) {
-    const demo = getDemoState()
+  if (await isDemoModeEnabled()) {
+    const demo = await getDemoState()
     const replyRate = demo.beforeAfter.current.replyRate
     const bounceRate = demo.beforeAfter.current.bounceRate
     const overall = Math.min(0.35, bounceRate * 6 + 0.08) // low-ish risk

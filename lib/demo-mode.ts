@@ -11,6 +11,9 @@
  * - API routes can opt-in to serving synthetic payloads when enabled.
  */
 
+import { createClient } from 'redis'
+import { appEnv } from '@/lib/env'
+
 export type DemoModeStatus = {
   enabled: boolean
   updatedAt: string
@@ -63,6 +66,8 @@ type DemoState = {
   events: DemoEventRow[]
   impacts: DemoImpactRow[]
 }
+
+const REDIS_KEY = 'demo:state:v1'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -170,8 +175,8 @@ function createInitialState(seed: number): DemoState {
   }
 }
 
-// Global singleton (module-scoped).
-let state: DemoState = {
+// Local fallback (used if Redis is unavailable).
+let localState: DemoState = {
   enabled: false,
   updatedAt: nowIso(),
   seed: 1,
@@ -185,50 +190,99 @@ let state: DemoState = {
   impacts: [],
 }
 
-export function getDemoModeStatus(): DemoModeStatus {
-  return { enabled: state.enabled, updatedAt: state.updatedAt }
+let redisClient: any
+let connectPromise: Promise<any> | undefined
+
+async function getRedisClient(): Promise<any> {
+  if (redisClient?.isOpen) return redisClient
+  if (!connectPromise) {
+    const client = createClient({
+      url: appEnv.redisUrl(),
+      socket: { reconnectStrategy: (retries) => Math.min(retries * 250, 3000) },
+    })
+    client.on('error', (error) => console.error('[Redis] Client error', error))
+    connectPromise = client.connect().then(() => {
+      redisClient = client
+      return client
+    })
+  }
+  return connectPromise
 }
 
-export function isDemoModeEnabled(): boolean {
-  return state.enabled
+async function loadState(): Promise<DemoState> {
+  try {
+    const client = await getRedisClient()
+    const raw = await client.get(REDIS_KEY)
+    if (!raw) return localState
+    const parsed = JSON.parse(raw) as DemoState
+    if (!parsed || typeof parsed !== 'object') return localState
+    localState = parsed
+    return parsed
+  } catch {
+    return localState
+  }
 }
 
-export function getDemoState(): DemoState {
-  return state
+async function saveState(next: DemoState): Promise<void> {
+  localState = next
+  try {
+    const client = await getRedisClient()
+    await client.set(REDIS_KEY, JSON.stringify(next), { EX: 60 * 60 * 24 })
+  } catch {
+    // ignore: fall back to local state
+  }
 }
 
-export function setDemoModeEnabled(enabled: boolean): DemoModeStatus {
+export async function getDemoModeStatus(): Promise<DemoModeStatus> {
+  const s = await loadState()
+  return { enabled: s.enabled, updatedAt: s.updatedAt }
+}
+
+export async function isDemoModeEnabled(): Promise<boolean> {
+  const s = await loadState()
+  return Boolean(s.enabled)
+}
+
+export async function getDemoState(): Promise<DemoState> {
+  return loadState()
+}
+
+export async function setDemoModeEnabled(enabled: boolean): Promise<DemoModeStatus> {
+  const cur = await loadState()
   if (enabled) {
     const seed = Math.floor(Math.random() * 1_000_000) + 1
-    state = createInitialState(seed)
-    return getDemoModeStatus()
+    const next = createInitialState(seed)
+    await saveState(next)
+    return { enabled: true, updatedAt: next.updatedAt }
   }
 
-  state = {
+  const next: DemoState = {
     enabled: false,
     updatedAt: nowIso(),
-    seed: state.seed,
+    seed: cur.seed,
     day: 0,
-    beforeAfter: state.beforeAfter,
-    counters: state.counters,
+    beforeAfter: cur.beforeAfter,
+    counters: cur.counters,
     events: [],
     impacts: [],
   }
-  return getDemoModeStatus()
+  await saveState(next)
+  return { enabled: false, updatedAt: next.updatedAt }
 }
 
-export function simulateOneDay(): { ok: true; state: DemoState } | { ok: false; error: string } {
-  if (!state.enabled) return { ok: false, error: 'DEMO_MODE is OFF' }
+export async function simulateOneDay(): Promise<{ ok: true; state: DemoState } | { ok: false; error: string }> {
+  const s = await loadState()
+  if (!s.enabled) return { ok: false, error: 'DEMO_MODE is OFF' }
 
-  const nextDay = state.day + 1
-  const drift = 0.0025 + seededJitter(state.seed, nextDay) * 0.002
+  const nextDay = s.day + 1
+  const drift = 0.0025 + seededJitter(s.seed, nextDay) * 0.002
 
-  const nextReply = clamp01(state.beforeAfter.current.replyRate + drift)
-  const nextBounce = clamp01(Math.max(0.005, state.beforeAfter.current.bounceRate - drift * 0.9))
+  const nextReply = clamp01(s.beforeAfter.current.replyRate + drift)
+  const nextBounce = clamp01(Math.max(0.005, s.beforeAfter.current.bounceRate - drift * 0.9))
 
   const newCounters: DemoValueCounters = {
-    conversationsToday: state.counters.conversationsToday + 8 + Math.floor(seededJitter(state.seed, nextDay) * 6),
-    opportunitiesToday: state.counters.opportunitiesToday + 2 + Math.floor(seededJitter(state.seed, nextDay + 2) * 3),
+    conversationsToday: s.counters.conversationsToday + 8 + Math.floor(seededJitter(s.seed, nextDay) * 6),
+    opportunitiesToday: s.counters.opportunitiesToday + 2 + Math.floor(seededJitter(s.seed, nextDay + 2) * 3),
     estimatedPipelineValueUsd: 0,
   }
   newCounters.estimatedPipelineValueUsd = newCounters.opportunitiesToday * 1200
@@ -239,7 +293,7 @@ export function simulateOneDay(): { ok: true; state: DemoState } | { ok: false; 
     action_kind: 'rotate_pattern',
     action_summary: 'Autonomous: Rotated top-performing pattern to sustain reply rate',
     action_payload: { from: 'Pattern B', to: 'Pattern C', safe: true },
-    before_snapshot: { performance: { last24h: { replyRate: state.beforeAfter.current.replyRate, bounceRate: state.beforeAfter.current.bounceRate } } },
+    before_snapshot: { performance: { last24h: { replyRate: s.beforeAfter.current.replyRate, bounceRate: s.beforeAfter.current.bounceRate } } },
     after_snapshot: { performance: { last24h: { replyRate: nextReply, bounceRate: nextBounce } } },
     created_at: nowIso(),
   }
@@ -248,7 +302,7 @@ export function simulateOneDay(): { ok: true; state: DemoState } | { ok: false; 
   for (let i = 0; i < 36; i++) {
     const t = Date.now() - i * 35_000
     const iso = new Date(t).toISOString()
-    const roll = seededJitter(state.seed + nextDay * 13, i)
+    const roll = seededJitter(s.seed + nextDay * 13, i)
     const type = roll > 0.9 ? 'reply' : roll > 0.86 ? 'bounce' : 'sent'
     newEvents.push({
       id: id('evt'),
@@ -265,24 +319,25 @@ export function simulateOneDay(): { ok: true; state: DemoState } | { ok: false; 
     })
   }
 
-  state = {
-    ...state,
+  const next: DemoState = {
+    ...s,
     updatedAt: nowIso(),
     day: nextDay,
     beforeAfter: {
-      before: state.beforeAfter.before,
+      before: s.beforeAfter.before,
       current: { replyRate: nextReply, bounceRate: nextBounce },
     },
     counters: newCounters,
-    events: [...newEvents, ...state.events].slice(0, 220),
-    impacts: [newImpact, ...state.impacts].slice(0, 25),
+    events: [...newEvents, ...s.events].slice(0, 220),
+    impacts: [newImpact, ...s.impacts].slice(0, 25),
   }
 
-  return { ok: true, state }
+  await saveState(next)
+  return { ok: true, state: next }
 }
 
-export function demoExecutiveSummaryPayload(): any {
-  const s = state
+export async function demoExecutiveSummaryPayload(): Promise<any> {
+  const s = await loadState()
   const todaySent = 1240 + s.day * 140
   const todayReplies = Math.round(todaySent * s.beforeAfter.current.replyRate)
   const todayBounces = Math.round(todaySent * s.beforeAfter.current.bounceRate)
@@ -324,8 +379,8 @@ export function demoExecutiveSummaryPayload(): any {
   }
 }
 
-export function demoExecutiveForecastPayload(days = 5): any {
-  const s = state
+export async function demoExecutiveForecastPayload(days = 5): Promise<any> {
+  const s = await loadState()
   const bounceRisk = s.beforeAfter.current.bounceRate >= pctTo01(5) ? 'HIGH' : s.beforeAfter.current.bounceRate >= pctTo01(3) ? 'MEDIUM' : 'LOW'
   const avgReplyRate = clamp01(s.beforeAfter.current.replyRate - 0.0015)
   const avgBounceRate = clamp01(s.beforeAfter.current.bounceRate + 0.001)
@@ -347,8 +402,8 @@ export function demoExecutiveForecastPayload(days = 5): any {
   }
 }
 
-export function demoInfrastructureAnalyticsPayload(): any {
-  const s = state
+export async function demoInfrastructureAnalyticsPayload(): Promise<any> {
+  const s = await loadState()
   // Keep shape aligned with /api/infrastructure/analytics.
   return {
     timestamp: nowIso(),
@@ -407,8 +462,9 @@ export function demoInfrastructureAnalyticsPayload(): any {
   }
 }
 
-export function demoEventsPayload(page = 1, limit = 50): any {
-  const rows = state.events.slice(0, limit)
+export async function demoEventsPayload(page = 1, limit = 50): Promise<any> {
+  const s = await loadState()
+  const rows = s.events.slice(0, limit)
   return {
     data: rows,
     pagination: {
@@ -421,8 +477,9 @@ export function demoEventsPayload(page = 1, limit = 50): any {
   }
 }
 
-export function demoImpactsPayload(limit = 10): any {
-  const rows = state.impacts.slice(0, limit)
+export async function demoImpactsPayload(limit = 10): Promise<any> {
+  const s = await loadState()
+  const rows = s.impacts.slice(0, limit)
   return {
     ok: true,
     demoMode: true,
@@ -435,4 +492,3 @@ export function demoImpactsPayload(limit = 10): any {
     })),
   }
 }
-
