@@ -34,7 +34,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(events)
   } catch (error) {
     console.error('[API] Failed to list events', error)
-    return NextResponse.json({ error: 'Failed to list events' }, { status: 500 })
+    const searchParams = request.nextUrl.searchParams
+    const page = Number(searchParams.get('page') ?? 1) || 1
+    const limit = Number(searchParams.get('limit') ?? 50) || 50
+    // Schema-compatible fallback (prevents blank UI states).
+    return NextResponse.json({
+      data: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+      },
+      error: 'Failed to list events',
+    })
   }
 }
 

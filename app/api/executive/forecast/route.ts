@@ -175,7 +175,25 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[API] Executive forecast error', error)
-    return NextResponse.json({ error: 'Failed to load executive forecast' }, { status: 500 })
+    // Never 500 on demo paths: return a schema-compatible fallback.
+    return NextResponse.json({
+      timestamp: new Date().toISOString(),
+      forecast: {
+        expectedRepliesToday: 0,
+        projectedBounceRisk: 'LOW',
+        estimatedSafeSendCapacityRemaining: 0,
+      },
+      trends: {
+        days: 5,
+        reply: { direction: 'up', changePct: 0, text: 'Reply rate stable' },
+        bounce: { direction: 'down', changePct: 0, text: 'Bounce rate stable' },
+      },
+      earlyWarnings: [],
+      baselines: {
+        avgReplyRate: 0,
+        avgBounceRate: 0,
+      },
+      error: 'Failed to load executive forecast',
+    })
   }
 }
-

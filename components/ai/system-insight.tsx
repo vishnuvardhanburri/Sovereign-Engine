@@ -10,10 +10,6 @@ function pct(value01: number): string {
   return `${Math.round(value01 * 10000) / 100}%`
 }
 
-function trendIcon(direction: 'up' | 'down') {
-  return direction === 'up' ? ArrowUpRight : ArrowDownRight
-}
-
 function trendTone(kind: 'goodUp' | 'goodDown' | 'badUp' | 'badDown'): string {
   if (kind === 'goodUp' || kind === 'goodDown') return 'text-emerald-300'
   return 'text-rose-300'
@@ -34,8 +30,6 @@ export function SystemInsightPanel() {
 
   const replyDir = forecast?.trends.reply.direction ?? 'up'
   const bounceDir = forecast?.trends.bounce.direction ?? 'down'
-  const ReplyIcon = trendIcon(replyDir)
-  const BounceIcon = trendIcon(bounceDir)
 
   const activeCampaigns = (campaigns ?? []).filter((c) => c.status === 'active')
   const domainHealth = analytics?.metrics
@@ -61,7 +55,11 @@ export function SystemInsightPanel() {
               Reply trend
             </div>
             <div className="mt-1 flex items-center gap-2">
-              <ReplyIcon className={cn('h-4 w-4', trendTone('goodUp'))} />
+              {replyDir === 'up' ? (
+                <ArrowUpRight className={cn('h-4 w-4', trendTone('goodUp'))} />
+              ) : (
+                <ArrowDownRight className={cn('h-4 w-4', trendTone('badDown'))} />
+              )}
               <div className="text-sm font-semibold">
                 {forecast ? forecast.trends.reply.text : 'Loading…'}
               </div>
@@ -73,7 +71,11 @@ export function SystemInsightPanel() {
               Bounce trend
             </div>
             <div className="mt-1 flex items-center gap-2">
-              <BounceIcon className={cn('h-4 w-4', bounceDir === 'down' ? trendTone('goodDown') : trendTone('badUp'))} />
+              {bounceDir === 'down' ? (
+                <ArrowDownRight className={cn('h-4 w-4', trendTone('goodDown'))} />
+              ) : (
+                <ArrowUpRight className={cn('h-4 w-4', trendTone('badUp'))} />
+              )}
               <div className="text-sm font-semibold">
                 {forecast ? forecast.trends.bounce.text : 'Loading…'}
               </div>
@@ -116,4 +118,3 @@ export function SystemInsightPanel() {
     </Card>
   )
 }
-

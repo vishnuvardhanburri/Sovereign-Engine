@@ -7,7 +7,11 @@ export async function POST() {
     return NextResponse.json(result)
   } catch (error) {
     console.error('[API] copilot/auto failed', error)
-    return NextResponse.json({ ok: false, error: 'Autonomous tick failed' }, { status: 500 })
+    // Never 500 on demo paths.
+    return NextResponse.json({
+      ok: false,
+      error: 'Autonomous tick failed',
+      details: error instanceof Error ? error.message : String(error),
+    })
   }
 }
-

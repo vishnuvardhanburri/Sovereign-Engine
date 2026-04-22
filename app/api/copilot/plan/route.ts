@@ -7,7 +7,12 @@ export async function GET() {
     return NextResponse.json({ ok: true, data: plan })
   } catch (error) {
     console.error('[API] copilot/plan failed', error)
-    return NextResponse.json({ ok: false, error: 'Failed to build copilot plan' }, { status: 500 })
+    // Never 500 on demo paths: return valid JSON and a stable shape.
+    return NextResponse.json({
+      ok: false,
+      error: 'Failed to build copilot plan',
+      details: error instanceof Error ? error.message : String(error),
+      data: null,
+    })
   }
 }
-

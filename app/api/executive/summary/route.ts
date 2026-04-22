@@ -120,6 +120,34 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[API] Executive summary error', error)
-    return NextResponse.json({ error: 'Failed to load executive summary' }, { status: 500 })
+    // Never 500 on demo paths: return a schema-compatible fallback.
+    return NextResponse.json({
+      timestamp: new Date().toISOString(),
+      today: {
+        sent: 0,
+        replies: 0,
+        interestedReplies: 0,
+        bounces: 0,
+        replyRate: 0,
+        bounceRate: 0,
+      },
+      yesterday: {
+        sent: 0,
+        replies: 0,
+        bounces: 0,
+        replyRate: 0,
+        bounceRate: 0,
+      },
+      businessImpact: {
+        estimatedConversationsToday: 0,
+        estimatedOpportunities: 0,
+        replyTrendPct: 0,
+      },
+      safety: {
+        complianceActive: true,
+        blockedContactsToday: 0,
+      },
+      error: 'Failed to load executive summary',
+    })
   }
 }

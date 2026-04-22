@@ -48,9 +48,9 @@ function timeAgo(iso: string): string {
 
 export function ActivityStreamPanel() {
   const { data: eventsPage } = useRecentEvents(70)
-  const events = eventsPage?.data ?? []
 
   const rows = useMemo(() => {
+    const events = eventsPage?.data ?? []
     return events.slice(0, 70).map((e) => {
       const type = String(e.event_type)
       return {
@@ -63,7 +63,7 @@ export function ActivityStreamPanel() {
         meta: e.metadata,
       }
     })
-  }, [events])
+  }, [eventsPage])
 
   return (
     <Card className="bg-white/5 backdrop-blur border-white/10">
@@ -114,4 +114,3 @@ export function ActivityStreamPanel() {
     </Card>
   )
 }
-

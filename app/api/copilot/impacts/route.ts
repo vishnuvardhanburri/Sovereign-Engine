@@ -14,7 +14,12 @@ export async function GET(req: NextRequest) {
     })
   } catch (error) {
     console.error('[API] copilot/impacts failed', error)
-    return NextResponse.json({ ok: false, error: 'Failed to load impacts' }, { status: 500 })
+    // Never 500 on demo paths.
+    return NextResponse.json({
+      ok: false,
+      error: 'Failed to load impacts',
+      details: error instanceof Error ? error.message : String(error),
+      data: [],
+    })
   }
 }
-
