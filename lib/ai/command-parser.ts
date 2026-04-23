@@ -126,7 +126,7 @@ export function parseCommand(rawInput: string): { ok: true; command: ParsedComma
   if (idMatch?.[1]) params.campaignId = Number.parseInt(idMatch[1], 10)
 
   // sequenceId parsing
-  const seqMatch = raw.match(/\bsequence\s+#?(\d+)\b/i)
+  const seqMatch = raw.match(/\b(?:sequence|seq)\s*(?:[:#]?\s*)?(\d+)\b/i)
   if (seqMatch?.[1]) params.sequenceId = Number.parseInt(seqMatch[1], 10)
 
   // dailyTarget parsing: "daily:200" or "perday:200"

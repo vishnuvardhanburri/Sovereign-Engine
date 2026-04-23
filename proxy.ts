@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Next.js 16 deprecates the `middleware.ts` convention in favor of `proxy.ts`.
+// This file keeps the same behavior: protect dashboard routes via cookie presence.
+
 const PUBLIC_PATHS = new Set(['/login', '/api/auth/login', '/api/auth/me', '/api/auth/logout', '/api/webhooks/resend'])
 const SESSION_COOKIE = 'xo_session'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   if (PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next()
@@ -30,7 +33,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Middleware runs on the Edge runtime; only check cookie presence here.
+  // Proxy runs on the Edge runtime; only check cookie presence here.
   // Token verification is handled by API routes / server code.
   const token = request.cookies.get(SESSION_COOKIE)?.value ?? ''
   if (!token) {
@@ -46,3 +49,4 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
+
