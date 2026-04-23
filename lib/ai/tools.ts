@@ -294,3 +294,51 @@ export async function updateSequence(input: {
     return { ok: true, data: { sequenceId } }
   })
 }
+
+export async function createAndLaunchCampaign(input: {
+  clientId?: number
+  name: string
+  sequenceId: number
+  dailyTarget?: number
+  contactIds: number[]
+}): Promise<CopilotToolResult<{ campaignId: number; contactCount: number }>> {
+  const clientId = input.clientId ?? appEnv.defaultClientId()
+  const name = String(input.name ?? '').trim()
+  const sequenceId = asInt(input.sequenceId)
+  if (!name) return { ok: false, error: 'Campaign name is required' }
+  if (!sequenceId) return { ok: false, error: 'sequenceId is required' }
+
+  const contactIds = Array.isArray(input.contactIds) ? input.contactIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) : []
+  if (contactIds.length === 0) return { ok: false, error: 'No eligible contacts found for the provided filters' }
+  if (contactIds.length > 50_000) return { ok: false, error: 'Too many contacts selected (max 50,000)' }
+
+  const dailyTarget = Math.max(1, Math.min(5000, asInt(input.dailyTarget) ?? 200))
+
+  try {
+    // Reuse existing backend orchestration which handles queue job insertion + status activation.
+    const backend = await import('@/lib/backend')
+    const created = await backend.createCampaign(clientId, { name, sequenceId, dailyTarget })
+    const campaignId = Number((created as any)?.id)
+    if (!campaignId) return { ok: false, error: 'Failed to create campaign' }
+
+    const payload = await backend.enqueueCampaignJobs(clientId, campaignId, contactIds)
+
+    await query(
+      `
+      INSERT INTO operator_actions (client_id, campaign_id, action_type, summary, payload)
+      VALUES ($1, $2, 'copilot.create_and_launch_campaign', $3, $4)
+    `,
+      [
+        clientId,
+        campaignId,
+        `Created and launched campaign via command center: ${name}`,
+        JSON.stringify({ sequenceId, dailyTarget, requestedContacts: contactIds.length, enqueuedContacts: payload.contactCount }),
+      ],
+    )
+
+    return { ok: true, data: { campaignId, contactCount: Number(payload.contactCount ?? 0) || 0 } }
+  } catch (error) {
+    console.error('[CopilotTool] createAndLaunchCampaign failed', error)
+    return { ok: false, error: error instanceof Error ? error.message : 'Failed to create and launch campaign' }
+  }
+}

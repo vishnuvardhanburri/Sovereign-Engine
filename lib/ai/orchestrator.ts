@@ -153,6 +153,7 @@ export async function executeApprovedAction(input: {
 
   const allowedWriteTools = new Set([
     'createCampaign',
+    'createAndLaunchCampaign',
     'updateSequence',
     'pauseCampaign',
     'adjustSendRate',
