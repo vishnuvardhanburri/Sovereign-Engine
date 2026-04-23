@@ -1,5 +1,6 @@
 import { GlobalStatusBar } from '@/components/ai/global-status'
 import { CommandCenter } from '@/components/ai/command-center'
+import { MiniCopilotChat } from '@/components/ai/mini-copilot-chat'
 import { SystemGuaranteesPanel } from '@/components/ai/system-guarantees'
 import { SystemInsightPanel } from '@/components/ai/system-insight'
 import { DecisionCorePanel } from '@/components/ai/decision-core'
@@ -59,6 +60,8 @@ export default function AIAssistantPage() {
           </div>
         </div>
       </div>
+
+      <MiniCopilotChat />
     </ViewModeProvider>
   )
 }
