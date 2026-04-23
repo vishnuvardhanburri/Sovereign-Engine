@@ -50,6 +50,7 @@ function riskBadge(risk: ExecutionPlan['riskLevel']) {
 export function CommandCenter() {
   const { viewMode } = useViewMode()
   const readOnly = viewMode === 'client'
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto')
 
   const [text, setText] = useState('')
   const [plan, setPlan] = useState<ExecutionPlan | null>(null)
@@ -73,7 +74,7 @@ export function CommandCenter() {
     const res = await fetch('/api/copilot/command/plan', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, mode }),
     })
     const json = (await res.json()) as ApiOk<ExecutionPlan> | ApiErr
     if (!json.ok) throw new Error(json.error)
@@ -141,6 +142,28 @@ export function CommandCenter() {
         </div>
         <div className="text-xs text-muted-foreground">
           {readOnly ? <Badge variant="secondary">Client View (Read-only)</Badge> : <Badge variant="outline">Operator Mode</Badge>}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 text-sm">
+        <Badge variant="outline">Outbound Mode</Badge>
+        <div className="flex gap-2">
+          <Button
+            variant={mode === 'auto' ? 'default' : 'secondary'}
+            size="sm"
+            onClick={() => setMode('auto')}
+            disabled={isPending || executing}
+          >
+            Auto
+          </Button>
+          <Button
+            variant={mode === 'manual' ? 'default' : 'secondary'}
+            size="sm"
+            onClick={() => setMode('manual')}
+            disabled={isPending || executing}
+          >
+            Manual (Uploaded)
+          </Button>
         </div>
       </div>
 

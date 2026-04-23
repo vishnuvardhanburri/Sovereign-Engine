@@ -15,6 +15,7 @@ export const CommandFilterSchema = z.object({
   timezoneIn: z.array(z.string().trim().min(1)).optional(),
   verificationStatusIn: z.array(z.string().trim().min(1)).optional(),
   statusIn: z.array(z.string().trim().min(1)).optional(),
+  sourceIn: z.array(z.string().trim().min(1)).optional(),
   limit: z.number().int().min(1).max(50_000).optional(),
 })
 
@@ -76,6 +77,9 @@ function parseKeyValueFilters(text: string): CommandFilters {
 
   const domains = kv('domain')
   if (domains.length) filters.emailDomainIn = domains
+
+  const sources = kv('source')
+  if (sources.length) filters.sourceIn = sources
 
   const limitRaw = kv('limit')[0]
   if (limitRaw) {
@@ -173,4 +177,3 @@ export function parseCommand(rawInput: string): { ok: true; command: ParsedComma
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
-

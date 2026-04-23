@@ -93,7 +93,7 @@ export const useBulkCreateContacts = () => {
 export const useImportContactsCsv = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { csv: string; dedupeByDomain?: boolean; verify?: boolean; enrich?: boolean }) =>
+    mutationFn: (input: { csv: string; dedupeByDomain?: boolean; verify?: boolean; enrich?: boolean; sourceOverride?: string }) =>
       api.contacts.importCsv(input),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] })

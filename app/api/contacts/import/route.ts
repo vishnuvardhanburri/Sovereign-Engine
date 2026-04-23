@@ -10,10 +10,12 @@ export async function POST(request: NextRequest) {
       headers: request.headers,
     })
 
+    const sourceOverride = typeof body.sourceOverride === 'string' ? body.sourceOverride : undefined
+
     const contacts = Array.isArray(body.contacts)
       ? body.contacts
       : typeof body.csv === 'string'
-      ? parseContactsCsv(body.csv)
+      ? parseContactsCsv(body.csv, { sourceOverride })
       : null
 
     if (!contacts) {

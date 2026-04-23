@@ -73,6 +73,7 @@ function buildContactWhere(filters?: CommandFilters): { where: string; params: u
   if (f.timezoneIn?.length) push(`c.timezone = ANY($X::text[])`, f.timezoneIn)
 
   if (f.emailDomainIn?.length) push(`c.email_domain = ANY($X::text[])`, f.emailDomainIn)
+  if (f.sourceIn?.length) push(`c.source = ANY($X::text[])`, f.sourceIn)
 
   // Always exclude suppression list for real execution. (Matches backend eligibility logic.)
   clauses.push(`NOT EXISTS (SELECT 1 FROM suppression_list s WHERE s.client_id = c.client_id AND s.email = c.email)`)
@@ -151,6 +152,7 @@ function computeSendPlan(input: {
 export async function buildExecutionPlan(input: {
   command: ParsedCommand
   clientId?: number
+  mode?: 'auto' | 'manual'
 }): Promise<{ ok: true; plan: ExecutionPlan } | { ok: false; error: string }> {
   try {
     const clientId = input.clientId ?? appEnv.defaultClientId()
@@ -275,8 +277,19 @@ export async function buildExecutionPlan(input: {
     if (!sequenceId) return { ok: false, error: 'create_campaign requires sequenceId (e.g. "create campaign ... sequence:1")' }
 
     const filters = input.command.audience?.filters
-    const contactCount = await estimateContactCount(filters)
-    const contactIds = await selectContactIds(filters)
+    const enforcedFilters: CommandFilters | undefined =
+      input.mode === 'manual'
+        ? {
+            ...(filters ?? {}),
+            sourceIn: Array.from(new Set([...(filters?.sourceIn ?? []), 'manual_upload'])),
+          }
+        : filters
+
+    if (input.mode === 'manual' && !enforcedFilters?.sourceIn?.includes('manual_upload')) {
+      return { ok: false, error: 'Manual mode requires contacts imported via Upload (source=manual_upload)' }
+    }
+    const contactCount = await estimateContactCount(enforcedFilters)
+    const contactIds = await selectContactIds(enforcedFilters)
 
     const domains = await query<any>(
       `SELECT id, domain, daily_limit, health_score, status, paused
@@ -360,4 +373,3 @@ export async function buildExecutionPlan(input: {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
-

@@ -25,50 +25,93 @@ export function UploadContactsModal() {
   const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState<ParsedContact[]>([])
   const [rawCsv, setRawCsv] = useState<string>('')
+  const [fileName, setFileName] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { mutate: importCsv, isPending } = useImportContactsCsv()
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const content = event.target?.result as string
-      setRawCsv(content)
-      const lines = content.split('\n').filter((l) => l.trim())
+    setFileName(file.name)
 
-      const contacts: ParsedContact[] = []
-      const seen = new Set<string>()
+    // CSV: send raw content to server-side parser (deterministic), but tag it as manual_upload.
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const content = (event.target?.result as string) || ''
+        setRawCsv(content)
 
-      lines.slice(1).forEach((line) => {
-        const parts = line.split(',').map((s) => s.trim())
-        const email = parts.find((p) => p.includes('@')) || ''
-        const name = parts[1] || ''
-        const company = parts[2] || ''
-        const key = email.toLowerCase()
-        if (email && !seen.has(key)) {
+        // Lightweight preview: first 10 lines only
+        const lines = content.split(/\r?\n/).filter((l) => l.trim())
+        const contacts: ParsedContact[] = []
+        const seen = new Set<string>()
+        lines.slice(1, 200).forEach((line) => {
+          const parts = line.split(',').map((s) => s.trim())
+          const email = parts.find((p) => p.includes('@')) || ''
+          const name = parts[1] || ''
+          const company = parts[2] || ''
+          const key = email.toLowerCase()
+          if (email && !seen.has(key)) {
+            seen.add(key)
+            contacts.push({ email, name: name || '', company: company || '' })
+          }
+        })
+        setPreview(contacts)
+      }
+      reader.readAsText(file)
+      return
+    }
+
+    // XLSX: parse client-side into CSV-like text (minimal, deterministic).
+    if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+      try {
+        const { default: XLSX } = await import('xlsx')
+        const buf = await file.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array' })
+        const sheetName = wb.SheetNames[0]
+        const ws = wb.Sheets[sheetName]
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
+
+        // Build a CSV string that backend parser can understand (headers + rows).
+        const headers = Object.keys(rows[0] ?? {})
+        const csvLines = [
+          headers.join(','),
+          ...rows.slice(0, 50_000).map((r) => headers.map((h) => String(r[h] ?? '').replaceAll('\n', ' ').replaceAll(',', ' ')).join(',')),
+        ]
+        const csv = csvLines.join('\n')
+        setRawCsv(csv)
+
+        const contacts: ParsedContact[] = []
+        const seen = new Set<string>()
+        rows.slice(0, 200).forEach((r) => {
+          const email = String(r.email ?? r.Email ?? r['email_address'] ?? '').trim()
+          if (!email.includes('@')) return
+          const key = email.toLowerCase()
+          if (seen.has(key)) return
           seen.add(key)
           contacts.push({
             email,
-            name: name || '',
-            company: company || '',
+            name: String(r.name ?? r.Name ?? '').trim(),
+            company: String(r.company ?? r.Company ?? '').trim(),
           })
-        }
-      })
-
-      setPreview(contacts)
+        })
+        setPreview(contacts)
+      } catch {
+        setRawCsv('')
+        setPreview([])
+      }
     }
-    reader.readAsText(file)
   }
 
   const handleUpload = () => {
     if (!rawCsv.trim()) return
 
-    importCsv({ csv: rawCsv }, {
+    importCsv({ csv: rawCsv, sourceOverride: 'manual_upload' }, {
       onSuccess: () => {
         setPreview([])
         setRawCsv('')
+        setFileName('')
         setOpen(false)
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
@@ -89,7 +132,7 @@ export function UploadContactsModal() {
         <DialogHeader>
           <DialogTitle>Upload Contacts</DialogTitle>
           <DialogDescription>
-            Upload a CSV file. We will automatically detect columns like email, name, company, title, and timezone.
+            Upload a CSV or XLSX. We will import into Manual Mode (source=manual_upload), dedupe, and optionally validate email.
           </DialogDescription>
         </DialogHeader>
 
@@ -98,7 +141,7 @@ export function UploadContactsModal() {
             <Input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.xlsx,.xls"
               onChange={handleFileSelect}
               className="hidden"
               id="csv-file"
@@ -120,7 +163,7 @@ export function UploadContactsModal() {
           {preview.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-medium">
-                Preview ({preview.length} contacts)
+                Preview ({preview.length} contacts){fileName ? ` • ${fileName}` : ''}
               </p>
               <div className="max-h-48 overflow-y-auto border rounded-lg p-3">
                 <div className="space-y-1 text-xs">

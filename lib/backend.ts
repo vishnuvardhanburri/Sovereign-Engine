@@ -387,7 +387,7 @@ function parseCsvRow(line: string) {
   return cells
 }
 
-export function parseContactsCsv(csv: string): ContactInput[] {
+export function parseContactsCsv(csv: string, opts?: { sourceOverride?: string }): ContactInput[] {
   const lines = csv
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -446,7 +446,7 @@ export function parseContactsCsv(csv: string): ContactInput[] {
     const company = pick(record, KEY.company) || undefined
     const title = pick(record, KEY.title) || undefined
     const timezone = pick(record, KEY.timezone) || undefined
-    const source = pick(record, KEY.source) || 'csv'
+    const source = opts?.sourceOverride || pick(record, KEY.source) || 'csv'
     const companyDomain = pick(record, KEY.companyDomain) || undefined
     const linkedin = pick(record, KEY.linkedin) || undefined
 

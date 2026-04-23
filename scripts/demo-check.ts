@@ -155,6 +155,14 @@ function validateCopilotImpacts(payload: any): CheckResult {
   return { ok: true }
 }
 
+function validateCopilotChat(payload: any): CheckResult {
+  if (!payload || typeof payload !== 'object') return { ok: false, reason: 'Invalid JSON object' }
+  if (payload.ok !== true) return { ok: false, reason: payload.error ? String(payload.error) : 'ok=false' }
+  if (!Array.isArray(payload.lines)) return { ok: false, reason: 'Missing lines[]' }
+  if (payload.lines.length < 2) return { ok: false, reason: 'Too few lines' }
+  return { ok: true }
+}
+
 async function main() {
   const cwd = process.cwd()
   const baseUrl = process.env.DEMO_BASE_URL || 'http://localhost:3000'
@@ -254,13 +262,13 @@ async function main() {
     // Part 2: API checks
     console.log('\n[4/4] API validation\n')
 
-  const checks: Array<{
-    label: string
-    url: string
-    method?: 'GET' | 'POST'
-    body?: any
-    validate: (payload: any) => CheckResult
-  }> = [
+	  const checks: Array<{
+	    label: string
+	    url: string
+	    method?: 'GET' | 'POST'
+	    body?: any
+	    validate: (payload: any) => CheckResult
+	  }> = [
     {
       label: 'Executive Summary',
       url: `${baseUrl}/api/executive/summary`,
@@ -281,12 +289,19 @@ async function main() {
       url: `${baseUrl}/api/infrastructure/analytics`,
       validate: validateInfraAnalytics,
     },
-    {
-      label: 'Copilot Plan',
-      url: `${baseUrl}/api/copilot/plan`,
-      validate: validateCopilotPlan,
-    },
-  ]
+	    {
+	      label: 'Copilot Plan',
+	      url: `${baseUrl}/api/copilot/plan`,
+	      validate: validateCopilotPlan,
+	    },
+	    {
+	      label: 'Copilot Chat',
+	      url: `${baseUrl}/api/copilot/chat`,
+	      method: 'POST',
+	      body: { text: 'How many emails sent today?' },
+	      validate: validateCopilotChat,
+	    },
+	  ]
 
   let anyFail = false
   for (const c of checks) {

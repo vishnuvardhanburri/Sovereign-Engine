@@ -650,7 +650,7 @@ export const api = {
       })
       return rows.map(toContact)
     },
-    async importCsv(input: { csv: string; verify?: boolean; enrich?: boolean; dedupeByDomain?: boolean }): Promise<{ imported: number; contacts: Contact[] }> {
+    async importCsv(input: { csv: string; verify?: boolean; enrich?: boolean; dedupeByDomain?: boolean; sourceOverride?: string }): Promise<{ imported: number; contacts: Contact[] }> {
       const result = await fetchJson<{ imported: number; contacts: unknown[] }>('/api/contacts/import', {
         method: 'POST',
         body: JSON.stringify(input),

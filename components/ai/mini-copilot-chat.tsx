@@ -25,6 +25,7 @@ function lastN<T>(arr: T[], n: number): T[] {
 export function MiniCopilotChat() {
   const { viewMode, demoMode } = useViewMode()
   const readOnly = viewMode === 'client'
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto')
 
   const [open, setOpen] = useState(true)
   const [text, setText] = useState('')
@@ -51,7 +52,7 @@ export function MiniCopilotChat() {
       const res = await fetch('/api/copilot/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: prompt }),
+        body: JSON.stringify({ text: prompt, mode }),
       })
       const json = (await res.json()) as ChatApi
       if (!json.ok) throw new Error(json.error)
@@ -152,6 +153,7 @@ export function MiniCopilotChat() {
           <div className="flex items-center gap-2">
             <div className="text-sm font-semibold">Xavira AI Assistant</div>
             <Badge variant="outline">Minimal</Badge>
+            <Badge variant="secondary">{mode === 'auto' ? 'Auto' : 'Manual'}</Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={() => setOpen((v) => !v)}>
             {open ? 'Hide' : 'Show'}
@@ -160,6 +162,15 @@ export function MiniCopilotChat() {
 
         {open && (
           <div className="p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant={mode === 'auto' ? 'default' : 'secondary'} onClick={() => setMode('auto')} disabled={busy}>
+                Auto
+              </Button>
+              <Button size="sm" variant={mode === 'manual' ? 'default' : 'secondary'} onClick={() => setMode('manual')} disabled={busy}>
+                Manual
+              </Button>
+              <div className="text-xs text-muted-foreground">Manual uses uploaded contacts only.</div>
+            </div>
             <div className="space-y-2 max-h-[240px] overflow-auto pr-1">
               {visible.map((m) => (
                 <div key={m.id} className={m.role === 'user' ? 'text-right' : 'text-left'}>
@@ -218,4 +229,3 @@ export function MiniCopilotChat() {
     </div>
   )
 }
-

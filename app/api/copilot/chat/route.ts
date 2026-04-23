@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const text = String(body?.text ?? '').trim()
+    const mode = body?.mode === 'manual' ? 'manual' : 'auto'
     if (!text) return NextResponse.json({ ok: false, error: 'Message is empty' }, { status: 400 })
 
     // Always ground on system context + decision engine.
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     // COMMAND: show plan card (no execution).
     const parsed = parseCommand(text)
     if (parsed.ok && parsed.command.action !== 'get_status') {
-      const planned = await buildExecutionPlan({ command: parsed.command })
+      const planned = await buildExecutionPlan({ command: parsed.command, mode })
       if (!planned.ok) return NextResponse.json({ ok: false, error: planned.error }, { status: 400 })
 
       const lines = shortLines([
@@ -102,4 +103,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Copilot chat failed' }, { status: 500 })
   }
 }
-
