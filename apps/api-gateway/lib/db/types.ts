@@ -155,6 +155,7 @@ export interface QueueJob {
   scheduled_at: string
   recipient_email: string | null
   cc_emails: string[] | null
+  idempotency_key?: string | null
   metadata: Record<string, unknown>
   status: QueueJobStatus
   sequence_stopped?: boolean

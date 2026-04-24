@@ -87,8 +87,14 @@ export async function evaluateQueueDecision(
   }
 
   // PRODUCTION FIX: Health-based routing with circuit breaker
-  const lane =
+  const derivedLane =
     emailValidation.catchAll ? 'slow' : emailValidation.verdict === 'risky' ? 'low_risk' : 'normal'
+  const overrideLane = (context.job as any)?.metadata?.delivery?.override_lane as
+    | 'normal'
+    | 'low_risk'
+    | 'slow'
+    | undefined
+  const lane = overrideLane ?? derivedLane
   const selection = await selectBestIdentity(context.job.client_id, { lane })
   if (!selection) {
     return {

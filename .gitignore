@@ -17,9 +17,14 @@ package-lock.json
 !.env.example
 
 # Common ignores
-node_modules
+node_modules/
 .next/
+dist/
+logs/
+*.log
 .DS_Store
+.sixth/
+.venv-pdf/
 
 # Reference-only cloned repos (do not commit)
 vendor_refs/

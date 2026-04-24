@@ -45,6 +45,13 @@ import { buildPersonalizedMessage } from '@/lib/agents/intelligence/personalizat
 import { recalculateDomainHealth, refreshDomainRiskLimits } from '@/lib/agents/data/risk-agent'
 import { suggestSubjectLines } from '@/lib/agents/intelligence/subject-generation-agent'
 import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
+import { getGlobalIntelligence } from '@/adapters/intelligence'
+import { simulateOutcome } from '@/adapters/simulation'
+import { getOutcomeSignalsAdapter } from '@/adapters/outcome'
+import { getDomainScore } from '@xavira/reputation-engine'
+import { decideAdvanced } from '@xavira/decision-engine'
+import type { Lane, ValidationVerdict } from '@xavira/types'
+import { randomUUID } from 'crypto'
 // PRODUCTION READINESS FIXES
 import {
   generateIdempotencyKey,
@@ -162,6 +169,962 @@ function toQueuePayload(job: QueueJob): RedisQueueJobPayload {
     campaign_id: job.campaign_id,
     sequence_step: job.sequence_step,
     scheduled_at: job.scheduled_at,
+    idempotency_key: (job as any).idempotency_key ?? undefined,
+  }
+}
+
+type AdvancedPreEnqueueTrace = {
+  traceId: string
+  flags: {
+    SIMULATION_ENABLED: boolean
+    INTELLIGENCE_ENABLED: boolean
+    ADVANCED_DECISION_ENABLED: boolean
+    OUTCOME_ENABLED: boolean
+    OUTCOME_EXPERIMENT: boolean
+  }
+  experiment_group?: 'baseline' | 'treatment'
+  decision_source: 'advanced' | 'default'
+  simulation?: { risk: number; replyProb: number }
+  intelligence?: {
+    providerRisk?: Record<string, number>
+    globalDomainScore?: number
+    timeWindow?: { hour: number; reply_rate: number; bounce_rate: number }
+  }
+  outcome?: {
+    available: boolean
+    expected_reply_prob: number
+    risk_adjustment: number
+    best_time_window?: number
+    preferred_lane?: string
+    reasons?: string[]
+  }
+  decision?: { action: string; reason?: string; lane?: string }
+  reasons?: string[]
+  priority_score?: number
+  fallback?: { reason: string }
+}
+
+async function appendDecisionAuditLog(input: {
+  clientId: number
+  campaignId: number
+  queueJobId: number
+  idempotencyKey?: string
+  trace: AdvancedPreEnqueueTrace
+  decision: string
+  reasons: string[]
+  signals: { expected_reply_prob?: number; risk_adjustment?: number; domain_health?: number }
+  outcome_group?: 'baseline' | 'treatment'
+  priority_score?: number
+}): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO decision_audit_logs (
+         client_id,
+         campaign_id,
+         queue_job_id,
+         idempotency_key,
+         trace_id,
+         decision,
+         reasons,
+         signals,
+         outcome_group,
+         priority_score
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10)
+       ON CONFLICT (client_id, idempotency_key) DO NOTHING`,
+      [
+        input.clientId,
+        input.campaignId,
+        input.queueJobId,
+        input.idempotencyKey ?? null,
+        input.trace.traceId,
+        input.decision,
+        JSON.stringify(input.reasons ?? []),
+        JSON.stringify(input.signals ?? {}),
+        input.outcome_group ?? null,
+        input.priority_score ?? null,
+      ]
+    )
+  } catch (err) {
+    // Audit log must never break enqueue. Emit metric for visibility.
+    console.warn('[DecisionAudit] insert failed', { err: (err as any)?.message ?? String(err) })
+    await recordMetric(input.clientId, 'decision_audit_insert_failed', 1, { campaignId: input.campaignId })
+  }
+}
+
+function fnv1a32(input: string): number {
+  // Deterministic fast hash for sampling. Not crypto.
+  let h = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+function sampleOn(key: string, pct: number): boolean {
+  if (pct <= 0) return false
+  if (pct >= 100) return true
+  return fnv1a32(key) % 100 < pct
+}
+
+async function withTimeout<T>(
+  label: string,
+  ms: number,
+  op: () => Promise<T>
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      op(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timeout after ${ms}ms`)),
+          ms
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function persistAdvancedTrace(
+  clientId: number,
+  jobId: number,
+  trace: AdvancedPreEnqueueTrace,
+  patch?: { overrideLane?: Lane; status?: QueueJobStatus; scheduledAt?: Date; reason?: string }
+): Promise<void> {
+  const merge: Record<string, unknown> = {
+    advanced_trace: trace,
+  }
+  if (patch?.overrideLane) {
+    merge.delivery = { override_lane: patch.overrideLane }
+  }
+  if (patch?.reason) {
+    merge.advanced_reason = patch.reason
+  }
+
+  const updates: string[] = []
+  const params: unknown[] = [clientId, jobId]
+
+  if (patch?.scheduledAt) {
+    params.push(patch.scheduledAt.toISOString())
+    updates.push(`scheduled_at = $${params.length}::timestamptz`)
+  }
+
+  if (patch?.status) {
+    params.push(patch.status)
+    updates.push(`status = $${params.length}::text`)
+  }
+
+  params.push(JSON.stringify(merge))
+  updates.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${params.length}::jsonb`)
+  updates.push(`updated_at = CURRENT_TIMESTAMP`)
+
+  await query(
+    `UPDATE queue_jobs
+     SET ${updates.join(', ')}
+     WHERE client_id = $1 AND id = $2`,
+    params
+  )
+}
+
+async function lookupQueueJobIdempotencyKey(clientId: number, queueJobId: number): Promise<string | null> {
+  const row = await queryOne<{ idempotency_key: string | null }>(
+    `SELECT idempotency_key
+     FROM queue_jobs
+     WHERE client_id = $1 AND id = $2
+     LIMIT 1`,
+    [clientId, queueJobId]
+  )
+  return row?.idempotency_key ?? null
+}
+
+async function applyAdvancedPreEnqueueDecisions(input: {
+  clientId: number
+  campaignId: number
+  jobs: RedisQueueJobPayload[]
+}): Promise<{ jobs: RedisQueueJobPayload[] }> {
+  const safeMode = appEnv.safeModeEnabled()
+  const flags = {
+    SIMULATION_ENABLED: appEnv.simulationEnabled(),
+    INTELLIGENCE_ENABLED: appEnv.intelligenceEnabled(),
+    ADVANCED_DECISION_ENABLED: appEnv.advancedDecisionEnabled(),
+    // SAFE_MODE: disable outcome influence and revert to baseline decision behavior.
+    OUTCOME_ENABLED: safeMode ? false : appEnv.outcomeEnabled(),
+    OUTCOME_EXPERIMENT: safeMode ? false : appEnv.outcomeExperimentEnabled(),
+  }
+
+  // Parity safety: when everything is off, do nothing.
+  if (
+    !flags.SIMULATION_ENABLED &&
+    !flags.INTELLIGENCE_ENABLED &&
+    !flags.ADVANCED_DECISION_ENABLED &&
+    !flags.OUTCOME_ENABLED
+  ) {
+    return { jobs: input.jobs }
+  }
+
+  const samplePct = appEnv.advancedDecisionSamplePct()
+  const adapterTimeoutMs = appEnv.preEnqueueAdapterTimeoutMs()
+  const totalBudgetMs = appEnv.preEnqueueTotalBudgetMs()
+  const deadline = Date.now() + totalBudgetMs
+
+  const sampled = input.jobs.filter((j) => sampleOn(String(j.id), samplePct))
+  if (sampled.length === 0) return { jobs: input.jobs }
+
+  let intelligence: Awaited<ReturnType<typeof getGlobalIntelligence>> | undefined
+  let simulation:
+    | { predicted_bounce_risk: number; predicted_reply_probability: number }
+    | undefined
+  let identityPick: Awaited<ReturnType<typeof selectHealthiestIdentity>> | null =
+    null
+  let domainScore: Awaited<ReturnType<typeof getDomainScore>> | null = null
+
+  const start = Date.now()
+
+  const fallbackAll = async (reason: string) => {
+    await recordMetric(input.clientId, 'fallback_count', sampled.length, {
+      campaignId: input.campaignId,
+      reason,
+    })
+    // Persist traces for visibility (no schedule/status changes).
+    await Promise.all(
+      sampled.map(async (job) => {
+        const trace: AdvancedPreEnqueueTrace = {
+          traceId: randomUUID(),
+          flags,
+          decision_source: 'default',
+          fallback: { reason },
+        }
+        try {
+          await persistAdvancedTrace(input.clientId, job.id as number, trace)
+        } catch (err) {
+          console.warn('[PreEnqueue] failed to persist fallback trace', {
+            jobId: job.id,
+            err: (err as any)?.message ?? String(err),
+          })
+        }
+      })
+    )
+    return { jobs: input.jobs }
+  }
+
+  try {
+    // Pick a healthy sender for simulation + domain scoring.
+    identityPick = await withTimeout(
+      'selectHealthiestIdentity',
+      Math.min(adapterTimeoutMs, Math.max(250, deadline - Date.now())),
+      () => selectHealthiestIdentity(input.clientId)
+    )
+    if (!identityPick) {
+      return await fallbackAll('no_identity_for_simulation')
+    }
+
+    // Domain score (used even if intelligence/simulation are off).
+    try {
+      domainScore = await withTimeout(
+        'getDomainScore',
+        Math.min(adapterTimeoutMs, Math.max(250, deadline - Date.now())),
+        () =>
+          getDomainScore(
+            { db: query as any },
+            input.clientId,
+            Number((identityPick as any).domain.id)
+          )
+      )
+    } catch (err) {
+      console.warn('[PreEnqueue] getDomainScore failed; continuing with null score', {
+        err: (err as any)?.message ?? String(err),
+      })
+      domainScore = null
+    }
+
+    const domain_score = domainScore?.score ?? 1
+    const domainHealthy =
+      (domainScore?.healthScore ?? 100) >= 60 && (domainScore?.bounceRate ?? 0) < 3
+    const domain_health = Math.max(0, Math.min(1, (domainScore?.healthScore ?? 100) / 100))
+
+    // Optional intelligence
+    if (flags.INTELLIGENCE_ENABLED && Date.now() < deadline) {
+      try {
+        intelligence = await withTimeout(
+          'getGlobalIntelligence',
+          Math.min(adapterTimeoutMs, Math.max(250, deadline - Date.now())),
+          () => getGlobalIntelligence(input.clientId)
+        )
+      } catch (err) {
+        console.warn('[PreEnqueue] intelligence adapter failed; falling back', {
+          err: (err as any)?.message ?? String(err),
+        })
+        // Must not change behavior; just record fallback traces.
+        return await fallbackAll('intelligence_error')
+      }
+    }
+
+    // Optional simulation
+    if (flags.SIMULATION_ENABLED && Date.now() < deadline) {
+      try {
+        const lane: Lane = 'normal'
+        simulation = await withTimeout(
+          'simulateOutcome',
+          Math.min(adapterTimeoutMs, Math.max(250, deadline - Date.now())),
+          () =>
+            simulateOutcome({
+              clientId: input.clientId,
+              domainId: Number((identityPick as any).domain.id),
+              identityId: Number((identityPick as any).identity.id),
+              lane,
+            })
+        )
+      } catch (err) {
+        console.warn('[PreEnqueue] simulation adapter failed; falling back', {
+          err: (err as any)?.message ?? String(err),
+        })
+        return await fallbackAll('simulation_error')
+      }
+    }
+
+    const simRisk = simulation?.predicted_bounce_risk ?? 0.05
+    const simReplyProb = simulation?.predicted_reply_probability ?? 0.02
+
+    // Optional outcome signals (learned from past results). Default OFF.
+    let outcomeSignals:
+      | Awaited<ReturnType<typeof getOutcomeSignalsAdapter>>
+      | undefined
+    if (flags.OUTCOME_ENABLED && Date.now() < deadline) {
+      try {
+        outcomeSignals = await withTimeout(
+          'getOutcomeSignals',
+          Math.min(adapterTimeoutMs, Math.max(250, deadline - Date.now())),
+          () =>
+            getOutcomeSignalsAdapter({
+              clientId: input.clientId,
+              domainId: Number((identityPick as any).domain.id),
+            })
+        )
+      } catch (err) {
+        console.warn('[PreEnqueue] outcome adapter failed; falling back', {
+          err: (err as any)?.message ?? String(err),
+        })
+        return await fallbackAll('outcome_error')
+      }
+    }
+
+    // Drift detection: if reply_rate drops >20% (24h vs 7d), suppress outcome influence (conservative).
+    try {
+      const m24 = (outcomeSignals as any)?.metrics?.last24h
+      const m7 = (outcomeSignals as any)?.metrics?.last7d
+      const r24 = Number(m24?.reply_rate ?? 0)
+      const r7 = Number(m7?.reply_rate ?? 0)
+      const s7 = Number(m7?.sent ?? 0)
+      if (flags.OUTCOME_ENABLED && s7 >= 20 && r7 > 0 && r24 < r7 * 0.8) {
+        await recordMetric(input.clientId, 'outcome_drift_detected', 1, {
+          campaignId: input.campaignId,
+          domainId: Number((identityPick as any).domain.id),
+          reply24h: r24,
+          reply7d: r7,
+        })
+        await createAlert(
+          input.clientId,
+          'outcome_drift',
+          'high',
+          `Outcome drift detected: reply_rate_24h=${(r24 * 100).toFixed(2)}% vs reply_rate_7d=${(r7 * 100).toFixed(2)}%`
+        )
+        // Do not disable tracking; just prevent outcome actions for now.
+        if (outcomeSignals) {
+          ;(outcomeSignals as any).available = false
+          ;(outcomeSignals as any).reasons = [
+            ...new Set([...(Array.isArray((outcomeSignals as any).reasons) ? (outcomeSignals as any).reasons : []), 'drift_detected_suppressed']),
+          ]
+        }
+      }
+    } catch (err) {
+      console.warn('[PreEnqueue] drift detection failed (non-fatal)', { err: (err as any)?.message ?? String(err) })
+    }
+
+    // Circuit breaker guardrail (domain + identity).
+    const domainCircuitOk = await circuitBreaker.checkCircuit(
+      String((identityPick as any).domain.id),
+      'domain'
+    )
+    const identityCircuitOk = await circuitBreaker.checkCircuit(
+      String((identityPick as any).identity.id),
+      'identity'
+    )
+    const circuitOk = Boolean(domainCircuitOk && identityCircuitOk)
+
+    await recordMetric(input.clientId, 'advanced_used_count', sampled.length, {
+      campaignId: input.campaignId,
+      samplePct,
+      elapsedMs: Date.now() - start,
+    })
+
+    const contactIds = sampled
+      .map((j) => Number(j.contact_id))
+      .filter((n) => Number.isFinite(n))
+    const contacts = await query<{ id: number; email: string; custom_fields: any; email_validation_score: any }>(
+      `SELECT id, email
+              , custom_fields
+              , email_validation_score
+       FROM contacts
+       WHERE client_id = $1 AND id = ANY($2::bigint[])`,
+      [input.clientId, contactIds]
+    )
+    const contactById = new Map<number, { email: string; custom_fields: any; email_validation_score: any }>(
+      contacts.rows.map((c) => [Number(c.id), { email: String(c.email), custom_fields: (c as any).custom_fields, email_validation_score: (c as any).email_validation_score }])
+    )
+
+    const sampledIds = new Set<number>(sampled.map((j) => Number(j.id)))
+    const jobsToEnqueue: RedisQueueJobPayload[] = []
+
+    for (const job of input.jobs) {
+      const isSampled = sampledIds.has(Number(job.id))
+      if (!isSampled) {
+        jobsToEnqueue.push(job)
+        continue
+      }
+
+      const traceId = randomUUID()
+      const contact = contactById.get(Number(job.contact_id))
+      const email = contact?.email ?? ''
+      let verdict: ValidationVerdict = 'unknown'
+      let catchAll = false
+      try {
+        const v = await validateEmailPreSend(email, input.clientId)
+        verdict = v.verdict as ValidationVerdict
+        catchAll = Boolean((v as any).catchAll)
+      } catch {
+        verdict = 'unknown'
+      }
+
+      const trace: AdvancedPreEnqueueTrace = {
+        traceId,
+        flags,
+        decision_source: flags.ADVANCED_DECISION_ENABLED ? 'advanced' : 'default',
+        simulation: flags.SIMULATION_ENABLED
+          ? { risk: simRisk, replyProb: simReplyProb }
+          : undefined,
+        intelligence: flags.INTELLIGENCE_ENABLED
+          ? {
+              providerRisk: (intelligence as any)?.provider_risk,
+              globalDomainScore: (intelligence as any)?.global_domain_score,
+              timeWindow: (intelligence as any)?.time_of_day_performance?.[
+                new Date().getHours()
+              ],
+            }
+          : undefined,
+      }
+
+      if (safeMode) {
+        trace.reasons = [...(trace.reasons ?? []), 'safe_mode']
+      }
+
+      if (flags.OUTCOME_ENABLED && outcomeSignals) {
+        trace.outcome = {
+          available: Boolean((outcomeSignals as any).available),
+          expected_reply_prob: Number((outcomeSignals as any).expected_reply_prob ?? 0),
+          risk_adjustment: Number((outcomeSignals as any).risk_adjustment ?? 0),
+          best_time_window: (outcomeSignals as any).best_time_window,
+          preferred_lane: (outcomeSignals as any).preferred_lane,
+          reasons: (outcomeSignals as any).reasons ?? [],
+        }
+      }
+
+      // A/B mode: 50/50 deterministic split, baseline must not change behavior.
+      if (flags.OUTCOME_ENABLED && flags.OUTCOME_EXPERIMENT) {
+        const isTreatment = sampleOn(`outcome:${job.id}`, 50)
+        trace.experiment_group = isTreatment ? 'treatment' : 'baseline'
+        if (!isTreatment) {
+          trace.decision_source = 'default'
+          trace.reasons = ['experiment_baseline']
+          await persistAdvancedTrace(input.clientId, Number(job.id), trace)
+	          await appendDecisionAuditLog({
+	            clientId: input.clientId,
+	            campaignId: input.campaignId,
+	            queueJobId: Number(job.id),
+	            idempotencyKey: (job as any).idempotency_key,
+	            trace,
+	            decision: 'baseline_no_change',
+	            reasons: trace.reasons ?? [],
+	            signals: {
+              expected_reply_prob: trace.outcome?.expected_reply_prob,
+              risk_adjustment: trace.outcome?.risk_adjustment,
+              domain_health,
+            },
+            outcome_group: 'baseline',
+            priority_score: trace.priority_score,
+          })
+          jobsToEnqueue.push({ ...job, traceId, flags, decision_source: 'default' } as any)
+          continue
+        }
+        trace.reasons = ['experiment_treatment']
+      }
+
+      // Safe defaults: always protect domains/inboxes.
+      if (!circuitOk) {
+        const scheduledAt = new Date(Date.now() + 10 * 60 * 1000)
+        trace.decision = {
+          action: 'defer',
+          reason: 'circuit_breaker',
+          lane: 'slow',
+        }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          scheduledAt,
+          reason: 'circuit_breaker',
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'defer',
+	          reasons: [...(trace.reasons ?? []), 'circuit_breaker'],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          scheduled_at: scheduledAt.toISOString(),
+          traceId,
+          flags,
+          decision_source: 'advanced',
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+        } as any)
+        await recordMetric(input.clientId, 'defer_rate', 1, {
+          campaignId: input.campaignId,
+          reason: 'circuit_breaker',
+        })
+        continue
+      }
+
+      // High predicted bounce => defer regardless of other signals.
+      if (flags.SIMULATION_ENABLED && simRisk > 0.08) {
+        const scheduledAt = new Date(Date.now() + 6 * 60 * 60_000)
+        trace.decision = {
+          action: 'defer',
+          reason: 'predicted_bounce_risk',
+          lane: 'slow',
+        }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          scheduledAt,
+          reason: 'predicted_bounce_risk',
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'defer',
+	          reasons: [...(trace.reasons ?? []), 'predicted_bounce_risk'],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          scheduled_at: scheduledAt.toISOString(),
+          traceId,
+          flags,
+          decision_source: 'advanced',
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+        } as any)
+        await recordMetric(input.clientId, 'defer_rate', 1, {
+          campaignId: input.campaignId,
+          reason: 'predicted_bounce_risk',
+        })
+        continue
+      }
+
+      // Outcome fail-safe: never push volume if bounce rate trend is dangerous.
+      if (flags.OUTCOME_ENABLED && outcomeSignals?.available && outcomeSignals.risk_adjustment && outcomeSignals.risk_adjustment > 0.08) {
+        const scheduledAt = new Date(Date.now() + 6 * 60 * 60_000)
+        trace.decision = {
+          action: 'defer',
+          reason: 'outcome_bounce_guardrail',
+          lane: 'slow',
+        }
+        trace.reasons = [...(trace.reasons ?? []), 'outcome_bounce_guardrail']
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          scheduledAt,
+          reason: 'outcome_bounce_guardrail',
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'defer',
+	          reasons: trace.reasons ?? [],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          scheduled_at: scheduledAt.toISOString(),
+          traceId,
+          flags,
+          decision_source: 'advanced',
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+        } as any)
+        await recordMetric(input.clientId, 'defer_rate', 1, {
+          campaignId: input.campaignId,
+          reason: 'outcome_bounce_guardrail',
+        })
+        continue
+      }
+
+      // Domain score guardrail => slow lane.
+      if (domain_score < 0.5 || catchAll) {
+        const overrideLane: Lane = 'slow'
+        trace.decision = {
+          action: 'slow_lane',
+          reason: catchAll ? 'catch_all' : 'low_domain_score',
+          lane: overrideLane,
+        }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          overrideLane,
+          reason: trace.decision.reason,
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'slow_lane',
+	          reasons: [...(trace.reasons ?? []), trace.decision.reason ?? 'slow_lane'],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          traceId,
+          flags,
+          decision_source: trace.decision_source,
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+          override_lane: overrideLane,
+        } as any)
+        await recordMetric(input.clientId, 'slow_lane_rate', 1, {
+          campaignId: input.campaignId,
+          reason: trace.decision.reason,
+        })
+        continue
+      }
+
+      // Outcome-based lane + best-time-window hints (bounded, non-destructive).
+      if (flags.OUTCOME_ENABLED && outcomeSignals?.available) {
+        const preferred = outcomeSignals.preferred_lane as Lane | undefined
+        if (preferred && preferred !== 'normal') {
+          const overrideLane: Lane = preferred
+          trace.decision = {
+            action: 'slow_lane',
+            reason: 'outcome_preferred_lane',
+            lane: overrideLane,
+          }
+          trace.reasons = [...(trace.reasons ?? []), 'outcome_preferred_lane']
+          await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+            overrideLane,
+            reason: 'outcome_preferred_lane',
+          })
+	          await appendDecisionAuditLog({
+	            clientId: input.clientId,
+	            campaignId: input.campaignId,
+	            queueJobId: Number(job.id),
+	            idempotencyKey: (job as any).idempotency_key,
+	            trace,
+	            decision: 'slow_lane',
+	            reasons: trace.reasons ?? [],
+	            signals: {
+              expected_reply_prob: trace.outcome?.expected_reply_prob,
+              risk_adjustment: trace.outcome?.risk_adjustment,
+              domain_health,
+            },
+            outcome_group: trace.experiment_group,
+            priority_score: trace.priority_score,
+          })
+          jobsToEnqueue.push({
+            ...job,
+            traceId,
+            flags,
+            decision_source: trace.decision_source,
+            simulation: trace.simulation,
+            intelligence: trace.intelligence,
+            override_lane: overrideLane,
+          } as any)
+          await recordMetric(input.clientId, 'slow_lane_rate', 1, {
+            campaignId: input.campaignId,
+            reason: 'outcome_preferred_lane',
+          })
+          continue
+        }
+
+        const bestHour = outcomeSignals.best_time_window
+        if (typeof bestHour === 'number' && bestHour >= 0 && bestHour <= 23) {
+          const now = new Date()
+          const candidate = new Date(now)
+          candidate.setMinutes(0, 0, 0)
+          candidate.setHours(bestHour)
+          if (candidate.getTime() <= now.getTime()) {
+            candidate.setDate(candidate.getDate() + 1)
+          }
+          // Only adjust if it's within 12 hours to avoid long unexpected defers.
+          if (candidate.getTime() - now.getTime() <= 12 * 60 * 60_000) {
+            trace.decision = { action: 'defer', reason: 'outcome_best_time_window', lane: 'normal' }
+            trace.reasons = [...(trace.reasons ?? []), 'outcome_best_time_window']
+            await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+              scheduledAt: candidate,
+              reason: 'outcome_best_time_window',
+            })
+	            await appendDecisionAuditLog({
+	              clientId: input.clientId,
+	              campaignId: input.campaignId,
+	              queueJobId: Number(job.id),
+	              idempotencyKey: (job as any).idempotency_key,
+	              trace,
+	              decision: 'defer',
+	              reasons: trace.reasons ?? [],
+	              signals: {
+                expected_reply_prob: trace.outcome?.expected_reply_prob,
+                risk_adjustment: trace.outcome?.risk_adjustment,
+                domain_health,
+              },
+              outcome_group: trace.experiment_group,
+              priority_score: trace.priority_score,
+            })
+            jobsToEnqueue.push({
+              ...job,
+              scheduled_at: candidate.toISOString(),
+              traceId,
+              flags,
+              decision_source: trace.decision_source,
+              simulation: trace.simulation,
+              intelligence: trace.intelligence,
+            } as any)
+            await recordMetric(input.clientId, 'defer_rate', 1, {
+              campaignId: input.campaignId,
+              reason: 'outcome_best_time_window',
+            })
+            continue
+          }
+        }
+      }
+
+      // Revenue priority score: used only for ordering; never used to increase volume.
+      if (flags.OUTCOME_ENABLED && outcomeSignals?.available) {
+        const leadScoreRaw =
+          (contact?.custom_fields && (contact.custom_fields as any).lead_score) ??
+          (contact?.custom_fields && (contact.custom_fields as any).leadScore) ??
+          contact?.email_validation_score ??
+          0.5
+        const leadScore = Math.max(0, Math.min(1, Number(leadScoreRaw) || 0.5))
+        const domainHealth = Math.max(0, Math.min(1, (domainScore?.healthScore ?? 100) / 100))
+        const expectedReply = Math.max(0, Math.min(0.25, Number(outcomeSignals.expected_reply_prob ?? 0)))
+        trace.priority_score = Number(
+          (expectedReply * 0.6 + domainHealth * 0.3 + leadScore * 0.1).toFixed(4)
+        )
+        trace.reasons = [...(trace.reasons ?? []), 'priority_scored']
+      }
+
+      // Advanced decision (optional). If off, we only persist trace.
+      if (!flags.ADVANCED_DECISION_ENABLED) {
+        trace.decision = { action: 'no_change', reason: 'advanced_disabled' }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace)
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'default',
+	          reasons: trace.reasons ?? [],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          traceId,
+          flags,
+          decision_source: 'default',
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+        } as any)
+        continue
+      }
+
+      const adv = decideAdvanced({
+        verdict,
+        domainHealthy,
+        simulation: simulation as any,
+        revenueProbability: 0.5,
+      })
+
+      if (adv.action === 'drop') {
+        trace.decision = { action: 'drop', reason: adv.reason }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          status: 'skipped',
+          reason: adv.reason,
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'drop',
+	          reasons: [...(trace.reasons ?? []), adv.reason],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        continue
+      }
+
+      if (adv.action === 'send_later') {
+        const scheduledAt = new Date(Date.now() + Math.max(60_000, adv.delayMs))
+        trace.decision = { action: 'defer', reason: adv.reason, lane: adv.lane }
+        await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+          scheduledAt,
+          overrideLane: adv.lane,
+          reason: adv.reason,
+        })
+	        await appendDecisionAuditLog({
+	          clientId: input.clientId,
+	          campaignId: input.campaignId,
+	          queueJobId: Number(job.id),
+	          idempotencyKey: (job as any).idempotency_key,
+	          trace,
+	          decision: 'defer',
+	          reasons: [...(trace.reasons ?? []), adv.reason],
+	          signals: {
+            expected_reply_prob: trace.outcome?.expected_reply_prob,
+            risk_adjustment: trace.outcome?.risk_adjustment,
+            domain_health,
+          },
+          outcome_group: trace.experiment_group,
+          priority_score: trace.priority_score,
+        })
+        jobsToEnqueue.push({
+          ...job,
+          scheduled_at: scheduledAt.toISOString(),
+          traceId,
+          flags,
+          decision_source: 'advanced',
+          simulation: trace.simulation,
+          intelligence: trace.intelligence,
+          override_lane: adv.lane,
+        } as any)
+        await recordMetric(input.clientId, 'defer_rate', 1, {
+          campaignId: input.campaignId,
+          reason: adv.reason,
+        })
+        continue
+      }
+
+      // send_now / shift_domain => lane override only (domain shifting handled by sender at runtime).
+      trace.decision = { action: adv.action, reason: adv.reason, lane: adv.lane }
+      trace.reasons = [...(trace.reasons ?? []), ...(trace.outcome?.reasons ?? []), ...(trace.intelligence ? ['intelligence_used'] : []), ...(trace.simulation ? ['simulation_used'] : [])]
+      await persistAdvancedTrace(input.clientId, Number(job.id), trace, {
+        overrideLane: adv.lane,
+        reason: adv.reason,
+      })
+	      await appendDecisionAuditLog({
+	        clientId: input.clientId,
+	        campaignId: input.campaignId,
+	        queueJobId: Number(job.id),
+	        idempotencyKey: (job as any).idempotency_key,
+	        trace,
+	        decision: 'send_now',
+	        reasons: trace.reasons ?? [],
+	        signals: {
+          expected_reply_prob: trace.outcome?.expected_reply_prob,
+          risk_adjustment: trace.outcome?.risk_adjustment,
+          domain_health,
+        },
+        outcome_group: trace.experiment_group,
+        priority_score: trace.priority_score,
+      })
+      jobsToEnqueue.push({
+        ...job,
+        traceId,
+        flags,
+        decision_source: 'advanced',
+        simulation: trace.simulation,
+        intelligence: trace.intelligence,
+        override_lane: adv.lane,
+        priority_score: trace.priority_score,
+      } as any)
+    }
+
+    // Queue fairness: age-weighted priority for READY jobs (prevents starvation).
+    if (flags.OUTCOME_ENABLED) {
+      const now = Date.now()
+      const ready = jobsToEnqueue.filter((j) => new Date(j.scheduled_at as string).getTime() <= now)
+      const scheduled = jobsToEnqueue.filter((j) => new Date(j.scheduled_at as string).getTime() > now)
+      ready.sort((a: any, b: any) => {
+        const aPr = Number(a.priority_score ?? 0)
+        const bPr = Number(b.priority_score ?? 0)
+        const aAgeMs = Math.max(0, now - new Date(a.scheduled_at as string).getTime())
+        const bAgeMs = Math.max(0, now - new Date(b.scheduled_at as string).getTime())
+        const aBoost = Math.min(0.2, (aAgeMs / (10 * 60 * 60_000)) * 0.2)
+        const bBoost = Math.min(0.2, (bAgeMs / (10 * 60 * 60_000)) * 0.2)
+        return (bPr + bBoost) - (aPr + aBoost)
+      })
+      jobsToEnqueue.length = 0
+      jobsToEnqueue.push(...ready, ...scheduled)
+    }
+
+    const elapsedMs = Date.now() - start
+    if (elapsedMs > totalBudgetMs) {
+      await recordMetric(input.clientId, 'advanced_pre_enqueue_over_budget', 1, {
+        campaignId: input.campaignId,
+        elapsedMs,
+        totalBudgetMs,
+      })
+    }
+
+    return { jobs: jobsToEnqueue }
+  } catch (err) {
+    console.warn('[PreEnqueue] unexpected error; falling back', {
+      err: (err as any)?.message ?? String(err),
+    })
+    return await fallbackAll('unexpected_error')
   }
 }
 
@@ -965,6 +1928,7 @@ export async function enqueueCampaignJobs(
          scheduled_at,
          recipient_email,
          cc_emails,
+         idempotency_key,
          metadata,
          status,
          attempts,
@@ -999,6 +1963,12 @@ export async function enqueueCampaignJobs(
          ) AS scheduled_at,
          p.email,
          CASE WHEN ss.cc_mode = 'none' THEN NULL ELSE '[]'::jsonb END,
+         md5(
+           lower(trim(p.email))
+           || '|' || $2::text
+           || '|' || ss.step_index::text
+           || '|' || COALESCE(ss.variant_key, 'primary')
+         ),
          jsonb_build_object(
            'email_domain', p.email_domain,
            'company_domain', p.company_domain,
@@ -1018,7 +1988,7 @@ export async function enqueueCampaignJobs(
          3
        FROM paced p
        JOIN sequence_steps ss ON ss.sequence_id = $3
-       ON CONFLICT (campaign_id, contact_id, sequence_step) DO NOTHING
+       ON CONFLICT DO NOTHING
        RETURNING *`,
       [
         clientId,
@@ -1062,6 +2032,13 @@ export async function enqueueCampaignJobs(
       contactCount: scope.count,
     }
   })
+
+  const advancedApplied = await applyAdvancedPreEnqueueDecisions({
+    clientId,
+    campaignId,
+    jobs: payload.jobs as RedisQueueJobPayload[],
+  })
+  payload.jobs = advancedApplied.jobs as any
 
   await enqueueQueueJobs(payload.jobs)
 
@@ -1822,6 +2799,7 @@ export async function loadQueueExecutionContext(
        ss.variant_key,
        ss.recipient_strategy,
        ss.cc_mode,
+       qj.idempotency_key,
        ss.subject,
        ss.body
      FROM queue_jobs qj
@@ -1848,6 +2826,7 @@ export async function loadQueueExecutionContext(
     scheduled_at: row.scheduled_at,
     recipient_email: row.recipient_email,
     cc_emails: row.cc_emails,
+    idempotency_key: row.idempotency_key ?? null,
     metadata: row.metadata ?? {},
     status: row.status,
     attempts: row.attempts,

@@ -13,6 +13,7 @@ import { decideAdvanced } from '@xavira/decision-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
 import { updateDomainStats, getDomainScore, shouldPauseDomain } from '@xavira/reputation-engine'
 import { detectProvider, getProviderPolicy } from '@xavira/provider-engine'
+import crypto from 'crypto'
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -183,6 +184,13 @@ app.post('/tool/send', { config: { rateLimit: { max: 60, timeWindow: '1 minute' 
   // Enforce control plane: we enqueue; the worker does the sending.
   const q = new Queue(tenantSendQueueName(clientId), { connection: { url: reqEnv('REDIS_URL') } })
   const delayMs = decision.action === 'send_later' ? Math.max(0, decision.delayMs) : 0
+
+  // Idempotency key: stable per "decision -> enqueue -> send" unit.
+  // For tool sends, we scope it by (email + campaignId + queueJobId) when available.
+  const normalizedEmail = String(body.toEmail || '').trim().toLowerCase()
+  const idempotencyKeyPayload = `${clientId}|${normalizedEmail}|${body.campaignId ?? 0}|${body.queueJobId ?? 0}|${body.contactId ?? 0}`
+  const idempotencyKey = crypto.createHash('sha256').update(idempotencyKeyPayload).digest('hex').slice(0, 40)
+
   const job = await q.add(
     'tool_send',
     {
@@ -198,8 +206,15 @@ app.post('/tool/send', { config: { rateLimit: { max: 60, timeWindow: '1 minute' 
       provider,
       domainScore,
       simulation: sim,
+      idempotencyKey,
     },
-    { delay: delayMs }
+    {
+      delay: delayMs,
+      // If the same tool call is retried by an integration, BullMQ will dedupe by jobId.
+      jobId: `tool_send:${clientId}:${idempotencyKey}`,
+      attempts: 6,
+      backoff: { type: 'exponential', delay: 60_000 },
+    }
   )
 
   return {

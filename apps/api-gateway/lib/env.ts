@@ -49,6 +49,12 @@ const optionalInt = (name: string, fallback: number): number => {
   return Number.isNaN(parsed) ? fallback : parsed
 }
 
+const optionalBool = (name: string, fallback: boolean): boolean => {
+  const value = process.env[name]
+  if (!value) return fallback
+  return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
+}
+
 export const appEnv = {
   databaseUrl: () => validateDatabaseUrl(required('DATABASE_URL')),
   redisUrl: () => required('REDIS_URL'),
@@ -132,6 +138,23 @@ export const appEnv = {
   scrapingRateLimitMs: () => optionalInt('SCRAPING_RATE_LIMIT_MS', 2000),
   scrapingTimeoutMs: () => optionalInt('SCRAPING_TIMEOUT_MS', 30000),
   scrapingMaxConcurrency: () => optionalInt('SCRAPING_MAX_CONCURRENCY', 3),
+
+  // Advanced pre-enqueue decision flags (default OFF for parity).
+  simulationEnabled: () => optionalBool('SIMULATION_ENABLED', false),
+  intelligenceEnabled: () => optionalBool('INTELLIGENCE_ENABLED', false),
+  advancedDecisionEnabled: () => optionalBool('ADVANCED_DECISION_ENABLED', false),
+  outcomeEnabled: () => optionalBool('OUTCOME_ENABLED', false),
+  outcomeExperimentEnabled: () => optionalBool('OUTCOME_EXPERIMENT', false),
+  safeModeEnabled: () => optionalBool('SAFE_MODE', false),
+  costPerSend: () => {
+    const raw = process.env.COST_PER_SEND
+    if (!raw) return 0
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  },
+  advancedDecisionSamplePct: () => clamp(optionalInt('ADVANCED_DECISION_SAMPLE_PCT', 5), 0, 100),
+  preEnqueueAdapterTimeoutMs: () => clamp(optionalInt('PRE_ENQUEUE_ADAPTER_TIMEOUT_MS', 1500), 250, 5000),
+  preEnqueueTotalBudgetMs: () => clamp(optionalInt('PRE_ENQUEUE_TOTAL_BUDGET_MS', 2500), 500, 10000),
 }
 
 export function validateApiEnv(): void {

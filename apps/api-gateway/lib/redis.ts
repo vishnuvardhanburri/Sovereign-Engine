@@ -11,6 +11,7 @@ export interface RedisQueueJobPayload {
   scheduled_at: string
   attempts?: number
   max_attempts?: number
+  idempotency_key?: string
   _raw?: string
   [key: string]: unknown
 }
@@ -21,6 +22,7 @@ const PROCESSING_QUEUE_KEY = 'email:queue:processing'
 const VISIBILITY_ZSET_KEY = 'email:queue:visibility'
 const DEAD_LETTER_QUEUE_KEY = 'email:queue:dead'
 const IDEMPOTENCY_KEY_PREFIX = 'email:idem:'
+const IDEMPOTENCY_EMAIL_PREFIX = 'email:idem:email:'
 
 let redisClient: any
 let connectPromise: Promise<any> | undefined
@@ -75,6 +77,17 @@ export async function enqueueQueueJobs(
     if (Number.isFinite(jobId) && jobId > 0) {
       const key = `${IDEMPOTENCY_KEY_PREFIX}${jobId}`
       const ok = await client.set(key, '1', { NX: true, EX: 60 * 60 * 24 * 7 })
+      if (!ok) {
+        continue
+      }
+    }
+
+    // Additional idempotency layer: de-dupe on recipient/campaign/step key when available.
+    // This protects against multiple contacts sharing the same email and producing multiple jobs.
+    const emailKey = (job as RedisQueueJobPayload).idempotency_key
+    if (emailKey && Number.isFinite(Number((job as any).client_id))) {
+      const key = `${IDEMPOTENCY_EMAIL_PREFIX}${(job as any).client_id}:${emailKey}`
+      const ok = await client.set(key, '1', { NX: true, EX: 60 * 60 * 24 * 30 })
       if (!ok) {
         continue
       }

@@ -180,6 +180,9 @@ CREATE TABLE IF NOT EXISTS queue_jobs (
   scheduled_at TIMESTAMP NOT NULL,
   recipient_email TEXT,
   cc_emails JSONB,
+  -- Idempotency key to prevent duplicate enqueues/sends for the same recipient/campaign/step
+  -- (e.g. when multiple contacts share the same email address).
+  idempotency_key TEXT,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (
     status IN ('pending', 'processing', 'retry', 'completed', 'failed', 'skipped')
@@ -372,6 +375,11 @@ CREATE INDEX IF NOT EXISTS idx_identities_client_domain
   ON identities (client_id, domain_id);
 CREATE INDEX IF NOT EXISTS idx_identities_client_status
   ON identities (client_id, status);
+
+-- Backward compatible column: required for idempotency indexes below.
+ALTER TABLE queue_jobs
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_queue_jobs_client_status
   ON queue_jobs (client_id, status);
 CREATE INDEX IF NOT EXISTS idx_queue_jobs_campaign_status
@@ -380,12 +388,24 @@ CREATE INDEX IF NOT EXISTS idx_queue_jobs_scheduled
   ON queue_jobs (scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_queue_jobs_recipient_email
   ON queue_jobs (recipient_email);
+
+-- Enterprise-grade idempotency: one decision -> one enqueue -> one send.
+-- The key includes recipient + campaign + sequence_step (hash computed in app code/SQL).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_jobs_idempotency
+  ON queue_jobs (client_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_client_created
   ON events (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_campaign
   ON events (campaign_id);
 CREATE INDEX IF NOT EXISTS idx_events_type
   ON events (event_type);
+
+-- Tracking idempotency: dedupe by stable event id stored in metadata.event_id.
+-- This protects downstream attribution/metrics from duplicates on retries.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_event_id
+  ON events (client_id, (metadata->>'event_id'))
+  WHERE metadata ? 'event_id';
 CREATE INDEX IF NOT EXISTS idx_operator_actions_client_created
   ON operator_actions (client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_client_users_client_role
@@ -440,6 +460,7 @@ ALTER TABLE domains
 ALTER TABLE queue_jobs
   ADD COLUMN IF NOT EXISTS recipient_email TEXT,
   ADD COLUMN IF NOT EXISTS cc_emails JSONB,
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT,
   ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 UPDATE contacts
@@ -581,6 +602,38 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   user_agent TEXT,
   timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Decision Audit Log (append-only)
+-- Stores explainable decisions tied to traceId for audit + attribution.
+CREATE TABLE IF NOT EXISTS decision_audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  campaign_id BIGINT REFERENCES campaigns(id) ON DELETE SET NULL,
+  queue_job_id BIGINT REFERENCES queue_jobs(id) ON DELETE SET NULL,
+  idempotency_key TEXT,
+  trace_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  signals JSONB NOT NULL DEFAULT '{}'::jsonb,
+  outcome_group TEXT,
+  priority_score NUMERIC(8,4),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE decision_audit_logs
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_decision_audit_client_trace
+  ON decision_audit_logs (client_id, trace_id);
+CREATE INDEX IF NOT EXISTS idx_decision_audit_campaign
+  ON decision_audit_logs (client_id, campaign_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_decision_audit_queue_job
+  ON decision_audit_logs (client_id, queue_job_id);
+
+-- Ensure duplicates never create multiple audit rows for the same send-unit.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_decision_audit_idempotency
+  ON decision_audit_logs (client_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 -- API Management Tables
 CREATE TABLE IF NOT EXISTS api_keys (

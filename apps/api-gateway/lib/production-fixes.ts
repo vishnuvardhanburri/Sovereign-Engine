@@ -4,6 +4,7 @@
 import { query, transaction } from '@/lib/db'
 import crypto from 'crypto'
 import type { Contact, Domain, Identity, QueueJob, SequenceStep } from '@/lib/db/types'
+import nodemailer from 'nodemailer'
 
 // 1. IDEMPOTENCY KEY GENERATION
 type IdempotencyJob = Pick<QueueJob, 'client_id' | 'contact_id' | 'campaign_id' | 'sequence_step' | 'scheduled_at'>
@@ -372,6 +373,51 @@ export async function createAlert(clientId: number, type: string, severity: 'low
     `INSERT INTO alerts (client_id, alert_type, severity, message) VALUES ($1, $2, $3, $4)`,
     [clientId, type, severity, message]
   )
+
+  // Best-effort alert delivery (never blocks core flow).
+  // Configure:
+  // - ALERT_WEBHOOK_URL (Slack/Discord webhook)
+  // - ALERT_EMAIL_TO (comma-separated)
+  // Uses SMTP_* env vars if present.
+  try {
+    const webhookUrl = process.env.ALERT_WEBHOOK_URL?.trim()
+    const emailTo = process.env.ALERT_EMAIL_TO?.trim()
+    const deliverMinSeverity = (process.env.ALERT_DELIVER_MIN_SEVERITY ?? 'high') as typeof severity
+    const order: Record<typeof severity, number> = { low: 0, medium: 1, high: 2, critical: 3 }
+    if (order[severity] < order[deliverMinSeverity]) return
+
+    if (webhookUrl) {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          content: `Xavira Orbit alert: *${severity.toUpperCase()}* \`${type}\`\nclient=${clientId}\n${message}`,
+        }),
+      }).catch(() => undefined)
+    }
+
+    if (emailTo && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT ?? 587),
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      })
+      await transporter
+        .sendMail({
+          from: process.env.ALERT_EMAIL_FROM ?? process.env.SMTP_USER,
+          to: emailTo,
+          subject: `[Xavira Orbit] ${severity.toUpperCase()} ${type} (client ${clientId})`,
+          text: message,
+        })
+        .catch(() => undefined)
+    }
+  } catch {
+    // ignore
+  }
 }
 
 // 15. DEAD LETTER QUEUE

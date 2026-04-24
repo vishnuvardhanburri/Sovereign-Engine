@@ -19,7 +19,13 @@
     "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
+    "@xavira/decision-engine": "workspace:*",
+    "@xavira/intelligence-engine": "workspace:*",
+    "@xavira/outcome-engine": "workspace:*",
     "@xavira/optimizer-engine": "workspace:*",
+    "@xavira/reputation-engine": "workspace:*",
+    "@xavira/simulation-engine": "workspace:*",
+    "@xavira/types": "workspace:*",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",
     "@hookform/resolvers": "^3.9.1",

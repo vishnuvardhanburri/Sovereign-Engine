@@ -1,5 +1,6 @@
 import type { DbExecutor, Lane, SendIdentitySelection } from '@xavira/types'
-import { LIMITS } from '../../../configs/limits/default'
+// Import default to stay compatible across tsx/ESM boundaries.
+import LIMITS from '../../../configs/limits/default.ts'
 
 export interface SendingDeps {
   db: DbExecutor
@@ -72,4 +73,3 @@ export function scheduleSend(now = Date.now(), lane: Lane): Date {
   const laneFactor = lane === 'slow' ? 2.5 : lane === 'low_risk' ? 1.5 : 1
   return new Date(now + Math.floor(jitter * laneFactor))
 }
-

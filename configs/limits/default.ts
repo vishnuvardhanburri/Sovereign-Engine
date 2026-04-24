@@ -4,3 +4,4 @@ export const LIMITS = {
   sendIntervalMs: [30_000, 120_000] as [number, number],
 }
 
+export default LIMITS

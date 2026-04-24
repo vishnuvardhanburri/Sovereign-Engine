@@ -1,203 +1,72 @@
-# Xavira - Premium Cold Email Automation
+# Xavira Orbit
 
-A production-grade, white-labeled cold email automation platform built with Next.js 16, React Query, Zustand, and ShadCN UI components. Optimized for instant navigation (<200ms) and seamless user experience.
+Xavira Orbit is an outbound infrastructure platform: validation, decisioning, queueing, sending, tracking, reputation, and closed-loop outcome optimization. It is built to protect domains first, then maximize replies (and meetings when available) with measurable A/B proof.
 
-## Performance Features
+## Architecture (Monorepo)
 
-- **Instant Navigation:** <200ms page transitions with no full reloads
-- **Smart Data Caching:** 30-second freshness with background refetch
-- **Prefetch on Hover:** Load data before user clicks
-- **Optimistic Updates:** UI responds instantly to mutations
-- **Keep Previous Data:** No loading spinners, seamless transitions
-- **Pagination:** 50 items per page for lightning-fast responses
-- **Client-Side Routing:** Next.js Link for instant navigation
+Key folders:
 
-See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization documentation.
+- `apps/`: UI + API Gateway (Next.js)
+- `services/`: engines (sending, tracking, reputation, outcome, optimizer, etc.)
+- `workers/`: queue-driven workers (sender-worker, optimizer-worker, etc.)
+- `libs/`: shared utilities (smtp, rate-limiter, circuit-breaker, types)
+- `configs/`: env + limits config
+- `docs/`: architecture + ops notes
 
-## Features
+Flow:
 
-### Dashboard
-- Real-time statistics (emails sent, replies, open rates, bounce rates)
-- 30-day email performance chart
-- Recent activity feed with event tracking
+`Lead → Validator → Decision Engine → Queue → Sender Worker → SMTP → Tracking → Outcome Engine → (feeds next decisions)`
 
-### Campaigns
-- Create and manage email campaigns
-- Campaign status control (active/paused/completed)
-- Performance metrics per campaign
-- Campaign detail pages with sequence preview
-- Search, filter, and sort capabilities
+## Core Principles
 
-### Domains & Rate Control
-- **Domain Management**: Add and manage sending domains with daily limits
-- **Identity Management**: Create email identities per domain
-- **Health Scoring**: Real-time health metrics (0-100 based on bounce/reply rates)
-- **Rate Limiting**: Token bucket algorithm with 60-120s jitter between sends
-- **Modular Agent Swarm**: layered data, execution, and intelligence agents coordinate via DB, queue, and events
-- **Auto Pause**: Domains automatically pause if bounce rate exceeds 5%
-- **Limit Scaling**: Daily limits scale from 50 to 500 emails based on domain health
-- **Queue Management**: Redis-backed job queue for reliable email delivery
-- **Event Tracking**: Track sent, bounce, reply, and complaint events
+- Decision-first: no direct sending without validation and routing logic.
+- Safety-first: circuit breakers, caps, idempotency (practical exactly-once), and explainability.
+- Outcomes > activity: optimize reply/meeting rates with A/B proof.
+- Auditability: every decision is logged and attributable.
 
-### Contacts
-- Bulk CSV contact import with deduplication
-- Contact status tracking (active/replied/bounced)
-- Search and filter by email/name/company
-- Delete individual contacts
-- Contact management interface
+## Local Run
 
-### Email Sequences
-- Visual sequence editor with multi-step support
-- Configure day delays, subject lines, and email body
-- Variable support ({{FirstName}}, {{Company}})
-- Create, edit, and preview sequences
-- Use sequences for multiple campaigns
+Requirements: Node + pnpm, Docker (Postgres + Redis).
 
-### Analytics
-- Campaign performance metrics visualization
-- Reply rate by campaign (bar chart)
-- Performance comparison (replies, bounce, open rates)
-- Detailed campaign analytics table
-- Key metrics overview (avg reply rate, open rate, bounce rate)
-
-### Inbox
-- Review prospect replies
-- Email thread view with conversation history
-- Reply status management (interested/not interested/unread)
-- Search and filter replies
-- Quick status indicators and statistics
-
-### Settings
-- User profile information
-- Timezone configuration
-- Auto-unsubscribe on bounce toggle
-- API key management (for worker service)
-- Account management
-
-## Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **Frontend**: React 19, TypeScript, ShadCN UI + Radix UI
-- **State Management**: Zustand (auth & UI state) + React Query (server state)
-- **Styling**: Tailwind CSS v4 (dark theme)
-- **Database**: PostgreSQL via `pg` driver
-- **Caching/Queue**: Upstash Redis (serverless)
-- **Charts**: Recharts
-- **Notifications**: Sonner (toast notifications)
-- **Validation**: Zod + React Hook Form
-- **Worker Service**: Node.js with Resend email API integration
-- **Deployment**: Vercel (API) + External worker (Render/Fly.io)
-
-## Project Structure
-
-```
-├── app/
-│   ├── (auth)/login/               # Login page
-│   ├── (dashboard)/                # Protected routes
-│   │   ├── dashboard/              # Main dashboard
-│   │   ├── campaigns/              # Campaign management
-│   │   ├── domains/                # Domain management
-│   │   ├── contacts/               # Contact management
-│   │   ├── sequences/              # Email sequences
-│   │   ├── analytics/              # Analytics dashboard
-│   │   ├── inbox/                  # Reply management
-│   │   ├── settings/               # User settings
-│   │   └── layout.tsx
-│   ├── api/                        # API routes
-│   │   ├── domains/                # Domain CRUD + pause/resume
-│   │   ├── identities/             # Email identity endpoints
-│   │   ├── queue/                  # Job queue management
-│   │   ├── events/                 # Event tracking
-│   │   ├── health/                 # Health scoring
-│   │   └── cron/                   # Scheduled tasks
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   ├── ui/                         # ShadCN UI components
-│   ├── domain-manager.tsx          # Domain table & controls
-│   ├── add-domain-modal.tsx        # Add domain form
-│   ├── identities-list.tsx         # Email identities
-│   ├── sidebar.tsx
-│   ├── header.tsx
-│   ├── app-layout.tsx
-│   └── ...
-├── lib/
-│   ├── api.ts                      # Frontend API client
-│   ├── db.ts                       # PostgreSQL client
-│   ├── db/types.ts                 # Database types
-│   ├── redis.ts                    # Redis utilities & queue
-│   ├── rate-limiter.ts             # Rate limiting logic
-│   ├── integration-tests.ts        # Backend integration test
-│   ├── store.ts                    # Zustand store
-│   ├── hooks/index.ts              # React Query hooks
-│   └── utils.ts
-├── scripts/
-│   ├── init-db.sql                 # Database schema
-│   └── seed-data.ts                # Test data seeding
-├── worker/                         # External worker service
-│   ├── index.ts                    # Email queue processor
-│   └── package.json
-├── DOMAIN_RATE_CONTROL_README.md   # Detailed documentation
-└── package.json
+1. Install deps
+```bash
+pnpm install
 ```
 
-## Getting Started
+2. Start local infra
+```bash
+docker compose up -d
+```
 
-Docs live in `docs/` (start with `docs/architecture.md`).
+3. Configure env
+```bash
+cp .env.example .env
+```
 
-### Demo Credentials
+4. Init DB + run app
+```bash
+pnpm db:init
+pnpm dev -p 3000
+```
 
-The application includes mock authentication. Use these credentials:
-- **Email**: `demo@example.com`
-- **Password**: `password`
+5. (Optional) run sender worker
+```bash
+pnpm worker:sender
+```
 
-### Installation
+## Demo Credentials (local)
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+- Email: `demo@xavira.local`
+- Password: `Demo1234!`
 
-3. Start local infra (Postgres + Redis):
-   ```bash
-   docker compose up -d
-   ```
+## Demo Endpoints
 
-4. Create your env file:
-   ```bash
-   cp configs/env/.env.example .env
-   ```
+- `GET /api/system/health` (live stability + reliability metrics)
+- `GET /api/demo/campaign/:id` (human-readable campaign story)
+- `GET /api/report/campaign/:id` (baseline vs treatment proof)
+- `GET /api/report/export?format=csv|json`
+- `POST /api/support/trace/:id` (full explainability trace)
 
-5. Initialize the database + run the dev server:
-   ```bash
-   pnpm db:init
-   pnpm dev
-   ```
-
-6. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-## Key Features Explained
-
-### Mock API Layer
-- All data is generated and cached locally in `lib/api.ts`
-- Includes realistic 300-500ms delays for UI feedback
-- Easy to replace with real backend API
-
-### Authentication
-- Zustand-based auth state management
-- JWT token stored in localStorage
-- Protected routes with automatic redirect to login
-- Logout clears auth state
-
-### React Query Integration
-- Separate hooks for each data type (campaigns, contacts, sequences, replies, analytics)
-- Built-in loading and error states
-- Automatic cache invalidation on mutations
-- Optimized re-renders
-
-### Dark Theme
 - Fully implemented dark mode using Tailwind CSS
 - Custom color tokens in globals.css
 - Consistent across all pages and components
