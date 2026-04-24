@@ -272,6 +272,44 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  libs/rate-limiter:
+    dependencies:
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  libs/smtp-client:
+    dependencies:
+      nodemailer:
+        specifier: ^6.9.4
+        version: 6.10.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      '@types/nodemailer':
+        specifier: ^6.0.0
+        version: 6.4.23
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  libs/types:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   services/decision-engine:
     dependencies:
       '@xavira/queue-utils':
@@ -290,6 +328,45 @@ importers:
       tsx:
         specifier: ^4.20.6
         version: 4.21.0
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  services/reputation-engine:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  services/sending-engine:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  services/tracking-engine:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
       typescript:
         specifier: 5.7.3
         version: 5.7.3
@@ -333,39 +410,48 @@ importers:
 
   workers/sender-worker:
     dependencies:
-      '@upstash/redis':
-        specifier: ^1.34.0
-        version: 1.37.0
+      '@xavira/decision-engine':
+        specifier: workspace:*
+        version: link:../../services/decision-engine
+      '@xavira/reputation-engine':
+        specifier: workspace:*
+        version: link:../../services/reputation-engine
+      '@xavira/sending-engine':
+        specifier: workspace:*
+        version: link:../../services/sending-engine
+      '@xavira/smtp-client':
+        specifier: workspace:*
+        version: link:../../libs/smtp-client
+      '@xavira/tracking-engine':
+        specifier: workspace:*
+        version: link:../../services/tracking-engine
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
+      bullmq:
+        specifier: ^5.76.1
+        version: 5.76.1
       dotenv:
         specifier: ^16.6.1
         version: 16.6.1
-      nodemailer:
-        specifier: ^6.9.4
-        version: 6.10.1
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
       pg:
         specifier: ^8.11.3
         version: 8.20.0
-      redis:
-        specifier: ^4.7.0
-        version: 4.7.1
-      resend:
-        specifier: ^6.12.0
-        version: 6.12.0
     devDependencies:
       '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.39
-      '@types/nodemailer':
-        specifier: ^6.0.0
-        version: 6.4.23
+        specifier: ^22
+        version: 22.19.11
       '@types/pg':
-        specifier: ^8.11.0
+        specifier: ^8.20.0
         version: 8.20.0
       tsx:
         specifier: ^4.20.6
         version: 4.21.0
       typescript:
-        specifier: ^5.0.0
+        specifier: 5.7.3
         version: 5.7.3
 
 packages:
@@ -1817,9 +1903,6 @@ packages:
 
   '@types/json5@0.0.29':
     resolution: {integrity: sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==}
-
-  '@types/node@20.19.39':
-    resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
 
   '@types/node@22.19.11':
     resolution: {integrity: sha512-BH7YwL6rA93ReqeQS1c4bsPpcfOmJasG+Fkr6Y59q83f9M1WcBRHR2vM+P9eOisYRcN3ujQoiZY8uk5W+1WL8w==}
@@ -5566,10 +5649,6 @@ snapshots:
   '@types/json-schema@7.0.15': {}
 
   '@types/json5@0.0.29': {}
-
-  '@types/node@20.19.39':
-    dependencies:
-      undici-types: 6.21.0
 
   '@types/node@22.19.11':
     dependencies:

@@ -1,341 +1,185 @@
-// @ts-nocheck
 import 'dotenv/config'
-import * as backendModule from '../../apps/api-gateway/lib/backend'
-import * as dbModule from '../../apps/api-gateway/lib/db'
-import * as redisModule from '../../apps/api-gateway/lib/redis'
-import * as envModule from '../../apps/api-gateway/lib/env'
-import * as decisionAgentModule from '../../apps/api-gateway/lib/agents/execution/decision-agent'
-import * as agentPromptModule from '../../apps/api-gateway/lib/agents/agent-prompt'
-import * as senderAgentModule from '../../apps/api-gateway/lib/agents/execution/sender-agent'
-import * as controlLoopModule from '../../apps/api-gateway/lib/control-loop-enforcer'
-import * as productionFixesModule from '../../apps/api-gateway/lib/production-fixes'
-import * as coordinatorModule from '../../apps/api-gateway/lib/infrastructure/coordinator'
-import * as sendSafeModule from '../../apps/api-gateway/lib/delivery/send-safe'
+import { Worker as BullWorker } from 'bullmq'
+import IORedis from 'ioredis'
+import { Pool } from 'pg'
+import { decide } from '@xavira/decision-engine'
+import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
+import { ingestEvent } from '@xavira/tracking-engine'
+import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
+import { sendSmtp } from '@xavira/smtp-client'
+import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@xavira/types'
 
-const appEnv =
-  (envModule as any).appEnv ?? (envModule as any).default?.appEnv
-const validateWorkerEnv =
-  (envModule as any).validateWorkerEnv ?? (envModule as any).default?.validateWorkerEnv
-
-if (typeof validateWorkerEnv !== 'function' || !appEnv) {
-  throw new Error('Failed to load env module exports for worker runtime')
+type SendJob = {
+  clientId: number
+  campaignId?: number
+  contactId?: number
+  queueJobId?: number
+  toEmail: string
+  subject: string
+  html?: string
+  text?: string
 }
 
-validateWorkerEnv()
+const SEND_QUEUE = process.env.SEND_QUEUE ?? 'xv-send-queue'
 
-const backend = ((backendModule as any).default ?? backendModule) as any
-const db = ((dbModule as any).default ?? dbModule) as any
-const redis = ((redisModule as any).default ?? redisModule) as any
-const decisionAgent = ((decisionAgentModule as any).default ?? decisionAgentModule) as any
-const agentPrompt = ((agentPromptModule as any).default ?? agentPromptModule) as any
-const senderAgent = ((senderAgentModule as any).default ?? senderAgentModule) as any
-const controlLoop = ((controlLoopModule as any).default ?? controlLoopModule) as any
-const productionFixes = ((productionFixesModule as any).default ?? productionFixesModule) as any
-const sendSafeLib = ((sendSafeModule as any).default ?? sendSafeModule) as any
-const coordinator = (coordinatorModule as any).coordinator ?? (coordinatorModule as any).default?.coordinator ?? (coordinatorModule as any).default
-
-const circuitBreaker =
-  productionFixes.circuitBreaker as typeof import('../../apps/api-gateway/lib/production-fixes.ts').circuitBreaker
-const recordMetric =
-  productionFixes.recordMetric as typeof import('../../apps/api-gateway/lib/production-fixes.ts').recordMetric
-const StructuredLogger =
-  productionFixes.StructuredLogger as typeof import('../../apps/api-gateway/lib/production-fixes.ts').StructuredLogger
-
-const claimQueueJob = backend.claimQueueJob as typeof import('../../apps/api-gateway/lib/backend.ts').claimQueueJob
-const deferQueueJob = backend.deferQueueJob as typeof import('../../apps/api-gateway/lib/backend.ts').deferQueueJob
-const loadQueueExecutionContext =
-  backend.loadQueueExecutionContext as typeof import('../../apps/api-gateway/lib/backend.ts').loadQueueExecutionContext
-const markQueueJobCompleted =
-  backend.markQueueJobCompleted as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobCompleted
-const markQueueJobFailed = backend.markQueueJobFailed as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobFailed
-const markQueueJobSkipped = backend.markQueueJobSkipped as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobSkipped
-const popQueuedJob = backend.popQueuedJob as typeof import('../../apps/api-gateway/lib/backend.ts').popQueuedJob
-const promoteReadyQueueJobs =
-  backend.promoteReadyQueueJobs as typeof import('../../apps/api-gateway/lib/backend.ts').promoteReadyQueueJobs
-
-const closePool = db.closePool as typeof import('../../apps/api-gateway/lib/db.ts').closePool
-const closeRedis = redis.closeRedis as typeof import('../../apps/api-gateway/lib/redis.ts').closeRedis
-const ackProcessingJob = redis.ackProcessingJob as typeof import('../../apps/api-gateway/lib/redis.ts').ackProcessingJob
-const reclaimExpiredJobs =
-  redis.reclaimExpiredJobs as typeof import('../../apps/api-gateway/lib/redis.ts').reclaimExpiredJobs
-
-const evaluateQueueDecision = decisionAgent.evaluateQueueDecision as any
-const loadBackendAgentPrompt = agentPrompt.loadBackendAgentPrompt as any
-const sendMessage = senderAgent.sendMessage as any
-const executeControlLoop = controlLoop.executeControlLoop as any
-const sendSafe = sendSafeLib.sendSafe as any
-
-const backendAgentPrompt = loadBackendAgentPrompt()
-const logger = new StructuredLogger('worker')
-
-let shuttingDown = false
-let infrastructureHealthy = true
-let errorStreak = 0
-
-process.on('unhandledRejection', (reason) => {
-  logger.log('error', 'Unhandled promise rejection', { reason: String(reason) })
-})
-process.on('uncaughtException', (err) => {
-  logger.log('error', 'Uncaught exception', { error: err?.message ?? String(err) })
-})
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function reqEnv(name: string) {
+  const v = process.env[name]
+  if (!v) throw new Error(`Missing required env var: ${name}`)
+  return v
 }
 
-/**
- * Get email queue for campaign (for control loop enforcer)
- */
-async function getEmailQueueForCampaign(campaignId: string | number): Promise<any[]> {
-  try {
-    const result = await db.query(`
-      SELECT id, recipient_email as "to", subject, body, campaign_id, contact_id
-      FROM emails
-      WHERE campaign_id = $1 AND status = 'pending'
-      ORDER BY created_at ASC
-    `, [campaignId])
+const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+const redis = new IORedis(reqEnv('REDIS_URL'))
 
-    return result.rows.map(row => ({
-      id: row.id,
-      to: row.to,
-      subject: row.subject,
-      body: row.body,
-      campaign_id: row.campaign_id,
-      contact_id: row.contact_id,
-    }))
-  } catch (error) {
-    console.error('[Worker] Failed to get email queue:', error)
-    return []
-  }
+const db: DbExecutor = async (sql, params = []) => {
+  const res = await pool.query(sql, params as any[])
+  return { rows: res.rows as any[], rowCount: res.rowCount ?? 0 }
 }
 
-/**
- * Monitor infrastructure in background
- */
-async function monitorInfrastructure() {
-  setInterval(async () => {
-    try {
-      const state = await coordinator.getState()
-
-      // Check critical conditions
-      if (state.capacityUtilization > 90) {
-        console.warn('[Worker] ALERT: Capacity utilization > 90%')
-        infrastructureHealthy = false
-      }
-
-      // Check if system is paused
-      if (state.isPaused) {
-        console.warn('[Worker] WARNING: Infrastructure system is PAUSED')
-        infrastructureHealthy = false
-      }
-
-      // Check health issues
-      if (!state.systemHealth.isHealthy) {
-        console.warn('[Worker] System has issues:', state.systemHealth.issues)
-        infrastructureHealthy = false
-      }
-
-      // Reset healthy if issues resolved
-      if (
-        state.capacityUtilization < 85 &&
-        !state.isPaused &&
-        state.systemHealth.isHealthy
-      ) {
-        infrastructureHealthy = true
-      }
-    } catch (error) {
-      console.error('[Worker] Infrastructure monitoring error:', error)
-    }
-  }, 30000) // Check every 30 seconds
+async function lookupValidation(email: string): Promise<{ verdict: ValidationVerdict; score: number; catchAll?: boolean }> {
+  const normalized = String(email || '').trim().toLowerCase()
+  const res = await db<{ verdict: ValidationVerdict; score: string | number; catch_all: any }>(
+    `SELECT verdict, score, catch_all
+     FROM email_validations
+     WHERE normalized_email = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [normalized]
+  )
+  const row = res.rows[0]
+  if (!row) return { verdict: 'unknown', score: 0.5 }
+  const catchAll = Boolean((row as any).catch_all?.isCatchAll ?? (row as any).catch_all?.catchAll)
+  return { verdict: row.verdict, score: Number(row.score ?? 0), catchAll }
 }
 
-async function processOnce() {
-  await promoteReadyQueueJobs()
-  await reclaimExpiredJobs(250)
-  const queued = await popQueuedJob()
+async function handleTracking(event: TrackingIngestEvent) {
+  await ingestEvent({ db }, event)
+  await updateDomainStats({ db }, event)
+}
 
-  if (!queued) {
-    await sleep(appEnv.workerIdleSleepMs())
+async function runSend(job: SendJob) {
+  const validation = await lookupValidation(job.toEmail)
+
+  // Best-effort: domain score is used to route valid traffic if domain is unhealthy.
+  const domainIdRes = await db<{ id: number }>(
+    `SELECT id
+     FROM domains
+     WHERE client_id = $1 AND domain = split_part($2,'@',2)
+     LIMIT 1`,
+    [job.clientId, job.toEmail]
+  )
+  const domainId = domainIdRes.rows[0]?.id
+  const domainScore = domainId ? (await getDomainScore({ db }, job.clientId, domainId))?.score : undefined
+
+  const decision = decide({
+    email: job.toEmail,
+    verdict: validation.verdict,
+    score: validation.score,
+    domainScore,
+    catchAll: validation.catchAll,
+  })
+
+  if (decision.action === 'drop') {
+    await handleTracking({
+      type: 'FAILED',
+      clientId: job.clientId,
+      campaignId: job.campaignId ?? null,
+      contactId: job.contactId ?? null,
+      queueJobId: job.queueJobId ?? null,
+      metadata: { reason: decision.reason, event_code: 'EMAIL_FAILED' },
+    })
     return
   }
 
-  const claimed = await claimQueueJob(queued.id, queued.client_id)
-  if (!claimed) {
-    if (queued._raw) {
-      await ackProcessingJob(queued._raw)
-    }
-    return
+  if (decision.action === 'retry_later') {
+    throw new Error(`retry_later:${decision.reason}`)
   }
 
-  const context = await loadQueueExecutionContext(claimed.client_id, claimed.id)
-  if (!context) {
-    if (queued._raw) {
-      await ackProcessingJob(queued._raw)
+  const lane: Lane = decision.lane
+  const selection = await rotateInbox({ db }, job.clientId, lane)
+  if (!selection) throw new Error('no_sender_identity_available')
+
+  const caps = enforceCaps(selection, lane)
+  if (!caps.ok) throw new Error(`caps:${caps.reason}`)
+
+  const smtpHost = reqEnv('SMTP_HOST')
+  const smtpUser = reqEnv('SMTP_USER')
+  const smtpPass = reqEnv('SMTP_PASS')
+
+  const { messageId } = await sendSmtp(
+    { host: smtpHost, user: smtpUser, pass: smtpPass },
+    {
+      from: selection.identity.email,
+      to: job.toEmail,
+      subject: job.subject,
+      html: job.html,
+      text: job.text,
+      headers: { 'X-Xavira-Lane': lane },
     }
-    return
-  }
+  )
 
-  const decision = await evaluateQueueDecision(context, backendAgentPrompt)
+  await db(
+    `UPDATE identities
+     SET sent_today = sent_today + 1,
+         sent_count = sent_count + 1,
+         last_sent_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE client_id = $1 AND id = $2`,
+    [job.clientId, selection.identity.id]
+  )
+  await db(
+    `UPDATE domains
+     SET sent_today = sent_today + 1,
+         sent_count = sent_count + 1,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE client_id = $1 AND id = $2`,
+    [job.clientId, selection.domain.id]
+  )
 
-  // SPECIAL: Handle control loop enforcer jobs
-  if (context.job.type === 'control_loop_enforcer') {
-    try {
-      console.log(`[Worker] Executing control loop enforcer for job ${context.job.id}`)
-
-      // Get target from job metadata
-      const target = context.job.metadata?.target || 50000
-
-      // Get email queue for this campaign
-      const emailQueue = await getEmailQueueForCampaign(context.campaign.id)
-
-      if (emailQueue.length === 0) {
-        await markQueueJobSkipped(context, 'No emails in queue for control loop')
-        return
-      }
-
-      // Execute control loop enforcer
-      const result = await executeControlLoop(emailQueue, target)
-
-      // Mark job as completed with result
-      await markQueueJobCompleted(context, null, JSON.stringify(result))
-      if (queued._raw) {
-        await ackProcessingJob(queued._raw)
-      }
-
-      console.log(`[Worker] Control loop completed: ${result.sent}/${result.target} emails sent`)
-
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Control loop enforcer failed'
-      await markQueueJobFailed(context, message)
-      console.error(`[Worker] Control loop error:`, error)
-      if (queued._raw) {
-        await ackProcessingJob(queued._raw)
-      }
-    }
-    return
-  }
-
-  if (decision.action === 'skip') {
-    await markQueueJobSkipped(context, decision.reason)
-    if (queued._raw) {
-      await ackProcessingJob(queued._raw)
-    }
-    return
-  }
-
-  if (decision.action === 'defer') {
-    await deferQueueJob(context, decision.scheduledAt, decision.reason)
-    if (queued._raw) {
-      await ackProcessingJob(queued._raw)
-    }
-    return
-  }
-
-  if (decision.action === 'send') {
-    try {
-      // Check infrastructure health before sending
-      if (!infrastructureHealthy) {
-        const state = await coordinator.getState()
-        if (state.isPaused) {
-          // Defer job if system is paused
-          await deferQueueJob(
-            context,
-            new Date(Date.now() + 5 * 60 * 1000),
-            'Infrastructure paused for maintenance'
-          )
-          return
-        }
-      }
-
-      const result = await sendSafe({
-        context,
-        selection: decision.selection,
-        message: decision.message,
-        deps: {
-          coordinatorSend: coordinator.send.bind(coordinator),
-          smtpSend: async (req: any) =>
-            sendMessage({
-              fromEmail: req.fromEmail,
-              toEmail: req.toEmail,
-              cc: req.cc,
-              subject: req.subject,
-              html: req.html,
-              text: req.text,
-              headers: req.headers,
-            }),
-        },
-      })
-
-      if (!result.ok) {
-        errorStreak++
-        logger.log('error', 'sendSafe failed', { error: result.error, errorStreak })
-        await recordMetric(context.campaign.id, 'send_safe_failed', 1)
-        // Slow down on errors (in addition to job-level exponential backoff).
-        await sleep(Math.min(30_000, 2_000 * errorStreak))
-        if (queued._raw) await ackProcessingJob(queued._raw)
-        return
-      }
-
-      if (result.action === 'skipped' || result.action === 'deferred') {
-        errorStreak = 0
-        if (queued._raw) await ackProcessingJob(queued._raw)
-        return
-      }
-
-      await markQueueJobCompleted(context, decision.selection, result.providerMessageId ?? null)
-      if (queued._raw) {
-        await ackProcessingJob(queued._raw)
-      }
-      errorStreak = 0
-      console.log(`[Worker] sent queue_job=${context.job.id} to=${context.contact.email}`)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'unknown worker send failure'
-      errorStreak++
-      await markQueueJobFailed(context, message)
-      console.error(`[Worker] failed queue_job=${context.job.id}:`, error)
-      if (queued._raw) {
-        await ackProcessingJob(queued._raw)
-      }
-      // Slow down on unexpected exceptions.
-      await sleep(Math.min(30_000, 2_000 * errorStreak))
-    }
-  }
+  await handleTracking({
+    type: 'SENT',
+    clientId: job.clientId,
+    campaignId: job.campaignId ?? null,
+    contactId: job.contactId ?? null,
+    identityId: selection.identity.id,
+    domainId: selection.domain.id,
+    queueJobId: job.queueJobId ?? null,
+    providerMessageId: messageId,
+    metadata: { event_code: 'EMAIL_SENT' },
+  })
 }
 
 async function main() {
-  console.log('[Worker] starting Xavira Orbit worker with autonomous infrastructure')
-  console.log('[Worker] loaded backend agent prompt', {
-    length: backendAgentPrompt.length,
+  console.log('[sender-worker] starting', { queue: SEND_QUEUE })
+
+  const w = new BullWorker<SendJob>(
+    SEND_QUEUE,
+    async (job) => {
+      await runSend(job.data)
+    },
+    {
+      connection: { url: reqEnv('REDIS_URL') },
+      concurrency: 10,
+      lockDuration: 30_000,
+    }
+  )
+
+  w.on('failed', (job, err) => {
+    console.error('[sender-worker] job failed', { id: job?.id, err: err?.message })
   })
 
-  // Initialize coordinator
-  await coordinator.initialize()
-  console.log('[Worker] autonomous infrastructure initialized')
-
-  // Start infrastructure monitoring
-  monitorInfrastructure()
-  console.log('[Worker] infrastructure monitoring started')
-
-  while (!shuttingDown) {
-    try {
-      await processOnce()
-      await sleep(appEnv.workerPollIntervalMs())
-    } catch (error) {
-      console.error('[Worker] loop error', error)
-      await sleep(appEnv.workerIdleSleepMs())
-    }
-  }
+  process.on('SIGINT', () => void shutdown('SIGINT'))
+  process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
 async function shutdown(signal: string) {
-  shuttingDown = true
-  console.log(`[Worker] shutting down on ${signal}`)
-  await Promise.allSettled([closeRedis(), closePool()])
+  console.log('[sender-worker] shutting down', { signal })
+  await Promise.allSettled([redis.quit(), pool.end()])
   process.exit(0)
 }
 
-process.on('SIGINT', () => void shutdown('SIGINT'))
-process.on('SIGTERM', () => void shutdown('SIGTERM'))
+main().catch((err) => {
+  console.error('[sender-worker] fatal', err)
+  process.exit(1)
+})
 
-void main()
