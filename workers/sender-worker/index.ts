@@ -8,6 +8,7 @@ import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
 import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
 import { sendSmtp } from '@xavira/smtp-client'
+import { computeAdaptiveThroughput, loadDomainSignals } from '@xavira/adaptive-controller'
 import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@xavira/types'
 
 type SendJob = {
@@ -177,12 +178,44 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     throw new Error(`retry_later:${decision.reason}`)
   }
 
-  const lane: Lane = decision.lane
-  const selection = await rotateInbox({ db }, job.clientId, lane)
-  if (!selection) throw new Error('no_sender_identity_available')
+    const lane: Lane = decision.lane
+    const selection = await rotateInbox({ db }, job.clientId, lane)
+    if (!selection) throw new Error('no_sender_identity_available')
 
-  const caps = enforceCaps(selection, lane)
-  if (!caps.ok) throw new Error(`caps:${caps.reason}`)
+    const caps = enforceCaps(selection, lane)
+    if (!caps.ok) throw new Error(`caps:${caps.reason}`)
+
+    // Adaptive sending control (per-domain, no global blast).
+    // Replaces static daily ceilings with a feedback-driven throughput function.
+    const domainSignals = await loadDomainSignals(db, job.clientId, selection.domain.id)
+    const adaptive = computeAdaptiveThroughput(domainSignals, undefined)
+
+    if (adaptive.shouldPauseDomain) {
+      await recordMetric(job.clientId, 'domain_pause_triggered', 1, { domainId: selection.domain.id })
+      // Best-effort pause in DB so UI reflects safety state.
+      await db(
+        `UPDATE domains
+         SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, selection.domain.id]
+      )
+      throw new Error('retry_later:domain_paused_adaptive')
+    }
+
+    // Per-domain per-minute limiter.
+    const minuteBucket = new Date().toISOString().slice(0, 16)
+    const domainRateKey = `xv:${REGION}:adaptive:domain_rate:${job.clientId}:${selection.domain.id}:${minuteBucket}`
+    const count = await redis.incr(domainRateKey)
+    if (count === 1) await redis.expire(domainRateKey, 70)
+    if (count > adaptive.maxPerMinute) {
+      await recordMetric(job.clientId, 'adaptive_throttled', 1, {
+        domainId: selection.domain.id,
+        maxPerMinute: adaptive.maxPerMinute,
+        targetPerDay: adaptive.targetPerDay,
+        reasons: adaptive.reasons,
+      })
+      throw new Error('retry_later:adaptive_throttle')
+    }
 
   const smtpHost = reqEnv('SMTP_HOST')
   const smtpUser = reqEnv('SMTP_USER')

@@ -267,6 +267,19 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  libs/adaptive-controller:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   libs/circuit-breaker:
     dependencies:
       ioredis:
@@ -616,6 +629,9 @@ importers:
 
   workers/sender-worker:
     dependencies:
+      '@xavira/adaptive-controller':
+        specifier: workspace:*
+        version: link:../../libs/adaptive-controller
       '@xavira/decision-engine':
         specifier: workspace:*
         version: link:../../services/decision-engine
