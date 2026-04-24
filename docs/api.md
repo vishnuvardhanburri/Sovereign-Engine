@@ -13,3 +13,13 @@ Runs in `services/validator-engine`:
 
 This API enqueues validation jobs and returns verdict + score when available.
 
+## Optimizer
+
+Read-only endpoints (safe by default):
+
+- `GET /api/optimizer/state`
+- `GET /api/optimizer/domain/:id`
+
+Autonomous scheduler worker:
+
+- `pnpm worker:optimizer` (requires `OPTIMIZER_ENABLED=true`)
