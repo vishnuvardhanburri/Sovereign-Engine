@@ -19,6 +19,7 @@
     "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
+    "@xavira/adaptive-controller": "workspace:*",
     "@xavira/decision-engine": "workspace:*",
     "@xavira/intelligence-engine": "workspace:*",
     "@xavira/outcome-engine": "workspace:*",

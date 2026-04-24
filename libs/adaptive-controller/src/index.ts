@@ -42,6 +42,8 @@ export type AdaptiveThroughput = {
   reasons: string[]
   // If true, caller should pause domain (hard stop).
   shouldPauseDomain: boolean
+  // If true, caller should hard-stop sends (no retries) until recovery.
+  hardStop: boolean
   // Increase/hold/decrease/pause for next window (explainability).
   nextWindowAction: 'increase' | 'hold' | 'decrease' | 'pause'
 }
@@ -166,6 +168,7 @@ export function computeAdaptiveThroughput(
         targetPerDay: 30,
         reasons: ['signals_missing_conservative'],
         shouldPauseDomain: false,
+        hardStop: false,
         nextWindowAction: 'hold',
       },
       nextState,
@@ -202,7 +205,36 @@ export function computeAdaptiveThroughput(
     emaSuccess1h: success,
   }
 
-  // Immediate hard stops.
+  // Immediate hard stops (no retries).
+  if (complaint > 0.005) {
+    return {
+      throughput: {
+        maxPerMinute: 0,
+        targetPerDay: 0,
+        reasons: ['complaint_rate_gt_0.5_hard_stop'],
+        shouldPauseDomain: true,
+        hardStop: true,
+        nextWindowAction: 'pause',
+      },
+      nextState: { ...nextStateBase, cooldownUntil: nowMs + 60 * 60_000, healthyWindows: 0 },
+    }
+  }
+
+  if (bounce > 0.1) {
+    return {
+      throughput: {
+        maxPerMinute: 0,
+        targetPerDay: 0,
+        reasons: ['bounce_rate_gt_10_hard_stop'],
+        shouldPauseDomain: true,
+        hardStop: true,
+        nextWindowAction: 'pause',
+      },
+      nextState: { ...nextStateBase, cooldownUntil: nowMs + 60 * 60_000, healthyWindows: 0 },
+    }
+  }
+
+  // Soft pause rules (retry later).
   if (complaint > 0.002) {
     return {
       throughput: {
@@ -210,6 +242,7 @@ export function computeAdaptiveThroughput(
         targetPerDay: 0,
         reasons: ['complaint_rate_gt_0.2_pause'],
         shouldPauseDomain: true,
+        hardStop: false,
         nextWindowAction: 'pause',
       },
       nextState: { ...nextStateBase, cooldownUntil: nowMs + 60 * 60_000, healthyWindows: 0 },
@@ -223,6 +256,7 @@ export function computeAdaptiveThroughput(
         targetPerDay: 0,
         reasons: ['bounce_rate_gt_8_pause'],
         shouldPauseDomain: true,
+        hardStop: false,
         nextWindowAction: 'pause',
       },
       nextState: { ...nextStateBase, cooldownUntil: nowMs + 60 * 60_000, healthyWindows: 0 },
@@ -340,6 +374,7 @@ export function computeAdaptiveThroughput(
       targetPerDay,
       reasons,
       shouldPauseDomain: false,
+      hardStop: false,
       nextWindowAction,
     },
     nextState,

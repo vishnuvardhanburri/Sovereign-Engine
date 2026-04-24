@@ -109,6 +109,9 @@ importers:
       '@vercel/analytics':
         specifier: 1.6.1
         version: 1.6.1(next@16.2.0(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
+      '@xavira/adaptive-controller':
+        specifier: workspace:*
+        version: link:../../libs/adaptive-controller
       '@xavira/decision-engine':
         specifier: workspace:*
         version: link:../../services/decision-engine

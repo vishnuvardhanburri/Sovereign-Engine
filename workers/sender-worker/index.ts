@@ -36,6 +36,112 @@ const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 const REGION = process.env.XV_REGION ?? 'local'
 const GLOBAL_SENDS_PER_MINUTE = Number(process.env.GLOBAL_SENDS_PER_MINUTE ?? 120)
+const GLOBAL_SHAPER_RATE_PER_SEC = Number(process.env.GLOBAL_SHAPER_RATE_PER_SEC ?? 2) // tokens/sec
+const GLOBAL_SHAPER_BURST = Number(process.env.GLOBAL_SHAPER_BURST ?? 10) // max tokens
+
+const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
+const GLOBAL_RISK_WINDOW_SEC = 60 * 60 // 1h
+const GLOBAL_RISK_THRESHOLD = 3 // domains spiking before applying slowdown
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+// Atomic Redis token bucket (anti-burst).
+const TOKEN_BUCKET_LUA = `
+local key = KEYS[1]
+local rate = tonumber(ARGV[1])
+local burst = tonumber(ARGV[2])
+local now_ms = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+local ttl_sec = tonumber(ARGV[5])
+
+local data = redis.call('HMGET', key, 'tokens', 'ts')
+local tokens = tonumber(data[1])
+local ts = tonumber(data[2])
+if tokens == nil then tokens = burst end
+if ts == nil then ts = now_ms end
+
+local delta = math.max(0, now_ms - ts)
+local refill = (delta / 1000.0) * rate
+tokens = math.min(burst, tokens + refill)
+
+local allowed = 0
+if tokens >= cost then
+  tokens = tokens - cost
+  allowed = 1
+end
+
+redis.call('HSET', key, 'tokens', tokens, 'ts', now_ms)
+redis.call('EXPIRE', key, ttl_sec)
+return { allowed, tokens }
+`
+
+async function takeGlobalToken(clientId: number): Promise<boolean> {
+  const key = `xv:${REGION}:shaper:global:${clientId}`
+  const now = Date.now()
+  const [allowed] = (await redis.eval(
+    TOKEN_BUCKET_LUA,
+    1,
+    key,
+    String(GLOBAL_SHAPER_RATE_PER_SEC),
+    String(GLOBAL_SHAPER_BURST),
+    String(now),
+    '1',
+    '120'
+  )) as any
+  return Number(allowed) === 1
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+function jitterMs(base: number, pct = 0.15) {
+  const j = base * pct
+  return Math.max(0, Math.floor(base + (Math.random() * 2 - 1) * j))
+}
+
+async function getBestHours(clientId: number, domainId: number): Promise<number[] | null> {
+  const cacheKey = `xv:${REGION}:adaptive:best_hours:${clientId}:${domainId}`
+  const cached = await redis.get(cacheKey)
+  if (cached) {
+    try {
+      const v = JSON.parse(cached)
+      if (Array.isArray(v) && v.every((n) => Number.isFinite(n))) return v as number[]
+    } catch {}
+  }
+
+  // Compute top hours by reply rate over last 7 days; require some volume for signal.
+  const res = await db<{ hour: number; sent: string; reply: string }>(
+    `SELECT
+       EXTRACT(HOUR FROM created_at)::int AS hour,
+       COUNT(*) FILTER (WHERE event_type='sent')::text AS sent,
+       COUNT(*) FILTER (WHERE event_type='reply')::text AS reply
+     FROM events
+     WHERE client_id = $1 AND domain_id = $2
+       AND created_at > (CURRENT_TIMESTAMP - INTERVAL '7 days')
+       AND event_type IN ('sent','reply')
+     GROUP BY 1
+     ORDER BY 1`,
+    [clientId, domainId]
+  )
+
+  const scored = res.rows
+    .map((r) => {
+      const sent = Number(r.sent ?? 0)
+      const reply = Number(r.reply ?? 0)
+      const rate = sent >= 20 ? reply / Math.max(sent, 1) : -1
+      return { hour: r.hour, rate, sent }
+    })
+    .filter((x) => x.rate >= 0)
+    .sort((a, b) => b.rate - a.rate)
+
+  const best = scored.slice(0, 3).map((x) => x.hour)
+  if (!best.length) return null
+  await redis.set(cacheKey, JSON.stringify(best), { EX: 6 * 60 * 60 })
+  return best
+}
 
 const db: DbExecutor = async (sql, params = []) => {
   const res = await pool.query(sql, params as any[])
@@ -130,9 +236,13 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
   }
 
   try {
+    // Jitter injection: avoid batchy patterns.
+    await sleep(jitterMs(250, 0.8))
+
     // Global cap safety: queue instead of sending if we exceed global throughput.
     // This protects domains during load spikes.
-    const globalKey = `xv:${REGION}:cap:global_send:${new Date().toISOString().slice(0, 16)}` // minute bucket
+    const minuteBucket = new Date().toISOString().slice(0, 16) // minute bucket
+    const globalKey = `xv:${REGION}:cap:global_send:${minuteBucket}`
     const globalCount = await redis.incr(globalKey)
     if (globalCount === 1) {
       await redis.expire(globalKey, 60)
@@ -140,6 +250,14 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     if (globalCount > GLOBAL_SENDS_PER_MINUTE) {
       await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_cap' })
       throw new Error('retry_later:global_cap')
+    }
+
+    // Global shaper (anti-burst): token bucket across all domains for this client/org.
+    const ok = await takeGlobalToken(job.clientId)
+    if (!ok) {
+      await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_shaper' })
+      // jittered backoff to smooth retry storms
+      throw new Error('retry_later:global_shaper')
     }
 
     const validation = await lookupValidation(job.toEmail)
@@ -190,7 +308,10 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     // Multi-signal gating + EMA + cooldown + ramp profiles.
     const recipientProvider = detectProvider(job.toEmail)
     const providerPolicy = getProviderPolicy(recipientProvider)
-    const providerSignals: ProviderSignals = { provider: recipientProvider }
+    const bestHours = await getBestHours(job.clientId, selection.domain.id)
+    const nowHour = new Date().getUTCHours()
+    const timeWindowOk = bestHours ? bestHours.includes(nowHour) : true
+    const providerSignals: ProviderSignals = { provider: recipientProvider, timeWindowHour: nowHour }
 
     const domainSignals = await loadDomainSignals(db, job.clientId, selection.domain.id)
     const adaptiveStateKey = `xv:${REGION}:adaptive:state:${job.clientId}:${selection.domain.id}`
@@ -210,23 +331,81 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
          WHERE client_id = $1 AND id = $2`,
         [job.clientId, selection.domain.id]
       )
+      if (adaptive.hardStop) {
+        await recordMetric(job.clientId, 'cooldown_events', 1, { domainId: selection.domain.id, kind: 'hard_stop' })
+        // Hard-stop: do not retry this job; suppress future attempts.
+        await handleTracking({
+          type: 'FAILED',
+          clientId: job.clientId,
+          campaignId: job.campaignId ?? null,
+          contactId: job.contactId ?? null,
+          queueJobId: job.queueJobId ?? null,
+          metadata: {
+            event_code: 'EMAIL_FAILED',
+            reason: 'domain_hard_stop',
+            idempotency_key: idemKey,
+            adaptive: {
+              throughput_current: adaptive.maxPerMinute,
+              reasons: adaptive.reasons,
+              next_window_action: adaptive.nextWindowAction,
+              provider: recipientProvider,
+            },
+          },
+        })
+        await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
+        await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+        await redis.del(inflightKey)
+        await redis.del(failedKey)
+        return
+      }
       throw new Error('retry_later:domain_paused_adaptive')
     }
 
+    // Time-of-day bias: reduce throughput outside best windows (soft).
+    let effectiveMaxPerMinute = adaptive.maxPerMinute
+    if (!timeWindowOk) {
+      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * 0.8))
+    }
+
+    // Cross-domain safe coupling: if multiple domains show throttling signals, slow the whole org slightly.
+    const riskBucket = `xv:${REGION}:adaptive:risk_bucket:${job.clientId}:${minuteBucket}`
+    const hasRiskSignal =
+      adaptive.reasons.includes('block_rate_detected_cooldown') ||
+      adaptive.reasons.includes('deferral_rate_spike_halve')
+    if (hasRiskSignal) {
+      const n = await redis.incr(riskBucket)
+      if (n === 1) await redis.expire(riskBucket, 10 * 60)
+      if (n >= GLOBAL_RISK_THRESHOLD) {
+        await redis.set(`xv:${REGION}:adaptive:global_risk:${job.clientId}`, '1', { EX: GLOBAL_RISK_WINDOW_SEC })
+        await recordMetric(job.clientId, 'cooldown_events', 1, { scope: 'global', reason: 'multi_domain_risk' })
+      }
+    }
+    const globalRisk = await redis.get(`xv:${REGION}:adaptive:global_risk:${job.clientId}`)
+    if (globalRisk) {
+      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * GLOBAL_RISK_SLOWDOWN_FACTOR))
+    }
+
+    // Recipient-provider memory throttling: if provider is degraded, slow just that provider.
+    const providerKey = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${recipientProvider}`
+    const providerRisk = Number((await redis.get(providerKey)) ?? 0)
+    if (providerRisk > 0) {
+      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * (1 - clamp(providerRisk, 0.1, 0.5))))
+    }
+
     // Per-domain per-minute limiter.
-    const minuteBucket = new Date().toISOString().slice(0, 16)
+    // NOTE: minuteBucket already defined above for global cap; keep it consistent for shaping.
     const domainRateKey = `xv:${REGION}:adaptive:domain_rate:${job.clientId}:${selection.domain.id}:${minuteBucket}`
     const count = await redis.incr(domainRateKey)
     if (count === 1) await redis.expire(domainRateKey, 70)
-    if (count > adaptive.maxPerMinute) {
+    if (count > effectiveMaxPerMinute) {
       await recordMetric(job.clientId, 'adaptive_throttled', 1, {
         domainId: selection.domain.id,
-        maxPerMinute: adaptive.maxPerMinute,
+        maxPerMinute: effectiveMaxPerMinute,
         targetPerDay: adaptive.targetPerDay,
         reasons: adaptive.reasons,
         nextWindowAction: adaptive.nextWindowAction,
       })
-      await recordMetric(job.clientId, 'cooldown_events', 0, { domainId: selection.domain.id })
+      // Graceful drain: jittered retry so we don't synchronize.
       throw new Error('retry_later:adaptive_throttle')
     }
 
@@ -329,10 +508,12 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
         to_email: normalizedTo,
         idempotency_key: idemKey,
         adaptive: {
-          throughput_current: adaptive.maxPerMinute,
+          throughput_current: effectiveMaxPerMinute,
           reasons: adaptive.reasons,
           next_window_action: adaptive.nextWindowAction,
           provider: recipientProvider,
+          best_hours_utc: bestHours ?? null,
+          in_best_window: timeWindowOk,
         },
       },
     })
@@ -365,6 +546,15 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
       if (Number.isFinite(responseCode) && responseCode >= 400 && responseCode < 500) smtpClass = 'deferral'
       if (response.includes('rate') || response.includes('throttle') || response.includes('too many') || response.includes('temporarily rejected')) {
         smtpClass = 'block'
+      }
+
+      // Recipient-provider memory update: elevate risk for block/deferral and auto-decay.
+      if (smtpClass === 'block' || smtpClass === 'deferral') {
+        const pk = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${detectProvider(job.toEmail)}`
+        const cur = Number((await redis.get(pk)) ?? 0)
+        const next = Math.min(0.5, Math.max(cur, smtpClass === 'block' ? 0.3 : 0.15))
+        await redis.set(pk, String(next), { EX: 60 * 60 }) // 1h TTL
+        await recordMetric(job.clientId, smtpClass === 'block' ? 'block_rate' : 'deferral_rate', 1, { provider: detectProvider(job.toEmail) })
       }
 
       await handleTracking({
