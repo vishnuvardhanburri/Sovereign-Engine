@@ -8,7 +8,8 @@ import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
 import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
 import { sendSmtp } from '@xavira/smtp-client'
-import { computeAdaptiveThroughput, loadDomainSignals } from '@xavira/adaptive-controller'
+import { computeAdaptiveThroughput, loadDomainSignals, type AdaptiveState, type ProviderSignals } from '@xavira/adaptive-controller'
+import { detectProvider, getProviderPolicy } from '@xavira/provider-engine'
 import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@xavira/types'
 
 type SendJob = {
@@ -185,13 +186,23 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     const caps = enforceCaps(selection, lane)
     if (!caps.ok) throw new Error(`caps:${caps.reason}`)
 
-    // Adaptive sending control (per-domain, no global blast).
-    // Replaces static daily ceilings with a feedback-driven throughput function.
+    // Adaptive sending control (per-domain, provider-safe, abuse-resistant).
+    // Multi-signal gating + EMA + cooldown + ramp profiles.
+    const recipientProvider = detectProvider(job.toEmail)
+    const providerPolicy = getProviderPolicy(recipientProvider)
+    const providerSignals: ProviderSignals = { provider: recipientProvider }
+
     const domainSignals = await loadDomainSignals(db, job.clientId, selection.domain.id)
-    const adaptive = computeAdaptiveThroughput(domainSignals, undefined)
+    const adaptiveStateKey = `xv:${REGION}:adaptive:state:${job.clientId}:${selection.domain.id}`
+    const prevStateRaw = await redis.get(adaptiveStateKey)
+    const prevState: AdaptiveState | undefined = prevStateRaw ? (JSON.parse(prevStateRaw) as any) : undefined
+
+    const { throughput: adaptive, nextState } = computeAdaptiveThroughput(domainSignals, providerSignals, prevState, Date.now())
+    await redis.set(adaptiveStateKey, JSON.stringify(nextState), { EX: 60 * 60 * 24 * 7 })
 
     if (adaptive.shouldPauseDomain) {
       await recordMetric(job.clientId, 'domain_pause_triggered', 1, { domainId: selection.domain.id })
+      await recordMetric(job.clientId, 'auto_pause_count', 1, { domainId: selection.domain.id, reasons: adaptive.reasons })
       // Best-effort pause in DB so UI reflects safety state.
       await db(
         `UPDATE domains
@@ -213,25 +224,47 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
         maxPerMinute: adaptive.maxPerMinute,
         targetPerDay: adaptive.targetPerDay,
         reasons: adaptive.reasons,
+        nextWindowAction: adaptive.nextWindowAction,
       })
+      await recordMetric(job.clientId, 'cooldown_events', 0, { domainId: selection.domain.id })
       throw new Error('retry_later:adaptive_throttle')
     }
 
-  const smtpHost = reqEnv('SMTP_HOST')
-  const smtpUser = reqEnv('SMTP_USER')
-  const smtpPass = reqEnv('SMTP_PASS')
+    // Max concurrent SMTP connections per domain (hard safety floor).
+    // Provider-aware concurrency ceiling (recipient provider).
+    const maxConcurrency = Math.max(1, Math.min(3, providerPolicy.maxDomainConcurrency))
+    const concKey = `xv:${REGION}:adaptive:smtp_conc:${job.clientId}:${selection.domain.id}`
+    const conc = await redis.incr(concKey)
+    if (conc === 1) await redis.expire(concKey, 30)
+    if (conc > maxConcurrency) {
+      await recordMetric(job.clientId, 'deferral_rate', 1, { scope: 'worker', reason: 'domain_concurrency_cap', maxConcurrency })
+      throw new Error('retry_later:domain_concurrency_cap')
+    }
 
-  const { messageId } = await sendSmtp(
-      { host: smtpHost, user: smtpUser, pass: smtpPass },
-      {
-        from: selection.identity.email,
-        to: job.toEmail,
-        subject: job.subject,
-        html: job.html,
-        text: job.text,
-        headers: { 'X-Xavira-Lane': lane },
-      }
-    )
+    let messageId = ''
+    let smtpAttempted = false
+    try {
+      const smtpHost = reqEnv('SMTP_HOST')
+      const smtpUser = reqEnv('SMTP_USER')
+      const smtpPass = reqEnv('SMTP_PASS')
+      smtpAttempted = true
+
+      const sent = await sendSmtp(
+        { host: smtpHost, user: smtpUser, pass: smtpPass },
+        {
+          from: selection.identity.email,
+          to: job.toEmail,
+          subject: job.subject,
+          html: job.html,
+          text: job.text,
+          headers: { 'X-Xavira-Lane': lane, 'X-Xavira-Adaptive': adaptive.reasons.join(',') },
+        }
+      )
+      messageId = sent.messageId
+    } finally {
+      // Best-effort release: if process crashes, TTL expires.
+      await redis.decr(concKey).catch(() => {})
+    }
 
   await db(
     `UPDATE identities
@@ -291,7 +324,17 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
       domainId: selection.domain.id,
       queueJobId: job.queueJobId ?? null,
       providerMessageId: messageId,
-      metadata: { event_code: 'EMAIL_SENT', to_email: normalizedTo, idempotency_key: idemKey },
+      metadata: {
+        event_code: 'EMAIL_SENT',
+        to_email: normalizedTo,
+        idempotency_key: idemKey,
+        adaptive: {
+          throughput_current: adaptive.maxPerMinute,
+          reasons: adaptive.reasons,
+          next_window_action: adaptive.nextWindowAction,
+          provider: recipientProvider,
+        },
+      },
     })
 
     // Mark idempotency as completed after we successfully sent and tracked.
@@ -302,6 +345,45 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     await recordMetric(job.clientId, 'send_success_rate', 1, { scope: 'worker' })
     await recordMetric(job.clientId, 'duplicate_send_prevented', 0, { scope: 'worker' })
   } catch (err) {
+    const msg = (err as any)?.message ?? String(err)
+
+    // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
+    const isInternalThrottle =
+      msg.startsWith('retry_later:adaptive_throttle') ||
+      msg.startsWith('retry_later:global_cap') ||
+      msg.startsWith('retry_later:domain_concurrency_cap') ||
+      msg.startsWith('retry_later:inflight_lock') ||
+      msg.startsWith('retry_later:recent_failure')
+
+    if (!isInternalThrottle) {
+      // Classify SMTP errors for deferral/block signals.
+      const e: any = err
+      const responseCode = Number(e?.responseCode ?? e?.code ?? e?.response?.statusCode ?? NaN)
+      const response = String(e?.response ?? e?.message ?? '').toLowerCase()
+
+      let smtpClass: 'deferral' | 'block' | 'other' = 'other'
+      if (Number.isFinite(responseCode) && responseCode >= 400 && responseCode < 500) smtpClass = 'deferral'
+      if (response.includes('rate') || response.includes('throttle') || response.includes('too many') || response.includes('temporarily rejected')) {
+        smtpClass = 'block'
+      }
+
+      await handleTracking({
+        type: 'FAILED',
+        clientId: job.clientId,
+        campaignId: job.campaignId ?? null,
+        contactId: job.contactId ?? null,
+        queueJobId: job.queueJobId ?? null,
+        metadata: {
+          event_code: 'EMAIL_FAILED',
+          idempotency_key: idemKey,
+          to_email: String(job.toEmail || '').trim().toLowerCase(),
+          smtp_response_code: Number.isFinite(responseCode) ? responseCode : null,
+          smtp_class: smtpClass,
+          error: msg,
+        },
+      }).catch(() => {})
+    }
+
     // Failure state: allow retry with backoff; do not deadlock.
     await redis.set(failedKey, String((err as any)?.message ?? 'failed'), { EX: 5 * 60 })
     await redis.del(inflightKey)

@@ -635,6 +635,9 @@ importers:
       '@xavira/decision-engine':
         specifier: workspace:*
         version: link:../../services/decision-engine
+      '@xavira/provider-engine':
+        specifier: workspace:*
+        version: link:../../services/provider-engine
       '@xavira/reputation-engine':
         specifier: workspace:*
         version: link:../../services/reputation-engine
