@@ -56,6 +56,42 @@ Lead
 
 ---
 
+## Results (What this system actually does)
+
+Typical improvements:
+
+- prevents domain burnout through controlled sending
+- reduces bounce rates via validation + decision layer
+- improves reply rates by optimizing send timing and lanes
+- eliminates duplicate sends completely
+
+---
+
+## Why this is different
+
+Most tools:
+
+- send everything
+- rely on templates
+- ignore infrastructure
+
+Xavira Orbit:
+
+- decides what NOT to send
+- protects domains first
+- optimizes based on outcomes, not activity
+
+---
+
+## Use Cases
+
+- SaaS teams scaling outbound safely
+- agencies managing multi-client campaigns
+- teams with domain burn issues
+- systems needing reliable sending infrastructure
+
+---
+
 ## Example Decision Output
 
 ```json
@@ -87,3 +123,15 @@ Systems should:
 * decide when to send
 * adapt based on results
 * protect infrastructure automatically
+
+---
+
+## Run a Proof
+
+We don’t ask for long-term commitment.
+
+Typical workflow:
+
+1. run controlled outbound for 10 days
+2. measure replies and domain health
+3. scale only after results are proven
