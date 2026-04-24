@@ -292,6 +292,35 @@ CREATE TABLE IF NOT EXISTS domain_pause_events (
 CREATE INDEX IF NOT EXISTS idx_domain_pause_events_client_domain_created
   ON domain_pause_events (client_id, domain_id, created_at DESC);
 
+-- Durable adaptive state snapshots (for Redis loss recovery).
+CREATE TABLE IF NOT EXISTS adaptive_state_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  client_id INT NOT NULL,
+  domain_id INT NOT NULL,
+  throughput_current NUMERIC,
+  cooldown_active BOOLEAN,
+  provider_bias JSONB,
+  pressure_slow_factor NUMERIC,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_adaptive_state_snapshots_client_domain_created
+  ON adaptive_state_snapshots (client_id, domain_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS provider_health_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  client_id INT NOT NULL,
+  provider TEXT NOT NULL,
+  deferral_rate NUMERIC,
+  block_rate NUMERIC,
+  success_rate NUMERIC,
+  throttle_factor NUMERIC,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_health_snapshots_client_provider_created
+  ON provider_health_snapshots (client_id, provider, created_at DESC);
+
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (
   id TEXT PRIMARY KEY,

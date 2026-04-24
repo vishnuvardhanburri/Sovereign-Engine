@@ -192,6 +192,78 @@ const db: DbExecutor = async (sql, params = []) => {
   return { rows: res.rows as any[], rowCount: res.rowCount ?? 0 }
 }
 
+async function bootstrapFromSnapshots() {
+  // Partial recovery: restore only missing Redis keys from DB snapshots.
+  // Never overwrite fresh keys.
+  try {
+    await redis.ping()
+  } catch (err) {
+    console.error('[sender-worker] redis unavailable; entering degraded conservative mode', { err: (err as any)?.message ?? String(err) })
+    // Degraded mode: no ramp; keep deploy conservative factor longer.
+    await redis.set(`xv:${REGION}:deploy:conservative`, '0.5', { EX: 30 * 60 })
+    return
+  }
+
+  const activeDomains = await db<{ client_id: number; domain_id: number }>(
+    `SELECT client_id, id AS domain_id
+     FROM domains
+     WHERE status = 'active'`
+  )
+
+  for (const d of activeDomains.rows) {
+    const stateKey = `xv:${REGION}:adaptive:state:${d.client_id}:${d.domain_id}`
+    const exists = await redis.get(stateKey)
+    if (exists) continue
+
+    const snap = await db<{ throughput_current: any; cooldown_active: boolean; created_at: string }>(
+      `SELECT throughput_current, cooldown_active, created_at
+       FROM adaptive_state_snapshots
+       WHERE client_id = $1 AND domain_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [d.client_id, d.domain_id]
+    )
+    const row = snap.rows[0]
+    if (!row) continue
+
+    const restored = {
+      throughputCurrent: Math.max(2, Math.min(10, Number(row.throughput_current ?? 2))),
+      cooldownUntil: row.cooldown_active ? Date.now() + 30 * 60_000 : 0,
+      restoredFrom: 'snapshot',
+      snapshotCreatedAt: row.created_at,
+    }
+    await redis.set(stateKey, JSON.stringify(restored), { EX: 60 * 60 * 24 * 7 })
+    console.log('[sender-worker] snapshot_restored', { clientId: d.client_id, domainId: d.domain_id })
+    await recordMetric(d.client_id, 'snapshot_restored', 1, { domainId: d.domain_id })
+  }
+
+  // Provider risk restore (best-effort).
+  const providers: Array<'gmail' | 'outlook' | 'yahoo' | 'other'> = ['gmail', 'outlook', 'yahoo', 'other']
+  const clientIdsRes = await db<{ client_id: number }>(`SELECT DISTINCT client_id FROM domains`)
+  for (const row of clientIdsRes.rows) {
+    for (const p of providers) {
+      const riskKey = `xv:${REGION}:adaptive:provider_risk:${row.client_id}:${p}`
+      const exists = await redis.get(riskKey)
+      if (exists) continue
+      const snap = await db<{ throttle_factor: any; created_at: string }>(
+        `SELECT throttle_factor, created_at
+         FROM provider_health_snapshots
+         WHERE client_id = $1 AND provider = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [row.client_id, p]
+      )
+      const s = snap.rows[0]
+      if (!s) continue
+      const throttle = Math.max(0, Math.min(0.5, Number(s.throttle_factor ?? 0)))
+      if (throttle <= 0) continue
+      await redis.set(riskKey, String(throttle), { EX: 60 * 60 })
+      console.log('[sender-worker] snapshot_restored_provider', { clientId: row.client_id, provider: p, throttle })
+      await recordMetric(row.client_id, 'snapshot_restored', 1, { provider: p })
+    }
+  }
+}
+
 async function lookupValidation(email: string): Promise<{ verdict: ValidationVerdict; score: number; catchAll?: boolean }> {
   const normalized = String(email || '').trim().toLowerCase()
   const res = await db<{ verdict: ValidationVerdict; score: string | number; catch_all: any }>(
@@ -720,6 +792,8 @@ async function main() {
 
   // Auto-safe deploy: after restart, be conservative for 10 minutes to avoid burst-on-deploy.
   await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', { EX: 10 * 60 })
+
+  await bootstrapFromSnapshots()
 
   const w = new BullWorker<SendJob>(
     SEND_QUEUE,
