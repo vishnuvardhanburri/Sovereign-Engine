@@ -4,6 +4,20 @@ Xavira Orbit is an outbound infrastructure platform built around one principle:
 
 **Decide before sending, then learn from outcomes.**
 
+## Visual Flow
+
+```mermaid
+flowchart LR
+  A["Lead"] --> B["Validator"]
+  B --> C["Decision Engine"]
+  C --> D["Queue"]
+  D --> E["Sender Worker"]
+  E --> F["SMTP"]
+  F --> G["Tracking"]
+  G --> H["Outcome Engine"]
+  H --> C
+```
+
 ## Components
 
 - **Validator**
@@ -76,4 +90,3 @@ This makes the system:
 - measurable (baseline vs treatment)
 - explainable (trace + reasons)
 - safe under uncertainty (defer/drop + circuit breakers)
-

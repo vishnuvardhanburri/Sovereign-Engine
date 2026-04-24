@@ -6,6 +6,8 @@
 
 ## Autonomous Outbound Infrastructure
 
+Not a tool. Infrastructure.
+
 Not a tool.  
 A decision-driven outbound system that controls sending, protects domains, and optimizes for replies.
 
@@ -85,4 +87,3 @@ Systems should:
 * decide when to send
 * adapt based on results
 * protect infrastructure automatically
-
