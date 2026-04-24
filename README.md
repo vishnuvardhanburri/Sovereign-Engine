@@ -155,19 +155,26 @@ The application includes mock authentication. Use these credentials:
 1. Clone the repository
 2. Install dependencies:
    ```bash
-   npm install
-   # or
    pnpm install
    ```
 
-3. Run the development server:
+3. Start local infra (Postgres + Redis):
    ```bash
-   npm run dev
-   # or
+   docker compose up -d
+   ```
+
+4. Create your env file:
+   ```bash
+   cp configs/env/.env.example .env
+   ```
+
+5. Initialize the database + run the dev server:
+   ```bash
+   pnpm db:init
    pnpm dev
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+6. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ## Key Features Explained
 

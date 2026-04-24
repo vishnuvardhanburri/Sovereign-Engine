@@ -13,6 +13,9 @@ next.user-config.*
 .env*.local
 package-lock.json
 
+# Keep example env files committed
+!.env.example
+
 # Common ignores
 node_modules
 .next/

@@ -1,10 +1,11 @@
 {
-  "name": "email-queue-worker",
+  "name": "@xavira/sender-worker",
   "version": "1.0.0",
   "description": "Email queue worker service for cold email automation",
   "main": "index.ts",
   "type": "module",
   "scripts": {
+    "worker:dev": "tsx index.ts",
     "start": "tsx index.ts",
     "dev": "NODE_ENV=development tsx watch index.ts",
     "build": "tsc",

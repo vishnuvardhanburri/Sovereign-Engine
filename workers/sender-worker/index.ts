@@ -1,16 +1,16 @@
 // @ts-nocheck
 import 'dotenv/config'
-import * as backendModule from '../lib/backend'
-import * as dbModule from '../lib/db'
-import * as redisModule from '../lib/redis'
-import * as envModule from '../lib/env'
-import * as decisionAgentModule from '../lib/agents/execution/decision-agent'
-import * as agentPromptModule from '../lib/agents/agent-prompt'
-import * as senderAgentModule from '../lib/agents/execution/sender-agent'
-import * as controlLoopModule from '../lib/control-loop-enforcer'
-import * as productionFixesModule from '../lib/production-fixes'
-import * as coordinatorModule from '../lib/infrastructure/coordinator'
-import * as sendSafeModule from '../lib/delivery/send-safe'
+import * as backendModule from '../../apps/api-gateway/lib/backend'
+import * as dbModule from '../../apps/api-gateway/lib/db'
+import * as redisModule from '../../apps/api-gateway/lib/redis'
+import * as envModule from '../../apps/api-gateway/lib/env'
+import * as decisionAgentModule from '../../apps/api-gateway/lib/agents/execution/decision-agent'
+import * as agentPromptModule from '../../apps/api-gateway/lib/agents/agent-prompt'
+import * as senderAgentModule from '../../apps/api-gateway/lib/agents/execution/sender-agent'
+import * as controlLoopModule from '../../apps/api-gateway/lib/control-loop-enforcer'
+import * as productionFixesModule from '../../apps/api-gateway/lib/production-fixes'
+import * as coordinatorModule from '../../apps/api-gateway/lib/infrastructure/coordinator'
+import * as sendSafeModule from '../../apps/api-gateway/lib/delivery/send-safe'
 
 const appEnv =
   (envModule as any).appEnv ?? (envModule as any).default?.appEnv
@@ -34,23 +34,30 @@ const productionFixes = ((productionFixesModule as any).default ?? productionFix
 const sendSafeLib = ((sendSafeModule as any).default ?? sendSafeModule) as any
 const coordinator = (coordinatorModule as any).coordinator ?? (coordinatorModule as any).default?.coordinator ?? (coordinatorModule as any).default
 
-const circuitBreaker = productionFixes.circuitBreaker as typeof import('../lib/production-fixes.ts').circuitBreaker
-const recordMetric = productionFixes.recordMetric as typeof import('../lib/production-fixes.ts').recordMetric
-const StructuredLogger = productionFixes.StructuredLogger as typeof import('../lib/production-fixes.ts').StructuredLogger
+const circuitBreaker =
+  productionFixes.circuitBreaker as typeof import('../../apps/api-gateway/lib/production-fixes.ts').circuitBreaker
+const recordMetric =
+  productionFixes.recordMetric as typeof import('../../apps/api-gateway/lib/production-fixes.ts').recordMetric
+const StructuredLogger =
+  productionFixes.StructuredLogger as typeof import('../../apps/api-gateway/lib/production-fixes.ts').StructuredLogger
 
-const claimQueueJob = backend.claimQueueJob as typeof import('../lib/backend.ts').claimQueueJob
-const deferQueueJob = backend.deferQueueJob as typeof import('../lib/backend.ts').deferQueueJob
-const loadQueueExecutionContext = backend.loadQueueExecutionContext as typeof import('../lib/backend.ts').loadQueueExecutionContext
-const markQueueJobCompleted = backend.markQueueJobCompleted as typeof import('../lib/backend.ts').markQueueJobCompleted
-const markQueueJobFailed = backend.markQueueJobFailed as typeof import('../lib/backend.ts').markQueueJobFailed
-const markQueueJobSkipped = backend.markQueueJobSkipped as typeof import('../lib/backend.ts').markQueueJobSkipped
-const popQueuedJob = backend.popQueuedJob as typeof import('../lib/backend.ts').popQueuedJob
-const promoteReadyQueueJobs = backend.promoteReadyQueueJobs as typeof import('../lib/backend.ts').promoteReadyQueueJobs
+const claimQueueJob = backend.claimQueueJob as typeof import('../../apps/api-gateway/lib/backend.ts').claimQueueJob
+const deferQueueJob = backend.deferQueueJob as typeof import('../../apps/api-gateway/lib/backend.ts').deferQueueJob
+const loadQueueExecutionContext =
+  backend.loadQueueExecutionContext as typeof import('../../apps/api-gateway/lib/backend.ts').loadQueueExecutionContext
+const markQueueJobCompleted =
+  backend.markQueueJobCompleted as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobCompleted
+const markQueueJobFailed = backend.markQueueJobFailed as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobFailed
+const markQueueJobSkipped = backend.markQueueJobSkipped as typeof import('../../apps/api-gateway/lib/backend.ts').markQueueJobSkipped
+const popQueuedJob = backend.popQueuedJob as typeof import('../../apps/api-gateway/lib/backend.ts').popQueuedJob
+const promoteReadyQueueJobs =
+  backend.promoteReadyQueueJobs as typeof import('../../apps/api-gateway/lib/backend.ts').promoteReadyQueueJobs
 
-const closePool = db.closePool as typeof import('../lib/db.ts').closePool
-const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRedis
-const ackProcessingJob = redis.ackProcessingJob as typeof import('../lib/redis.ts').ackProcessingJob
-const reclaimExpiredJobs = redis.reclaimExpiredJobs as typeof import('../lib/redis.ts').reclaimExpiredJobs
+const closePool = db.closePool as typeof import('../../apps/api-gateway/lib/db.ts').closePool
+const closeRedis = redis.closeRedis as typeof import('../../apps/api-gateway/lib/redis.ts').closeRedis
+const ackProcessingJob = redis.ackProcessingJob as typeof import('../../apps/api-gateway/lib/redis.ts').ackProcessingJob
+const reclaimExpiredJobs =
+  redis.reclaimExpiredJobs as typeof import('../../apps/api-gateway/lib/redis.ts').reclaimExpiredJobs
 
 const evaluateQueueDecision = decisionAgent.evaluateQueueDecision as any
 const loadBackendAgentPrompt = agentPrompt.loadBackendAgentPrompt as any
