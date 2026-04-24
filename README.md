@@ -86,13 +86,15 @@ Lead
 
 ---
 
-## Example Outcome (Live Campaign)
+## Example Outcome (Real Campaign)
 
-(Real campaign data will be inserted)
+(Real campaign data will be inserted after the first live proof run.) See [docs/proof.md](./docs/proof.md).
 
 - reply rate: —
 - bounce rate: —
 - decisions made: —
+
+System deferred —% of emails to protect domains while increasing replies.
 
 ---
 
