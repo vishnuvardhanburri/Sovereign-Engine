@@ -11,6 +11,16 @@ Not a tool. Infrastructure.
 Not a tool.  
 A decision-driven outbound system that controls sending, protects domains, and optimizes for replies.
 
+For:
+
+- SaaS teams scaling outbound
+- Agencies managing multiple clients
+- Teams facing domain burn or deliverability issues
+
+```text
+Lead → Validator → Decision → Queue → Send → Track → Outcome → Feedback
+```
+
 ---
 
 ## Problem
@@ -62,7 +72,7 @@ Typical improvements:
 
 - prevents domain burnout through controlled sending
 - reduces bounce rates via validation + decision layer
-- improves reply rates by optimizing send timing and lanes
+- improves reply rates by controlling when and where emails are sent
 - eliminates duplicate sends completely
 
 ---
@@ -132,6 +142,6 @@ We don’t ask for long-term commitment.
 
 Typical workflow:
 
-1. run controlled outbound for 10 days
-2. measure replies and domain health
-3. scale only after results are proven
+Start with a 10-day controlled run.  
+Measure replies and domain health.  
+Scale only after results are proven.
