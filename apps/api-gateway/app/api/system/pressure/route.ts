@@ -58,6 +58,39 @@ export async function GET(request: NextRequest) {
     const pressureHigh = queueDepth > 500 || avgWaitMs > 5 * 60_000
     if (pressureHigh) {
       await redis.set(`xv:${REGION}:adaptive:pressure_slow:${clientId}`, '0.85', { EX: 10 * 60 })
+
+      // Pressure-aware queueing:
+      // - pull up high-priority jobs
+      // - defer low-priority jobs
+      // This keeps the system moving on high-value sends instead of just slowing everything.
+      await query(
+        `WITH scored AS (
+           SELECT
+             q.id,
+             COALESCE(dal.priority_score, 0) AS priority_score
+           FROM queue_jobs q
+           LEFT JOIN decision_audit_logs dal
+             ON dal.client_id = q.client_id AND dal.queue_job_id = q.id
+           WHERE q.client_id = $1
+             AND q.status IN ('pending','retry')
+             AND q.scheduled_at < (CURRENT_TIMESTAMP + INTERVAL '2 hours')
+         ),
+         hi AS (
+           SELECT id FROM scored ORDER BY priority_score DESC NULLS LAST LIMIT 100
+         ),
+         lo AS (
+           SELECT id FROM scored ORDER BY priority_score ASC NULLS LAST LIMIT 300
+         )
+         UPDATE queue_jobs q
+         SET scheduled_at = CASE
+           WHEN q.id IN (SELECT id FROM hi) THEN LEAST(q.scheduled_at, CURRENT_TIMESTAMP + INTERVAL '2 minutes')
+           WHEN q.id IN (SELECT id FROM lo) THEN q.scheduled_at + INTERVAL '15 minutes'
+           ELSE q.scheduled_at
+         END
+         WHERE q.client_id = $1
+           AND q.status IN ('pending','retry')`,
+        [clientId]
+      ).catch(() => {})
     }
 
     return NextResponse.json({
@@ -82,4 +115,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'failed' }, { status: 500 })
   }
 }
-

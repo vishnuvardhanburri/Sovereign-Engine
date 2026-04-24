@@ -75,6 +75,35 @@ export async function GET(
     [clientId, campaignId]
   )
 
+  const [decisionBreakdown, protection] = await Promise.all([
+    query<{ decision: string; count: string }>(
+      `SELECT decision, COUNT(*)::text AS count
+       FROM decision_audit_logs
+       WHERE client_id = $1 AND campaign_id = $2
+         AND created_at > NOW() - INTERVAL '30 days'
+       GROUP BY 1`,
+      [clientId, campaignId]
+    ),
+    query<{ prevented: string; protection_actions: string }>(
+      `WITH prevented AS (
+         SELECT COUNT(*)::text AS prevented
+         FROM decision_audit_logs
+         WHERE client_id = $1 AND campaign_id = $2
+           AND created_at > NOW() - INTERVAL '30 days'
+           AND (decision IN ('drop','defer') OR (reasons::text ILIKE '%risk%' OR reasons::text ILIKE '%defer%'))
+       ),
+       protection AS (
+         SELECT COUNT(*)::text AS protection_actions
+         FROM domain_pause_events
+         WHERE client_id = $1
+           AND created_at > NOW() - INTERVAL '30 days'
+       )
+       SELECT (SELECT prevented FROM prevented) AS prevented,
+              (SELECT protection_actions FROM protection) AS protection_actions`,
+      [clientId, campaignId]
+    ),
+  ])
+
   const byGroup = new Map<string, { decisions: number; sent: number; replies: number; bounces: number; meetings: number }>()
   for (const r of rows.rows) {
     const g = (r.outcome_group ?? 'unknown') as string
@@ -196,7 +225,13 @@ export async function GET(
       bounce_rate_delta: clamp(treatBounceRate - baseBounceRate, -1, 1),
     },
     best_segments: segmentSummary,
+    trust_metrics: {
+      emails_prevented_risk: Number(protection.rows[0]?.prevented ?? 0),
+      domain_protection_actions: Number(protection.rows[0]?.protection_actions ?? 0),
+      adaptive_decisions_breakdown: Object.fromEntries(
+        decisionBreakdown.rows.map((r) => [r.decision, Number(r.count ?? 0)])
+      ),
+    },
     safe_mode: appEnv.safeModeEnabled(),
   })
 }
-

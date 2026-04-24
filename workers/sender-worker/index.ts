@@ -448,6 +448,12 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
       }
     }
 
+    // Deploy conservative mode factor (auto-safe deploy).
+    const deployFactor = Number((await redis.get(`xv:${REGION}:deploy:conservative`)) ?? 0)
+    if (deployFactor > 0) {
+      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * deployFactor))
+    }
+
     if (useCanary) {
       // Cross-domain safe coupling: if multiple domains show throttling signals, slow the whole org slightly.
       const riskBucket = `xv:${REGION}:adaptive:risk_bucket:${job.clientId}:${minuteBucket}`
@@ -711,6 +717,9 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
 
 async function main() {
   console.log('[sender-worker] starting', { queue: SEND_QUEUE })
+
+  // Auto-safe deploy: after restart, be conservative for 10 minutes to avoid burst-on-deploy.
+  await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', { EX: 10 * 60 })
 
   const w = new BullWorker<SendJob>(
     SEND_QUEUE,
