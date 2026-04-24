@@ -1,0 +1,30 @@
+{
+  "name": "@xavira/tool-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tool:api": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
+    "@xavira/decision-engine": "workspace:*",
+    "@xavira/intelligence-engine": "workspace:*",
+    "@xavira/provider-engine": "workspace:*",
+    "@xavira/reputation-engine": "workspace:*",
+    "@xavira/simulation-engine": "workspace:*",
+    "@xavira/tracking-engine": "workspace:*",
+    "@xavira/types": "workspace:*",
+    "bullmq": "^5.76.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.8.5",
+    "ioredis": "^5.10.1",
+    "pg": "^8.11.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.20.6",
+    "typescript": "5.7.3"
+  }
+}
+

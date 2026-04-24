@@ -13,6 +13,7 @@
     "validator:api": "pnpm -C services/validator-engine validator:api",
     "validator:worker": "pnpm -C services/validator-engine validator:worker",
     "worker:sender": "pnpm -C workers/sender-worker worker:dev",
-    "worker:optimizer": "pnpm -C workers/optimizer-worker worker:dev"
+    "worker:optimizer": "pnpm -C workers/optimizer-worker worker:dev",
+    "tool:api": "pnpm -C services/tool-api tool:api"
   }
 }

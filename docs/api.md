@@ -23,3 +23,14 @@ Read-only endpoints (safe by default):
 Autonomous scheduler worker:
 
 - `pnpm worker:optimizer` (requires `OPTIMIZER_ENABLED=true`)
+
+## Tool API (external integrations)
+
+Runs in `services/tool-api`:
+
+- `POST /tool/validate`
+- `POST /tool/send`
+- `GET /tool/status`
+- `GET /tool/domain-health?domainId=<id>`
+
+Auth: provide `x-api-key` (or `Authorization: Bearer <key>`). Keys are configured via `TOOL_API_KEYS_JSON`.
