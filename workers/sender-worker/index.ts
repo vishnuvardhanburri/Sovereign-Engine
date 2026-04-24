@@ -28,6 +28,7 @@ const SEND_QUEUE = process.env.SEND_QUEUE ?? 'xv-send-queue'
 const SEND_DLQ = process.env.SEND_DLQ ?? 'xv-send-dlq'
 const MAX_SEND_ATTEMPTS = Number(process.env.SEND_MAX_ATTEMPTS ?? 6)
 const ADAPTIVE_CANARY = process.env.ADAPTIVE_CANARY === 'true'
+const ADAPTIVE_EXPERIMENT = process.env.ADAPTIVE_EXPERIMENT === 'true'
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -56,6 +57,11 @@ function sampleCanary(idemKey: string) {
   // Stable 10% sampling based on idempotency key.
   const n = parseInt(idemKey.slice(0, 8), 16)
   return (n % 100) < 10
+}
+
+function experimentGroup(idemKey: string): 'adaptive' | 'baseline' {
+  const n = parseInt(idemKey.slice(0, 8), 16)
+  return (n % 100) < 50 ? 'adaptive' : 'baseline'
 }
 
 type SmtpClass = 'deferral' | 'block' | 'bounce' | 'unknown'
@@ -354,6 +360,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
 
   try {
     const useCanary = ADAPTIVE_CANARY ? sampleCanary(idemKey) : true
+    const expGroup = ADAPTIVE_EXPERIMENT ? experimentGroup(idemKey) : null
+    const useAdaptiveControl = expGroup ? expGroup === 'adaptive' : true
 
     // Jitter injection: avoid batchy patterns.
     await sleep(jitterMs(250, 0.8))
@@ -372,7 +380,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     }
 
     // Global shaper (anti-burst): token bucket across all domains for this client/org.
-    if (useCanary) {
+    // Always apply during experiment so timing isn't wildly different.
+    if (useCanary || ADAPTIVE_EXPERIMENT) {
       const ok = await takeGlobalToken(job.clientId)
       if (!ok) {
         await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_shaper' })
@@ -524,6 +533,11 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     const deployFactor = Number((await redis.get(`xv:${REGION}:deploy:conservative`)) ?? 0)
     if (deployFactor > 0) {
       effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * deployFactor))
+    }
+
+    // Experiment: baseline group uses a fixed conservative throughput (still obeys safety pauses/hard-stops above).
+    if (expGroup === 'baseline') {
+      effectiveMaxPerMinute = 2
     }
 
     if (useCanary) {
@@ -686,6 +700,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
           cooldown_active: (nextState.cooldownUntil ?? 0) > Date.now(),
           canary: ADAPTIVE_CANARY ? useCanary : null,
         },
+        adaptive_experiment: expGroup,
       },
     })
 
@@ -727,6 +742,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
           smtp_response_code: responseCode,
           error: String((err as any)?.message ?? String(err)),
           idempotency_key: idemKey,
+          adaptive_experiment: expGroup,
         },
       }).catch(() => {})
 
@@ -775,6 +791,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: msg,
+          adaptive_experiment: expGroup,
         },
       } as any).catch(() => {})
     }
