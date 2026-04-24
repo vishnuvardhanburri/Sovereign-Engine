@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { Worker as BullWorker } from 'bullmq'
+import { Worker as BullWorker, Queue as BullQueue, type Job } from 'bullmq'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
 import crypto from 'crypto'
@@ -25,6 +25,9 @@ type SendJob = {
 }
 
 const SEND_QUEUE = process.env.SEND_QUEUE ?? 'xv-send-queue'
+const SEND_DLQ = process.env.SEND_DLQ ?? 'xv-send-dlq'
+const MAX_SEND_ATTEMPTS = Number(process.env.SEND_MAX_ATTEMPTS ?? 6)
+const ADAPTIVE_CANARY = process.env.ADAPTIVE_CANARY === 'true'
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -39,12 +42,53 @@ const GLOBAL_SENDS_PER_MINUTE = Number(process.env.GLOBAL_SENDS_PER_MINUTE ?? 12
 const GLOBAL_SHAPER_RATE_PER_SEC = Number(process.env.GLOBAL_SHAPER_RATE_PER_SEC ?? 2) // tokens/sec
 const GLOBAL_SHAPER_BURST = Number(process.env.GLOBAL_SHAPER_BURST ?? 10) // max tokens
 
+const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
+
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
 const GLOBAL_RISK_WINDOW_SEC = 60 * 60 // 1h
 const GLOBAL_RISK_THRESHOLD = 3 // domains spiking before applying slowdown
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
+}
+
+function sampleCanary(idemKey: string) {
+  // Stable 10% sampling based on idempotency key.
+  const n = parseInt(idemKey.slice(0, 8), 16)
+  return (n % 100) < 10
+}
+
+type SmtpClass = 'deferral' | 'block' | 'bounce' | 'unknown'
+
+function classifySmtpFailure(err: any): { smtpClass: SmtpClass; responseCode: number | null } {
+  const code = Number(err?.responseCode ?? err?.code ?? err?.response?.statusCode ?? NaN)
+  const msg = String(err?.response ?? err?.message ?? '').toLowerCase()
+  const responseCode = Number.isFinite(code) ? code : null
+
+  // 4xx => deferral, with special patterns treated as rate limit / block
+  if (responseCode && responseCode >= 400 && responseCode < 500) {
+    if (
+      responseCode === 421 ||
+      responseCode === 450 ||
+      msg.includes('rate') ||
+      msg.includes('throttle') ||
+      msg.includes('too many') ||
+      msg.includes('temporarily rejected')
+    ) {
+      return { smtpClass: 'block', responseCode }
+    }
+    return { smtpClass: 'deferral', responseCode }
+  }
+
+  // 5xx => hard failures. Some are "block" (policy), others are bounce.
+  if (responseCode && responseCode >= 500 && responseCode < 600) {
+    if (msg.includes('blocked') || msg.includes('blacklist') || msg.includes('policy') || msg.includes('spam')) {
+      return { smtpClass: 'block', responseCode }
+    }
+    return { smtpClass: 'bounce', responseCode }
+  }
+
+  return { smtpClass: 'unknown', responseCode }
 }
 
 // Atomic Redis token bucket (anti-burst).
@@ -202,7 +246,8 @@ async function resolveIdempotencyKey(job: SendJob, bullJobId: string | number | 
   return crypto.createHash('sha256').update(fallbackPayload).digest('hex').slice(0, 40)
 }
 
-async function runSend(job: SendJob, bullJobId: string | number | undefined) {
+async function runSend(job: SendJob, bull: Job<SendJob>) {
+  const bullJobId = bull.id
   const idemKey = await resolveIdempotencyKey(job, bullJobId)
   const doneKey = `xv:${REGION}:send:done:${job.clientId}:${idemKey}`
   const inflightKey = `xv:${REGION}:send:inflight:${job.clientId}:${idemKey}`
@@ -236,6 +281,8 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
   }
 
   try {
+    const useCanary = ADAPTIVE_CANARY ? sampleCanary(idemKey) : true
+
     // Jitter injection: avoid batchy patterns.
     await sleep(jitterMs(250, 0.8))
 
@@ -253,11 +300,13 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     }
 
     // Global shaper (anti-burst): token bucket across all domains for this client/org.
-    const ok = await takeGlobalToken(job.clientId)
-    if (!ok) {
-      await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_shaper' })
-      // jittered backoff to smooth retry storms
-      throw new Error('retry_later:global_shaper')
+    if (useCanary) {
+      const ok = await takeGlobalToken(job.clientId)
+      if (!ok) {
+        await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_shaper' })
+        // jittered backoff to smooth retry storms
+        throw new Error('retry_later:global_shaper')
+      }
     }
 
     const validation = await lookupValidation(job.toEmail)
@@ -324,6 +373,23 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     if (adaptive.shouldPauseDomain) {
       await recordMetric(job.clientId, 'domain_pause_triggered', 1, { domainId: selection.domain.id })
       await recordMetric(job.clientId, 'auto_pause_count', 1, { domainId: selection.domain.id, reasons: adaptive.reasons })
+      // Append-only audit event for client trust.
+      await db(
+        `INSERT INTO domain_pause_events (client_id, domain_id, reason, metrics_snapshot)
+         VALUES ($1,$2,$3,$4::jsonb)`,
+        [
+          job.clientId,
+          selection.domain.id,
+          adaptive.hardStop ? 'hard_stop' : 'pause',
+          JSON.stringify({
+            reasons: adaptive.reasons,
+            adaptive,
+            domainSignals,
+            recipientProvider,
+            timeWindowHour: nowHour,
+          }),
+        ]
+      ).catch(() => {})
       // Best-effort pause in DB so UI reflects safety state.
       await db(
         `UPDATE domains
@@ -363,33 +429,50 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
 
     // Time-of-day bias: reduce throughput outside best windows (soft).
     let effectiveMaxPerMinute = adaptive.maxPerMinute
-    if (!timeWindowOk) {
-      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * 0.8))
-    }
+    let pressureSlowFactor: number | null = null
+    let providerRisk = 0
 
-    // Cross-domain safe coupling: if multiple domains show throttling signals, slow the whole org slightly.
-    const riskBucket = `xv:${REGION}:adaptive:risk_bucket:${job.clientId}:${minuteBucket}`
-    const hasRiskSignal =
-      adaptive.reasons.includes('block_rate_detected_cooldown') ||
-      adaptive.reasons.includes('deferral_rate_spike_halve')
-    if (hasRiskSignal) {
-      const n = await redis.incr(riskBucket)
-      if (n === 1) await redis.expire(riskBucket, 10 * 60)
-      if (n >= GLOBAL_RISK_THRESHOLD) {
-        await redis.set(`xv:${REGION}:adaptive:global_risk:${job.clientId}`, '1', { EX: GLOBAL_RISK_WINDOW_SEC })
-        await recordMetric(job.clientId, 'cooldown_events', 1, { scope: 'global', reason: 'multi_domain_risk' })
+    if (!useCanary) {
+      // Baseline behavior: keep conservative shaping only.
+      effectiveMaxPerMinute = Math.max(2, Math.min(5, effectiveMaxPerMinute))
+    } else {
+      if (!timeWindowOk) {
+        effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * 0.8))
+      }
+
+      // Backpressure: system pressure slow-down (set by /api/system/pressure).
+      const pressureSlow = Number((await redis.get(`xv:${REGION}:adaptive:pressure_slow:${job.clientId}`)) ?? 0)
+      if (pressureSlow > 0) {
+        pressureSlowFactor = pressureSlow
+        effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * pressureSlow))
       }
     }
-    const globalRisk = await redis.get(`xv:${REGION}:adaptive:global_risk:${job.clientId}`)
-    if (globalRisk) {
-      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * GLOBAL_RISK_SLOWDOWN_FACTOR))
-    }
 
-    // Recipient-provider memory throttling: if provider is degraded, slow just that provider.
-    const providerKey = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${recipientProvider}`
-    const providerRisk = Number((await redis.get(providerKey)) ?? 0)
-    if (providerRisk > 0) {
-      effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * (1 - clamp(providerRisk, 0.1, 0.5))))
+    if (useCanary) {
+      // Cross-domain safe coupling: if multiple domains show throttling signals, slow the whole org slightly.
+      const riskBucket = `xv:${REGION}:adaptive:risk_bucket:${job.clientId}:${minuteBucket}`
+      const hasRiskSignal =
+        adaptive.reasons.includes('block_rate_detected_cooldown') ||
+        adaptive.reasons.includes('deferral_rate_spike_halve')
+      if (hasRiskSignal) {
+        const n = await redis.incr(riskBucket)
+        if (n === 1) await redis.expire(riskBucket, 10 * 60)
+        if (n >= GLOBAL_RISK_THRESHOLD) {
+          await redis.set(`xv:${REGION}:adaptive:global_risk:${job.clientId}`, '1', { EX: GLOBAL_RISK_WINDOW_SEC })
+          await recordMetric(job.clientId, 'cooldown_events', 1, { scope: 'global', reason: 'multi_domain_risk' })
+        }
+      }
+      const globalRisk = await redis.get(`xv:${REGION}:adaptive:global_risk:${job.clientId}`)
+      if (globalRisk) {
+        effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * GLOBAL_RISK_SLOWDOWN_FACTOR))
+      }
+
+      // Recipient-provider memory throttling: if provider is degraded, slow just that provider.
+      const providerKey = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${recipientProvider}`
+      providerRisk = Number((await redis.get(providerKey)) ?? 0)
+      if (providerRisk > 0) {
+        effectiveMaxPerMinute = Math.max(2, Math.floor(effectiveMaxPerMinute * (1 - clamp(providerRisk, 0.1, 0.5))))
+      }
     }
 
     // Per-domain per-minute limiter.
@@ -515,6 +598,16 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
           best_hours_utc: bestHours ?? null,
           in_best_window: timeWindowOk,
         },
+        adaptive_config: {
+          global_rate: GLOBAL_SHAPER_RATE_PER_SEC,
+          global_burst: GLOBAL_SHAPER_BURST,
+          global_cap_per_min: GLOBAL_SENDS_PER_MINUTE,
+          domain_rate: effectiveMaxPerMinute,
+          provider_bias: providerRisk,
+          pressure_slow_factor: pressureSlowFactor,
+          cooldown_active: (nextState.cooldownUntil ?? 0) > Date.now(),
+          canary: ADAPTIVE_CANARY ? useCanary : null,
+        },
       },
     })
 
@@ -526,37 +619,23 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
     await recordMetric(job.clientId, 'send_success_rate', 1, { scope: 'worker' })
     await recordMetric(job.clientId, 'duplicate_send_prevented', 0, { scope: 'worker' })
   } catch (err) {
-    const msg = (err as any)?.message ?? String(err)
-
-    // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
-    const isInternalThrottle =
-      msg.startsWith('retry_later:adaptive_throttle') ||
-      msg.startsWith('retry_later:global_cap') ||
-      msg.startsWith('retry_later:domain_concurrency_cap') ||
-      msg.startsWith('retry_later:inflight_lock') ||
-      msg.startsWith('retry_later:recent_failure')
-
-    if (!isInternalThrottle) {
-      // Classify SMTP errors for deferral/block signals.
-      const e: any = err
-      const responseCode = Number(e?.responseCode ?? e?.code ?? e?.response?.statusCode ?? NaN)
-      const response = String(e?.response ?? e?.message ?? '').toLowerCase()
-
-      let smtpClass: 'deferral' | 'block' | 'other' = 'other'
-      if (Number.isFinite(responseCode) && responseCode >= 400 && responseCode < 500) smtpClass = 'deferral'
-      if (response.includes('rate') || response.includes('throttle') || response.includes('too many') || response.includes('temporarily rejected')) {
-        smtpClass = 'block'
-      }
-
-      // Recipient-provider memory update: elevate risk for block/deferral and auto-decay.
-      if (smtpClass === 'block' || smtpClass === 'deferral') {
-        const pk = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${detectProvider(job.toEmail)}`
-        const cur = Number((await redis.get(pk)) ?? 0)
-        const next = Math.min(0.5, Math.max(cur, smtpClass === 'block' ? 0.3 : 0.15))
-        await redis.set(pk, String(next), { EX: 60 * 60 }) // 1h TTL
-        await recordMetric(job.clientId, smtpClass === 'block' ? 'block_rate' : 'deferral_rate', 1, { provider: detectProvider(job.toEmail) })
-      }
-
+    // DLQ handling: after N attempts, stop retrying and move to DLQ with reason.
+    const attemptsMade = bull.attemptsMade ?? 0
+    if (attemptsMade >= MAX_SEND_ATTEMPTS) {
+      const { smtpClass, responseCode } = classifySmtpFailure(err)
+      await recordMetric(job.clientId, 'dlq_moved_count', 1, { smtpClass })
+      await dlq.add(
+        'send_dlq',
+        {
+          ...job,
+          dlq: {
+            reason: smtpClass,
+            last_error: String((err as any)?.message ?? String(err)),
+            smtp_response_code: responseCode,
+          },
+        } as any,
+        { removeOnComplete: true, removeOnFail: true }
+      )
       await handleTracking({
         type: 'FAILED',
         clientId: job.clientId,
@@ -565,13 +644,61 @@ async function runSend(job: SendJob, bullJobId: string | number | undefined) {
         queueJobId: job.queueJobId ?? null,
         metadata: {
           event_code: 'EMAIL_FAILED',
+          reason: 'dlq',
+          smtp_class: smtpClass,
+          smtp_response_code: responseCode,
+          error: String((err as any)?.message ?? String(err)),
+          idempotency_key: idemKey,
+        },
+      }).catch(() => {})
+
+      await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
+      await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+      await redis.del(inflightKey)
+      await redis.del(failedKey)
+      return
+    }
+
+    const msg = (err as any)?.message ?? String(err)
+
+    // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
+    const isInternalThrottle =
+      msg.startsWith('retry_later:adaptive_throttle') ||
+      msg.startsWith('retry_later:global_cap') ||
+      msg.startsWith('retry_later:global_shaper') ||
+      msg.startsWith('retry_later:domain_concurrency_cap') ||
+      msg.startsWith('retry_later:inflight_lock') ||
+      msg.startsWith('retry_later:recent_failure')
+
+    if (!isInternalThrottle) {
+      const { smtpClass, responseCode } = classifySmtpFailure(err)
+
+      // Recipient-provider memory update: elevate risk and auto-decay.
+      if (smtpClass === 'block' || smtpClass === 'deferral' || smtpClass === 'bounce') {
+        const pk = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${detectProvider(job.toEmail)}`
+        const cur = Number((await redis.get(pk)) ?? 0)
+        const next = Math.min(0.5, Math.max(cur, smtpClass === 'block' ? 0.3 : smtpClass === 'deferral' ? 0.15 : 0.1))
+        await redis.set(pk, String(next), { EX: 60 * 60 }) // 1h TTL
+        await recordMetric(job.clientId, smtpClass === 'block' ? 'block_rate' : smtpClass === 'deferral' ? 'deferral_rate' : 'bounce_rate', 1, {
+          provider: detectProvider(job.toEmail),
+        })
+      }
+
+      await handleTracking({
+        type: smtpClass === 'bounce' ? 'BOUNCED' : 'FAILED',
+        clientId: job.clientId,
+        campaignId: job.campaignId ?? null,
+        contactId: job.contactId ?? null,
+        queueJobId: job.queueJobId ?? null,
+        metadata: {
+          event_code: smtpClass === 'bounce' ? 'EMAIL_BOUNCED' : 'EMAIL_FAILED',
           idempotency_key: idemKey,
           to_email: String(job.toEmail || '').trim().toLowerCase(),
-          smtp_response_code: Number.isFinite(responseCode) ? responseCode : null,
+          smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: msg,
         },
-      }).catch(() => {})
+      } as any).catch(() => {})
     }
 
     // Failure state: allow retry with backoff; do not deadlock.
@@ -588,7 +715,7 @@ async function main() {
   const w = new BullWorker<SendJob>(
     SEND_QUEUE,
     async (job) => {
-      await runSend(job.data, job.id)
+      await runSend(job.data, job)
     },
     {
       connection: { url: reqEnv('REDIS_URL') },
@@ -607,7 +734,7 @@ async function main() {
 
 async function shutdown(signal: string) {
   console.log('[sender-worker] shutting down', { signal })
-  await Promise.allSettled([redis.quit(), pool.end()])
+  await Promise.allSettled([dlq.close(), redis.quit(), pool.end()])
   process.exit(0)
 }
 

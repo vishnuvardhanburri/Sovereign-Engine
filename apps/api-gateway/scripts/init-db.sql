@@ -279,6 +279,19 @@ CREATE TABLE IF NOT EXISTS operator_actions (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Domain pause audit events (append-only).
+CREATE TABLE IF NOT EXISTS domain_pause_events (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  domain_id BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  metrics_snapshot JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_pause_events_client_domain_created
+  ON domain_pause_events (client_id, domain_id, created_at DESC);
+
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (
   id TEXT PRIMARY KEY,
