@@ -6,20 +6,31 @@
 
 ## Autonomous Outbound Infrastructure
 
+Decision-driven system that:
+
+- prevents domain burnout
+- guarantees exactly-once sending
+- optimizes for replies (not volume)
+
 Not a tool. Infrastructure.
 
-Not a tool.  
-A decision-driven outbound system that controls sending, protects domains, and optimizes for replies.
-
-For:
+## Built For
 
 - SaaS teams scaling outbound
-- Agencies managing multiple clients
-- Teams facing domain burn or deliverability issues
+- agencies managing multiple clients
+- teams facing domain burn
+- systems needing reliable sending infrastructure
 
-```text
-Lead → Validator → Decision → Queue → Send → Track → Outcome → Feedback
-```
+## System Flow
+
+Lead  
+→ Validate  
+→ Decide  
+→ Queue  
+→ Send  
+→ Track  
+→ Learn  
+→ Optimize
 
 ---
 
@@ -66,14 +77,22 @@ Lead
 
 ---
 
-## Results (What this system actually does)
+## Results
 
-Typical improvements:
+- prevents domain burnout through controlled volume + rotation
+- reduces bounce rates via validation + decision filtering
+- improves reply rates by optimizing send timing and lanes
+- eliminates duplicate sends completely via idempotent system
 
-- prevents domain burnout through controlled sending
-- reduces bounce rates via validation + decision layer
-- improves reply rates by controlling when and where emails are sent
-- eliminates duplicate sends completely
+---
+
+## Example Outcome (Live Campaign)
+
+(Real campaign data will be inserted)
+
+- reply rate: —
+- bounce rate: —
+- decisions made: —
 
 ---
 
@@ -145,3 +164,13 @@ Typical workflow:
 Start with a 10-day controlled run.  
 Measure replies and domain health.  
 Scale only after results are proven.
+
+---
+
+## Built for Production
+
+Designed for environments where:
+
+- failure costs money
+- domain reputation matters
+- systems must be deterministic
