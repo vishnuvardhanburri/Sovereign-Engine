@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS campaigns (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (
     status IN ('draft', 'active', 'paused', 'completed')
   ),
+  -- Structured outreach cycles: distribute contacts across a multi-day duration.
+  -- We default to ~30 days so outreach behaves like a paced sequence, not bulk blast.
+  duration_days INT NOT NULL DEFAULT 30,
+  -- Strict mode separation: auto audiences vs manual uploaded contacts.
+  audience_mode TEXT NOT NULL DEFAULT 'auto' CHECK (audience_mode IN ('auto', 'manual')),
   contact_count INT NOT NULL DEFAULT 0,
   sent_count INT NOT NULL DEFAULT 0,
   reply_count INT NOT NULL DEFAULT 0,
@@ -94,6 +99,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Backward compatible campaign columns for existing databases.
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS duration_days INT NOT NULL DEFAULT 30;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS audience_mode TEXT NOT NULL DEFAULT 'auto';
 
 CREATE TABLE IF NOT EXISTS domains (
   id BIGSERIAL PRIMARY KEY,

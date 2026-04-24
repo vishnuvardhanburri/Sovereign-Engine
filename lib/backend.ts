@@ -102,6 +102,8 @@ export interface CampaignInput {
   timezoneStrategy?: 'contact' | 'client' | 'utc'
   abTestEnabled?: boolean
   dailyTarget?: number
+  durationDays?: number
+  audienceMode?: 'auto' | 'manual'
 }
 
 export interface QueueExecutionContext {
@@ -800,9 +802,11 @@ export async function createCampaign(clientId: number, input: CampaignInput) {
        from_identity_mode,
        timezone_strategy,
        ab_test_enabled,
-       daily_target
+       daily_target,
+       duration_days,
+       audience_mode
      )
-     VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8)
+     VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       clientId,
@@ -813,6 +817,8 @@ export async function createCampaign(clientId: number, input: CampaignInput) {
       input.timezoneStrategy ?? 'contact',
       input.abTestEnabled ?? false,
       input.dailyTarget ?? 50,
+      Math.max(1, Math.min(365, (input as any).durationDays ?? 30)),
+      ((input as any).audienceMode === 'manual' ? 'manual' : 'auto'),
     ]
   )
 
@@ -823,7 +829,8 @@ async function getEligibleContactScope(
   executor: QueryExecutor,
   clientId: number,
   startIndex: number,
-  contactIds?: number[]
+  contactIds?: number[],
+  opts?: { audienceMode?: 'auto' | 'manual' }
 ) {
   const filters: string[] = [
     `c.client_id = $${startIndex}`,
@@ -837,6 +844,11 @@ async function getEligibleContactScope(
     )`,
   ]
   const params: unknown[] = [clientId]
+
+  if (opts?.audienceMode === 'manual') {
+    // Strict separation: Manual mode campaigns are only allowed to use explicitly imported contacts.
+    filters.push(`c.source = 'manual_upload'`)
+  }
 
   if (contactIds && contactIds.length > 0) {
     params.push(contactIds)
@@ -882,6 +894,22 @@ export async function enqueueCampaignJobs(
       throw new Error('Campaign not found')
     }
 
+    // Determine a safe per-day pacing target for multi-day outreach cycles.
+    // If there are active domains, cap the campaign daily target to their remaining capacity.
+    // If no domains exist yet (demo / early setup), fall back to the campaign target.
+    const domainCapacityResult = await executor<{ cap: string }>(
+      `SELECT COALESCE(SUM(GREATEST(daily_limit - sent_today, 0)), 0)::text AS cap
+       FROM domains
+       WHERE client_id = $1
+         AND status = 'active'
+         AND paused = false`,
+      [clientId]
+    )
+    const domainCap = Number(firstRow(domainCapacityResult)?.cap ?? 0) || 0
+    const campaignDaily = Number((campaign as any).daily_target ?? 50) || 50
+    const safeDaily = Math.max(1, Math.min(campaignDaily, domainCap > 0 ? domainCap : campaignDaily))
+    const durationDays = Math.max(1, Math.min(Number((campaign as any).duration_days ?? 30) || 30, 365))
+
     const steps = await executor<SequenceStep>(
       `SELECT *
        FROM sequence_steps
@@ -921,7 +949,13 @@ export async function enqueueCampaignJobs(
       }
     }
 
-    const scope = await getEligibleContactScope(executor, clientId, 1, contactIds)
+    const scope = await getEligibleContactScope(
+      executor,
+      clientId,
+      1,
+      contactIds,
+      { audienceMode: (campaign as any).audience_mode === 'manual' ? 'manual' : 'auto' }
+    )
     const insertedJobs = await executor<QueueJob>(
       `INSERT INTO queue_jobs (
          client_id,
@@ -936,31 +970,54 @@ export async function enqueueCampaignJobs(
          attempts,
          max_attempts
        )
+       WITH eligible AS (
+         SELECT
+           c.*,
+           ROW_NUMBER() OVER (ORDER BY c.id) AS rn
+         FROM contacts c
+         WHERE ${scope.where.replaceAll('$1', '$4').replaceAll('$2', '$5')}
+       ),
+       paced AS (
+         SELECT
+           e.*,
+           -- Day slot within the outreach duration.
+           LEAST(FLOOR((e.rn - 1)::numeric / $6::numeric), ($7 - 1))::int AS day_slot,
+           -- Spread within a 10-hour window to avoid bursty sending.
+           (( (e.rn - 1) % $6 )::numeric * (36000::numeric / $6::numeric))::int AS second_slot
+         FROM eligible e
+       )
        SELECT
          $1,
-         c.id,
+         p.id,
          $2,
          ss.step_index,
-         CURRENT_TIMESTAMP + make_interval(days => ss.day_delay),
-         c.email,
-         CASE
-           WHEN ss.cc_mode = 'none' THEN NULL
-           ELSE '[]'::jsonb
-         END,
+         (
+           CURRENT_TIMESTAMP
+           + (p.day_slot * INTERVAL '1 day')
+           + (p.second_slot * INTERVAL '1 second')
+           + make_interval(days => ss.day_delay)
+         ) AS scheduled_at,
+         p.email,
+         CASE WHEN ss.cc_mode = 'none' THEN NULL ELSE '[]'::jsonb END,
          jsonb_build_object(
-           'email_domain', c.email_domain,
-           'company_domain', c.company_domain,
+           'email_domain', p.email_domain,
+           'company_domain', p.company_domain,
            'touch_label', ss.touch_label,
            'variant_key', ss.variant_key,
            'recipient_strategy', ss.recipient_strategy,
-           'cc_mode', ss.cc_mode
+           'cc_mode', ss.cc_mode,
+           'cycle', jsonb_build_object(
+             'duration_days', $7,
+             'daily_target', $6,
+             'day_slot', p.day_slot,
+             'second_slot', p.second_slot
+           )
          ),
          'pending',
          0,
          3
-       FROM contacts c
+       FROM paced p
        JOIN sequence_steps ss ON ss.sequence_id = $3
-       WHERE ${scope.where.replaceAll('$1', '$4').replaceAll('$2', '$5')}
        ON CONFLICT (campaign_id, contact_id, sequence_step) DO NOTHING
        RETURNING *`,
       [
@@ -969,6 +1026,8 @@ export async function enqueueCampaignJobs(
         campaign.sequence_id,
         clientId,
         ...(contactIds && contactIds.length > 0 ? [contactIds] : []),
+        safeDaily,
+        durationDays,
       ]
     )
 
@@ -1221,6 +1280,15 @@ export async function createEvent(
     metadata?: Record<string, unknown> | null
   }
 ) {
+  const withEventCode = (metadata: Record<string, unknown> | null | undefined) => {
+    const base = { ...(metadata ?? {}) } as Record<string, unknown>
+    if (typeof base.event_code === 'string' && base.event_code.trim()) return base
+    if (input.eventType === 'sent') base.event_code = 'EMAIL_SENT'
+    if (input.eventType === 'failed') base.event_code = 'EMAIL_FAILED'
+    if (input.eventType === 'bounce') base.event_code = 'EMAIL_BOUNCED'
+    return base
+  }
+
   let replyClassification:
     | 'unread'
     | 'interested'
@@ -1266,11 +1334,11 @@ export async function createEvent(
         input.providerMessageId ?? null,
         input.eventType === 'reply'
           ? {
-              ...(input.metadata ?? {}),
+              ...withEventCode(input.metadata),
               reply_status: replyStatus ?? 'unread',
               classification: replyClassification ?? 'unread',
             }
-          : input.metadata ?? null,
+          : withEventCode(input.metadata),
       ]
     )
 
@@ -1398,6 +1466,42 @@ export async function createEvent(
 
     return created
   })
+
+  // Stop follow-ups immediately on reply:
+  // 1) mark remaining queued jobs for this contact/campaign as stopped (DB)
+  // 2) remove any enqueued items from Redis (queue)
+  if (input.eventType === 'reply' && input.contactId && input.campaignId) {
+    try {
+      await query(
+        `UPDATE queue_jobs
+         SET sequence_stopped = TRUE,
+             status = CASE
+               WHEN status IN ('pending', 'retry') THEN 'skipped'
+               ELSE status
+             END,
+             last_error = CASE
+               WHEN status IN ('pending', 'retry') THEN 'Reply received - stopping follow-ups'
+               ELSE last_error
+             END,
+             completed_at = CASE
+               WHEN status IN ('pending', 'retry') THEN COALESCE(completed_at, CURRENT_TIMESTAMP)
+               ELSE completed_at
+             END,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1
+           AND contact_id = $2
+           AND campaign_id = $3
+           AND sequence_stopped = FALSE
+           AND status IN ('pending', 'retry')`,
+        [clientId, input.contactId, input.campaignId]
+      )
+
+      const { removeQueueJobsForContact } = await import('@/lib/redis')
+      await removeQueueJobsForContact(input.contactId)
+    } catch (error) {
+      console.error('[createEvent] Failed to stop follow-ups on reply', error)
+    }
+  }
 
   if (input.eventType === 'reply') {
     await logOperatorAction({
@@ -1664,6 +1768,7 @@ export async function claimQueueJob(queueJobId: number, clientId: number) {
      WHERE id = $1
        AND client_id = $2
        AND status IN ('pending', 'retry')
+       AND sequence_stopped = FALSE
        AND scheduled_at <= CURRENT_TIMESTAMP
      RETURNING *`,
     [queueJobId, clientId]
@@ -1828,10 +1933,13 @@ export async function isSuppressed(clientId: number, email: string) {
   return Boolean(suppression)
 }
 
-export async function selectBestIdentity(clientId: number) {
+export async function selectBestIdentity(
+  clientId: number,
+  options: { lane?: 'normal' | 'low_risk' | 'slow' } = {}
+) {
   try {
     const { selectSenderIdentity } = await import('@/lib/delivery/load-balancer')
-    const picked = await selectSenderIdentity(clientId, {})
+    const picked = await selectSenderIdentity(clientId, { lane: options.lane ?? 'normal' })
     if (picked) {
       const row = await queryOne<{
         identity: Identity
@@ -1935,6 +2043,7 @@ export async function markQueueJobCompleted(
         context.job.id,
         providerMessageId,
         {
+          event_code: 'EMAIL_SENT',
           subject: renderTemplate(context.sequenceStep.subject, context.contact),
           sequence_step: context.sequenceStep.step_index,
           pattern_ids: Array.isArray((context.job.metadata as any)?.pattern_ids)
@@ -2026,7 +2135,7 @@ export async function markQueueJobFailed(
         context.campaign.id,
         context.contact.id,
         context.job.id,
-        { error: errorMessage, attempt: nextAttempt, backoff_seconds: retryDelaySeconds },
+        { event_code: 'EMAIL_FAILED', error: errorMessage, attempt: nextAttempt, backoff_seconds: retryDelaySeconds },
       ]
     )
 
@@ -2051,7 +2160,7 @@ export async function markQueueJobFailed(
       context.campaign.id,
       context.contact.id,
       context.job.id,
-      { error: errorMessage, attempt: nextAttempt, moved_to_dead_letter: true },
+      { event_code: 'EMAIL_FAILED', error: errorMessage, attempt: nextAttempt, moved_to_dead_letter: true },
     ]
   )
 

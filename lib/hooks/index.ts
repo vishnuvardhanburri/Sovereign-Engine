@@ -105,6 +105,30 @@ export const useImportContactsCsv = () => {
   })
 }
 
+export const useImportContactsPreview = () => {
+  return useMutation({
+    mutationFn: (file: File) => api.contacts.importPreview(file),
+    onError: () => {
+      toast.error('Failed to preview import')
+    },
+  })
+}
+
+export const useImportContactsFile = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { file: File; mapping: Record<string, string>; verify?: boolean; dedupeByDomain?: boolean }) =>
+      api.contacts.importFile(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      toast.success(`${result.imported} prospects imported`)
+    },
+    onError: () => {
+      toast.error('Failed to import prospects')
+    },
+  })
+}
+
 export const useDeleteContact = () => {
   const queryClient = useQueryClient()
   return useMutation({

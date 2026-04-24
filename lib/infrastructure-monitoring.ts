@@ -262,6 +262,12 @@ async function runDetailedAnalysis(config: AlertConfig) {
       })
     }
   } catch (error) {
+    // Dev/demo DBs may not include optional tables used for deeper analysis.
+    // Avoid log spam and keep the system "green" when these tables don't exist.
+    const code = (error as any)?.code
+    if (code === '42P01') {
+      return
+    }
     console.error('[Monitor] Analysis failed:', error)
   }
 }

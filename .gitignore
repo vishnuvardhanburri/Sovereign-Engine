@@ -17,3 +17,6 @@ package-lock.json
 node_modules
 .next/
 .DS_Store
+
+# Reference-only cloned repos (do not commit)
+vendor_refs/

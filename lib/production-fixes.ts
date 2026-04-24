@@ -71,37 +71,105 @@ export function calculateBackoffDelay(attempt: number): number {
 }
 
 // 4. EMAIL VALIDATION PIPELINE
-export async function validateEmailPreSend(email: string, clientId: number): Promise<{valid: boolean, score: number, reason?: string}> {
-  // Check if already validated recently
+export type PreSendEmailVerdict = 'valid' | 'risky' | 'invalid' | 'unknown'
+
+export async function validateEmailPreSend(
+  email: string,
+  clientId: number
+): Promise<{
+  verdict: PreSendEmailVerdict
+  score: number
+  reason?: string
+  catchAll?: boolean
+  source: 'contact_cache' | 'validator_engine' | 'basic'
+}> {
+  const normalized = String(email || '').trim().toLowerCase()
+  if (!normalized) {
+    return { verdict: 'invalid', score: 0, reason: 'missing_email', source: 'basic' }
+  }
+
+  // Check if already validated recently (fast path).
   const result = await query<{ email_validation_score: number | null }>(
-    `SELECT email_validation_score FROM contacts WHERE client_id = $1 AND email = $2 AND email_validated_at > NOW() - INTERVAL '24 hours'`,
-    [clientId, email]
+    `SELECT email_validation_score
+     FROM contacts
+     WHERE client_id = $1
+       AND email = $2
+       AND email_validated_at > NOW() - INTERVAL '24 hours'`,
+    [clientId, normalized]
   )
 
   const cachedValidation = result.rows[0]
   if (cachedValidation?.email_validation_score) {
-    return { valid: cachedValidation.email_validation_score > 0.7, score: cachedValidation.email_validation_score }
+    const score = Number(cachedValidation.email_validation_score)
+    return {
+      verdict: score > 0.7 ? 'valid' : 'invalid',
+      score,
+      source: 'contact_cache',
+      reason: score > 0.7 ? undefined : 'low_cached_score',
+    }
   }
-  
-  // Perform validation (simplified - integrate with ZeroBounce/Reacher)
-  const isValidFormat = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
+  // Basic format validation (fast fail).
+  const isValidFormat = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
   if (!isValidFormat) {
-    return { valid: false, score: 0, reason: 'invalid_format' }
+    return { verdict: 'invalid', score: 0, reason: 'invalid_format', source: 'basic' }
   }
-  
-  // Check suppression list
-  const suppressed = await query(`SELECT 1 FROM suppression_list WHERE client_id = $1 AND email = $2`, [clientId, email])
-  if (suppressed.rows.length > 0) {
-    return { valid: false, score: 0, reason: 'suppressed' }
-  }
-  
-  const score = 0.8 // Placeholder - integrate with real validation service
-  await query(
-    `UPDATE contacts SET email_validation_score = $1, email_validated_at = CURRENT_TIMESTAMP WHERE client_id = $2 AND email = $3`,
-    [score, clientId, email]
+
+  // Check suppression list.
+  const suppressed = await query(
+    `SELECT 1
+     FROM suppression_list
+     WHERE client_id = $1 AND email = $2`,
+    [clientId, normalized]
   )
-  
-  return { valid: score > 0.7, score }
+  if (suppressed.rows.length > 0) {
+    return { verdict: 'invalid', score: 0, reason: 'suppressed', source: 'basic' }
+  }
+
+  // Pull latest validator-engine result (if present). This is the source of truth.
+  // Validator engine stores normalized_email and verdict in email_validations.
+  try {
+    const row = await queryOne<{
+      verdict: PreSendEmailVerdict
+      score: string | number
+      catch_all: any
+    }>(
+      `SELECT verdict, score, catch_all
+       FROM email_validations
+       WHERE normalized_email = $1
+         AND created_at > NOW() - INTERVAL '30 days'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [normalized]
+    )
+
+    if (row?.verdict) {
+      const score = Number(row.score ?? 0)
+      const catchAll = Boolean(
+        (row as any).catch_all?.isCatchAll ??
+          (row as any).catch_all?.catchAll ??
+          (row as any).catch_all?.result === 'catch_all'
+      )
+
+      // Cache the score on the contact for 24h so we can make fast decisions even if validator is down.
+      await query(
+        `UPDATE contacts
+         SET email_validation_score = $1,
+             email_validated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $2 AND email = $3`,
+        [score, clientId, normalized]
+      )
+
+      return { verdict: row.verdict, score, catchAll, source: 'validator_engine' }
+    }
+  } catch (err) {
+    // Validator table might not exist or may be using a different schema in some installs.
+    // We do not throw; caller treats this as UNKNOWN.
+    console.warn('[validateEmailPreSend] validator lookup failed', { err: (err as any)?.message ?? String(err) })
+  }
+
+  // No validator result yet: treat as UNKNOWN to avoid unsafe sends.
+  return { verdict: 'unknown', score: 0.5, reason: 'no_validator_result', source: 'basic' }
 }
 
 // 5. SEQUENCE STOP-ON-REPLY LOGIC

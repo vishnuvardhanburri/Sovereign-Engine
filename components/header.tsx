@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -44,6 +45,10 @@ export function Header() {
       </div>
 
       <div className="flex-1" /> {/* Spacer */}
+
+      <div className="mr-2">
+        <ThemeToggle />
+      </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

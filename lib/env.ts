@@ -6,6 +6,39 @@ const required = (name: string): string => {
   return value
 }
 
+function validateDatabaseUrl(raw: string): string {
+  const value = raw.trim()
+
+  // Guard against common .env footguns: inline comments, quotes, whitespace.
+  if (!value) {
+    throw new Error('DATABASE_URL is empty')
+  }
+  if (/\s/.test(value)) {
+    throw new Error('DATABASE_URL must not contain spaces')
+  }
+  if (value.includes('#')) {
+    throw new Error('DATABASE_URL must be a single clean line (no # comments)')
+  }
+  if (value.startsWith('"') || value.endsWith('"') || value.startsWith("'") || value.endsWith("'")) {
+    throw new Error('DATABASE_URL must not be wrapped in quotes')
+  }
+
+  try {
+    const url = new URL(value)
+    const protocol = url.protocol.toLowerCase()
+    if (protocol !== 'postgres:' && protocol !== 'postgresql:') {
+      throw new Error(`unsupported protocol ${url.protocol}`)
+    }
+    if (!url.username) throw new Error('missing username')
+    if (!url.hostname) throw new Error('missing host')
+    if (!url.pathname || url.pathname === '/') throw new Error('missing database name')
+    return value
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(`DATABASE_URL is malformed (${msg}). Expected: postgres://user:password@host:port/database`)
+  }
+}
+
 const optionalInt = (name: string, fallback: number): number => {
   const value = process.env[name]
   if (!value) {
@@ -17,16 +50,35 @@ const optionalInt = (name: string, fallback: number): number => {
 }
 
 export const appEnv = {
-  databaseUrl: () => required('DATABASE_URL'),
+  databaseUrl: () => validateDatabaseUrl(required('DATABASE_URL')),
   redisUrl: () => required('REDIS_URL'),
-  resendApiKey: () => required('RESEND_API_KEY'),
-  appBaseUrl: () => required('APP_BASE_URL'),
+  // Optional: only required if you use Resend (webhooks/transactional).
+  resendApiKey: () => process.env.RESEND_API_KEY || '',
+  // Production base URL
+  // Prefer APP_DOMAIN for domain-based deployments; allow APP_BASE_URL as a legacy escape hatch.
+  appDomain: () => required('APP_DOMAIN'),
+  appBaseUrl: () => {
+    const explicit = process.env.APP_BASE_URL
+    if (explicit && explicit.trim()) return explicit.trim()
+
+    const domain = required('APP_DOMAIN').trim()
+    if (/^https?:\/\//i.test(domain)) return domain
+
+    // Default to HTTPS for real deployments; use http for local dev hosts.
+    const isLocal =
+      domain.startsWith('localhost') ||
+      domain.startsWith('127.0.0.1') ||
+      domain.startsWith('0.0.0.0')
+    const protocol = isLocal ? 'http' : 'https'
+    return `${protocol}://${domain}`
+  },
   unsubscribeSecret: () => process.env.UNSUBSCRIBE_SECRET || process.env.CRON_SECRET || 'xavira-orbit',
   resendWebhookSecret: () => process.env.RESEND_WEBHOOK_SECRET || '',
   telegramBotToken: () => process.env.TELEGRAM_BOT_TOKEN || '',
   openRouterApiKey: () => process.env.OPENROUTER_API_KEY || '',
   openRouterModel: () => process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
-  zeroBounceApiKey: () => process.env.ZEROBOUNCE_API_KEY || '',
+  // Required for production safety (email verification); scripts/env-check enforces this.
+  zeroBounceApiKey: () => required('ZEROBOUNCE_API_KEY'),
   clearbitApiKey: () => process.env.CLEARBIT_API_KEY || '',
   apolloApiKey: () => process.env.APOLLO_API_KEY || '',
   hubspotAccessToken: () => process.env.HUBSPOT_ACCESS_TOKEN || '',
@@ -58,7 +110,8 @@ export const appEnv = {
   workerIdleSleepMs: () => optionalInt('WORKER_IDLE_SLEEP_MS', 2000),
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
   infrastructureTargetDailyVolume: () => optionalInt('INFRASTRUCTURE_TARGET_DAILY_VOLUME', 50000),
-  cronSecret: () => required('CRON_SECRET'),
+  // Optional: used to protect cron endpoints in production. Defaults to a stable value for dev/demo.
+  cronSecret: () => process.env.CRON_SECRET || 'xavira-orbit-cron',
   authSecret: () => process.env.AUTH_SECRET || process.env.CRON_SECRET || 'xavira-orbit-auth',
   // AI Integration
   aiMaxTokensPerRequest: () => optionalInt('AI_MAX_TOKENS_PER_REQUEST', 2000),
@@ -85,6 +138,7 @@ export function validateApiEnv(): void {
   appEnv.databaseUrl()
   appEnv.redisUrl()
   appEnv.appBaseUrl()
+  appEnv.appDomain()
 }
 
 export function validateWorkerEnv(): void {

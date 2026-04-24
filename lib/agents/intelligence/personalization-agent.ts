@@ -1,6 +1,6 @@
 import type { Contact, SequenceStep } from '@/lib/db/types'
 import { renderVariables, enforceFiveLineEmail, detectSpamSignals } from '@/lib/personalization'
-import { generateIntroLineLearned } from '@/lib/ai/generator'
+import { generateIntroLineLearned, generateSubjectLineLearned, renderSpinSyntax } from '@/lib/ai/generator'
 import { enrichContactWithFreeData, formatEnrichmentForContext } from '@/lib/integrations/free-enrichment'
 import { analyzeEmailForSpamRisk } from '@/lib/agents/spam-filter-agent'
 
@@ -30,9 +30,26 @@ export async function buildPersonalizedMessage(input: {
   }
 
   const needsAiIntro = input.step.body.includes('{{AIIntro}}')
+  const needsAiSubject = input.step.subject.includes('{{AISubject}}')
   let renderedBody = renderVariables(input.step.body, enrichedContact)
-  const renderedSubject = renderVariables(input.step.subject, enrichedContact)
+  let renderedSubject = renderVariables(input.step.subject, enrichedContact)
   const patternIds: string[] = []
+
+  if (needsAiSubject) {
+    const subjectOut = await generateSubjectLineLearned({
+      contact: enrichedContact,
+      angle: 'pattern',
+    })
+    const subject = subjectOut.result.subject as string
+    const pid = subjectOut.result.pattern_id
+    if (typeof pid === 'string' && pid) {
+      patternIds.push(pid)
+    }
+    renderedSubject = renderVariables(
+      input.step.subject.replaceAll('{{AISubject}}', subject),
+      enrichedContact
+    )
+  }
 
   if (needsAiIntro) {
     const introOut = await generateIntroLineLearned({
@@ -53,6 +70,12 @@ export async function buildPersonalizedMessage(input: {
       enrichedContact
     )
   }
+
+  // Variations: support minimal deterministic spin syntax in both subject + body.
+  // This avoids repetition while staying deterministic per contact.
+  const spinSeed = `${enrichedContact.email}:${renderedSubject}:${renderedBody}`
+  renderedSubject = renderSpinSyntax(renderedSubject, `${spinSeed}:subject`)
+  renderedBody = renderSpinSyntax(renderedBody, `${spinSeed}:body`)
 
   // Analyze email for spam filter risk
   const spamAnalysis = analyzeEmailForSpamRisk({

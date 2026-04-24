@@ -55,6 +55,8 @@ export async function createCampaign(input: {
   sequenceId: number
   status?: 'draft' | 'active' | 'paused' | 'completed'
   dailyTarget?: number
+  durationDays?: number
+  audienceMode?: 'auto' | 'manual'
 }): Promise<CopilotToolResult<{ id: number }>> {
   const clientId = input.clientId ?? appEnv.defaultClientId()
   const name = String(input.name ?? '').trim()
@@ -68,11 +70,19 @@ export async function createCampaign(input: {
 
   const inserted = await query<{ id: number }>(
     `
-    INSERT INTO campaigns (client_id, sequence_id, name, status, daily_target)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO campaigns (client_id, sequence_id, name, status, daily_target, duration_days, audience_mode)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING id
   `,
-    [clientId, sequenceId, name, status, dailyTarget],
+    [
+      clientId,
+      sequenceId,
+      name,
+      status,
+      dailyTarget,
+      Math.max(1, Math.min(365, asInt(input.durationDays) ?? 30)),
+      input.audienceMode === 'manual' ? 'manual' : 'auto',
+    ],
   )
 
   return { ok: true, data: { id: Number(inserted.rows[0]?.id) } }
@@ -301,6 +311,8 @@ export async function createAndLaunchCampaign(input: {
   sequenceId: number
   dailyTarget?: number
   contactIds: number[]
+  durationDays?: number
+  audienceMode?: 'auto' | 'manual'
 }): Promise<CopilotToolResult<{ campaignId: number; contactCount: number }>> {
   const clientId = input.clientId ?? appEnv.defaultClientId()
   const name = String(input.name ?? '').trim()
@@ -317,7 +329,13 @@ export async function createAndLaunchCampaign(input: {
   try {
     // Reuse existing backend orchestration which handles queue job insertion + status activation.
     const backend = await import('@/lib/backend')
-    const created = await backend.createCampaign(clientId, { name, sequenceId, dailyTarget })
+    const created = await backend.createCampaign(clientId, {
+      name,
+      sequenceId,
+      dailyTarget,
+      durationDays: asInt(input.durationDays) ?? 30,
+      audienceMode: input.audienceMode === 'manual' ? 'manual' : 'auto',
+    })
     const campaignId = Number((created as any)?.id)
     if (!campaignId) return { ok: false, error: 'Failed to create campaign' }
 

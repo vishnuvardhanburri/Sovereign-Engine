@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useContacts, useDeleteContact } from '@/lib/hooks'
 import { Contact } from '@/lib/api'
-import { UploadContactsModal } from '@/components/upload-contacts-modal'
+import { UploadContactsModal } from '@/components/upload-contacts-modal.tsx'
 import { AddContactModal } from '@/components/add-contact-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'

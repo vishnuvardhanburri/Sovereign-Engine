@@ -93,6 +93,8 @@ export interface Campaign {
   sequence_id: number
   name: string
   status: CampaignStatus
+  duration_days?: number
+  audience_mode?: 'auto' | 'manual'
   contact_count: number
   sent_count: number
   reply_count: number
@@ -155,6 +157,7 @@ export interface QueueJob {
   cc_emails: string[] | null
   metadata: Record<string, unknown>
   status: QueueJobStatus
+  sequence_stopped?: boolean
   attempts: number
   max_attempts: number
   last_error: string | null

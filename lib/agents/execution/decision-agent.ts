@@ -51,8 +51,16 @@ export async function evaluateQueueDecision(
 
   // PRODUCTION FIX: Email validation pipeline
   const emailValidation = await validateEmailPreSend(context.contact.email, context.job.client_id)
-  if (!emailValidation.valid) {
-    return { action: 'skip', reason: `invalid email: ${emailValidation.reason}` }
+  if (emailValidation.verdict === 'invalid') {
+    return { action: 'skip', reason: `invalid email: ${emailValidation.reason ?? 'validator_invalid'}` }
+  }
+  if (emailValidation.verdict === 'unknown') {
+    // Unknown should retry later (avoid unsafe sends).
+    return {
+      action: 'defer',
+      reason: `email unknown: ${emailValidation.reason ?? 'no_validator_result'}`,
+      scheduledAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+    }
   }
 
   if (
@@ -79,7 +87,9 @@ export async function evaluateQueueDecision(
   }
 
   // PRODUCTION FIX: Health-based routing with circuit breaker
-  const selection = await selectBestIdentity(context.job.client_id)
+  const lane =
+    emailValidation.catchAll ? 'slow' : emailValidation.verdict === 'risky' ? 'low_risk' : 'normal'
+  const selection = await selectBestIdentity(context.job.client_id, { lane })
   if (!selection) {
     return {
       action: 'defer',

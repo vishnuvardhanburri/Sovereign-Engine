@@ -24,6 +24,24 @@ export function pickDeterministic<T>(items: readonly T[], seed: string): T {
   return items[hash % items.length]
 }
 
+/**
+ * Minimal spin syntax support (deterministic).
+ * Replaces occurrences like: "{quick|fast|short} idea" (no nesting).
+ */
+export function renderSpinSyntax(template: string, seed: string): string {
+  let index = 0
+  return template.replace(/\{([^{}]+)\}/g, (_match, group) => {
+    const options = String(group)
+      .split('|')
+      .map((value) => value.trim())
+      .filter(Boolean)
+    if (options.length === 0) return ''
+    const chosen = pickDeterministic(options, `${seed}:spin:${index}`)
+    index += 1
+    return chosen
+  })
+}
+
 function render(template: string, contact: Contact): string {
   const firstName = contact.name?.split(' ')[0]?.trim() || 'there'
   return template
@@ -37,11 +55,12 @@ export function generateSubjectLine(input: {
   angle?: 'pattern' | 'pain' | 'authority'
 }): DeterministicGenerationResult {
   const bank = [
-    'Quick idea for {{company}}',
-    '{{name}}, quick question',
-    'Regarding {{company}} growth',
+    '{Quick|Fast|Short} idea for {{company}}',
+    '{{name}}, {quick|small} question',
+    'Regarding {{company}} {growth|pipeline}',
   ]
-  const selected = pickDeterministic(bank, `${input.contact.email}:${input.angle ?? 'pattern'}`)
+  const selectedRaw = pickDeterministic(bank, `${input.contact.email}:${input.angle ?? 'pattern'}`)
+  const selected = renderSpinSyntax(selectedRaw, `${input.contact.email}:${input.angle ?? 'pattern'}`)
   return {
     task: 'subject_generation',
     result: { subject: render(selected, input.contact) },
@@ -57,9 +76,10 @@ export async function generateSubjectLineLearned(input: {
   if (!chosen) {
     return generateSubjectLine(input)
   }
+  const spun = renderSpinSyntax(chosen.content, `${input.contact.email}:${chosen.id}`)
   return {
     task: 'subject_generation',
-    result: { subject: render(chosen.content, input.contact), pattern_id: chosen.id },
+    result: { subject: render(spun, input.contact), pattern_id: chosen.id },
     source: chosen.status === 'testing' ? 'rule' : 'template',
   }
 }
@@ -72,11 +92,12 @@ export function generateIntroLine(input: {
   pain?: string | null
 }): DeterministicGenerationResult {
   const options = [
-    'saw your work at {{company}}',
+    '{saw|noticed} your work at {{company}}',
     'noticed what you are building at {{company}}',
-    'was looking at {{company}} and thought of you',
+    'was looking at {{company}} and {thought of you|wanted to reach out}',
   ]
-  const selected = pickDeterministic(options, `${input.contact.email}:${input.company ?? ''}`)
+  const selectedRaw = pickDeterministic(options, `${input.contact.email}:${input.company ?? ''}`)
+  const selected = renderSpinSyntax(selectedRaw, `${input.contact.email}:${input.company ?? ''}`)
   return {
     task: 'personalization_line',
     result: { intro: render(selected, input.contact) },
@@ -95,9 +116,10 @@ export async function generateIntroLineLearned(input: {
   if (!chosen) {
     return generateIntroLine(input)
   }
+  const spun = renderSpinSyntax(chosen.content, `${input.contact.email}:${chosen.id}`)
   return {
     task: 'personalization_line',
-    result: { intro: render(chosen.content, input.contact), pattern_id: chosen.id },
+    result: { intro: render(spun, input.contact), pattern_id: chosen.id },
     source: chosen.status === 'testing' ? 'rule' : 'template',
   }
 }
@@ -113,17 +135,20 @@ export function generateEmailFromTemplate(input: {
   const text = [
     `${greeting} ${input.contact.name?.split(' ')[0] ?? 'there'},`,
     intro,
-    input.step.body.replaceAll('{{name}}', input.contact.name?.split(' ')[0] ?? 'there').replaceAll('{{company}}', input.contact.company || 'your team'),
+    renderSpinSyntax(input.step.body, input.contact.email)
+      .replaceAll('{{name}}', input.contact.name?.split(' ')[0] ?? 'there')
+      .replaceAll('{{company}}', input.contact.company || 'your team'),
   ]
     .map((line) => line.trim())
     .filter(Boolean)
     .slice(0, 5)
     .join('\n')
 
+  const subjectTemplate = renderSpinSyntax(input.step.subject, input.contact.email)
   return {
     task: 'email_generation',
     result: {
-      subject: render(input.step.subject, input.contact),
+      subject: render(subjectTemplate, input.contact),
       text,
     },
     source: 'template',
@@ -144,7 +169,7 @@ export async function generateEmailFromTemplateLearned(input: {
   const text = [
     `${greeting} ${input.contact.name?.split(' ')[0] ?? 'there'},`,
     introLine,
-    input.step.body
+    renderSpinSyntax(input.step.body, `${input.contact.email}:${String(subject.result.pattern_id ?? '')}`)
       .replaceAll('{{name}}', input.contact.name?.split(' ')[0] ?? 'there')
       .replaceAll('{{company}}', input.contact.company || 'your team'),
   ]
@@ -156,7 +181,7 @@ export async function generateEmailFromTemplateLearned(input: {
   return {
     task: 'email_generation',
     result: {
-      subject: String(subject.result.subject ?? render(input.step.subject, input.contact)),
+      subject: String(subject.result.subject ?? render(renderSpinSyntax(input.step.subject, input.contact.email), input.contact)),
       text,
       pattern_ids: [subject.result.pattern_id, intro.result.pattern_id].filter(Boolean),
     },

@@ -165,7 +165,8 @@ async function main() {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        APP_BASE_URL: process.env.APP_BASE_URL ?? 'http://localhost:3000',
+        APP_DOMAIN: process.env.APP_DOMAIN ?? 'localhost:3000',
+        APP_BASE_URL: process.env.APP_BASE_URL ?? undefined,
         DEFAULT_CLIENT_ID: String(TEST_CLIENT_ID),
         MIN_SEND_DELAY_SECONDS: process.env.MIN_SEND_DELAY_SECONDS ?? '1',
         MAX_SEND_DELAY_SECONDS: process.env.MAX_SEND_DELAY_SECONDS ?? '2',

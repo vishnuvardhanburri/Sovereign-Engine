@@ -660,6 +660,39 @@ export const api = {
         contacts: (result.contacts ?? []).map(toContact),
       }
     },
+    async importPreview(file: File): Promise<{
+      detectedColumns: string[]
+      sampleRows: Array<Record<string, unknown>>
+      stats: { totalRows: number; validEmails: number; invalidEmails: number; duplicateEmails: number }
+      suggestedMapping: Record<string, string> | null
+    }> {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/contacts/import/preview', { method: 'POST', body: form })
+      const raw = await res.text()
+      const json = JSON.parse(raw)
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Preview failed (${res.status})`)
+      }
+      return json
+    },
+    async importFile(input: { file: File; mapping: Record<string, string>; verify?: boolean; dedupeByDomain?: boolean }): Promise<{ imported: number; contacts: Contact[] }> {
+      const form = new FormData()
+      form.append('file', input.file)
+      form.append('mapping', JSON.stringify(input.mapping))
+      form.append('verify', input.verify === false ? 'false' : 'true')
+      form.append('dedupeByDomain', input.dedupeByDomain ? 'true' : 'false')
+      const res = await fetch('/api/contacts/import', { method: 'POST', body: form })
+      const raw = await res.text()
+      const json = JSON.parse(raw)
+      if (!res.ok) {
+        throw new Error(json?.error || `Import failed (${res.status})`)
+      }
+      return {
+        imported: Number(json.imported ?? 0),
+        contacts: (json.contacts ?? []).map(toContact),
+      }
+    },
     async delete(id: string): Promise<{ success: boolean }> {
       return fetchJson<{ success: boolean }>(`/api/contacts/${id}`, {
         method: 'DELETE',

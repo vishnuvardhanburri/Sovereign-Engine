@@ -7,6 +7,17 @@ const PUBLIC_PATHS = new Set(['/login', '/api/auth/login', '/api/auth/me', '/api
 const SESSION_COOKIE = 'xo_session'
 
 export function proxy(request: NextRequest) {
+  // Cloudflare-ready HTTPS enforcement.
+  // Only redirect in production to avoid breaking localhost dev.
+  if (process.env.NODE_ENV === 'production') {
+    const xfProto = request.headers.get('x-forwarded-proto')
+    if (xfProto && xfProto.toLowerCase() === 'http') {
+      const url = request.nextUrl.clone()
+      url.protocol = 'https:'
+      return NextResponse.redirect(url, 308)
+    }
+  }
+
   const { pathname } = request.nextUrl
   if (PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next()
@@ -49,4 +60,3 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
-

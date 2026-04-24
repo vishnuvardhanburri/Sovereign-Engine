@@ -158,7 +158,8 @@ export const ENVIRONMENT_VARIABLES_REQUIRED = [
   'SMTP_PORT',
   'SMTP_USER',
   'SMTP_PASS',
-  'APP_BASE_URL',
+  // Prefer APP_DOMAIN for domain-based deployments; APP_BASE_URL is supported as a legacy override.
+  'APP_DOMAIN',
 ]
 
 export const ENVIRONMENT_VARIABLES_OPTIONAL = [
@@ -166,6 +167,7 @@ export const ENVIRONMENT_VARIABLES_OPTIONAL = [
   'TELEGRAM_BOT_TOKEN', // For daily reports
   'TELEGRAM_CHAT_ID', // For Telegram alerts
   'SLACK_WEBHOOK_URL', // For Slack alerts
+  // Required for production safety; keep in optional for older installs but scripts/env-check enforces it.
   'ZEROBOUNCE_API_KEY', // For email verification
   'APOLLO_API_KEY', // For contact enrichment
   'CLEARBIT_API_KEY', // For company enrichment

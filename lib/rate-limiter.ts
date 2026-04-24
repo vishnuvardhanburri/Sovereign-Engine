@@ -92,7 +92,7 @@ export async function recordSend(identityId: number, domainId: number) {
 }
 
 export async function selectAndValidateIdentity(clientId: number) {
-  const selection = await selectBestIdentity(clientId)
+  const selection = await selectBestIdentity(clientId, { lane: 'normal' })
   if (!selection) {
     return null
   }
@@ -146,4 +146,3 @@ export async function scaleDomainLimits() {
     )
   }
 }
-

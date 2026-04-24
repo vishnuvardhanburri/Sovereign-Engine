@@ -4,11 +4,13 @@ import * as backendModule from '../lib/backend'
 import * as dbModule from '../lib/db'
 import * as redisModule from '../lib/redis'
 import * as envModule from '../lib/env'
-import { evaluateQueueDecision } from '../lib/agents/execution/decision-agent'
-import { loadBackendAgentPrompt } from '../lib/agents/agent-prompt'
-import { sendMessage } from '../lib/agents/execution/sender-agent'
-import { executeControlLoop, ControlLoopEnforcer } from '../lib/control-loop-enforcer'
-import { generateIdempotencyKey, circuitBreaker, recordMetric, StructuredLogger } from '../lib/production-fixes'
+import * as decisionAgentModule from '../lib/agents/execution/decision-agent'
+import * as agentPromptModule from '../lib/agents/agent-prompt'
+import * as senderAgentModule from '../lib/agents/execution/sender-agent'
+import * as controlLoopModule from '../lib/control-loop-enforcer'
+import * as productionFixesModule from '../lib/production-fixes'
+import * as coordinatorModule from '../lib/infrastructure/coordinator'
+import * as sendSafeModule from '../lib/delivery/send-safe'
 
 const appEnv =
   (envModule as any).appEnv ?? (envModule as any).default?.appEnv
@@ -24,6 +26,17 @@ validateWorkerEnv()
 const backend = ((backendModule as any).default ?? backendModule) as any
 const db = ((dbModule as any).default ?? dbModule) as any
 const redis = ((redisModule as any).default ?? redisModule) as any
+const decisionAgent = ((decisionAgentModule as any).default ?? decisionAgentModule) as any
+const agentPrompt = ((agentPromptModule as any).default ?? agentPromptModule) as any
+const senderAgent = ((senderAgentModule as any).default ?? senderAgentModule) as any
+const controlLoop = ((controlLoopModule as any).default ?? controlLoopModule) as any
+const productionFixes = ((productionFixesModule as any).default ?? productionFixesModule) as any
+const sendSafeLib = ((sendSafeModule as any).default ?? sendSafeModule) as any
+const coordinator = (coordinatorModule as any).coordinator ?? (coordinatorModule as any).default?.coordinator ?? (coordinatorModule as any).default
+
+const circuitBreaker = productionFixes.circuitBreaker as typeof import('../lib/production-fixes.ts').circuitBreaker
+const recordMetric = productionFixes.recordMetric as typeof import('../lib/production-fixes.ts').recordMetric
+const StructuredLogger = productionFixes.StructuredLogger as typeof import('../lib/production-fixes.ts').StructuredLogger
 
 const claimQueueJob = backend.claimQueueJob as typeof import('../lib/backend.ts').claimQueueJob
 const deferQueueJob = backend.deferQueueJob as typeof import('../lib/backend.ts').deferQueueJob
@@ -39,10 +52,25 @@ const closeRedis = redis.closeRedis as typeof import('../lib/redis.ts').closeRed
 const ackProcessingJob = redis.ackProcessingJob as typeof import('../lib/redis.ts').ackProcessingJob
 const reclaimExpiredJobs = redis.reclaimExpiredJobs as typeof import('../lib/redis.ts').reclaimExpiredJobs
 
+const evaluateQueueDecision = decisionAgent.evaluateQueueDecision as any
+const loadBackendAgentPrompt = agentPrompt.loadBackendAgentPrompt as any
+const sendMessage = senderAgent.sendMessage as any
+const executeControlLoop = controlLoop.executeControlLoop as any
+const sendSafe = sendSafeLib.sendSafe as any
+
 const backendAgentPrompt = loadBackendAgentPrompt()
+const logger = new StructuredLogger('worker')
 
 let shuttingDown = false
 let infrastructureHealthy = true
+let errorStreak = 0
+
+process.on('unhandledRejection', (reason) => {
+  logger.log('error', 'Unhandled promise rejection', { reason: String(reason) })
+})
+process.on('uncaughtException', (err) => {
+  logger.log('error', 'Uncaught exception', { error: err?.message ?? String(err) })
+})
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -212,80 +240,58 @@ async function processOnce() {
         }
       }
 
-      // Use coordinator for sending (intelligent routing + failover)
-      const coordResult = await coordinator.send({
-        campaignId: String(context.campaign.id),
-        to: context.job.recipient_email || context.contact.email,
-        from: `Xavira Orbit <${decision.selection.identity.email}>`,
-        subject: decision.message.subject,
-        html: decision.message.html,
-        text: decision.message.text,
-        metadata: {
-          queueJobId: String(context.job.id),
-          contactId: String(context.contact.id),
-          campaignId: String(context.campaign.id),
-          sequenceId: context.job.sequence_id ? String(context.job.sequence_id) : undefined,
-          unsubscribeUrl: decision.message.unsubscribeUrl,
-          pattern_ids: decision.message.pattern_ids ?? [],
+      const result = await sendSafe({
+        context,
+        selection: decision.selection,
+        message: decision.message,
+        deps: {
+          coordinatorSend: coordinator.send.bind(coordinator),
+          smtpSend: async (req: any) =>
+            sendMessage({
+              fromEmail: req.fromEmail,
+              toEmail: req.toEmail,
+              cc: req.cc,
+              subject: req.subject,
+              html: req.html,
+              text: req.text,
+              headers: req.headers,
+            }),
         },
       })
 
-      if (!coordResult.success) {
-        // PRODUCTION FIX: Track circuit breaker failure
-        await circuitBreaker.recordFailure(String(decision.selection.identity.id), 'identity')
-        await circuitBreaker.recordFailure(String(decision.selection.domain.id), 'domain')
-        await markQueueJobFailed(context, coordResult.error || 'Coordinator send failed')
-        logger.log('error', 'Coordinator send failed', { error: coordResult.error })
-        await recordMetric(context.campaign.id, 'send_coordinator_failed', 1)
-        if (queued._raw) {
-          await ackProcessingJob(queued._raw)
-        }
+      if (!result.ok) {
+        errorStreak++
+        logger.log('error', 'sendSafe failed', { error: result.error, errorStreak })
+        await recordMetric(context.campaign.id, 'send_safe_failed', 1)
+        // Slow down on errors (in addition to job-level exponential backoff).
+        await sleep(Math.min(30_000, 2_000 * errorStreak))
+        if (queued._raw) await ackProcessingJob(queued._raw)
         return
       }
 
-      // Use traditional SMTP send as backup
-      const response = await sendMessage({
-        fromEmail: `Xavira Orbit <${decision.selection.identity.email}>`,
-        toEmail: context.job.recipient_email || context.contact.email,
-        cc: context.job.cc_emails ?? undefined,
-        subject: decision.message.subject,
-        html: decision.message.html,
-        text: decision.message.text,
-        headers: {
-          'X-Campaign-Id': String(context.campaign.id),
-          'X-Queue-Job-Id': String(context.job.id),
-          'X-Coordinator-Inbox': coordResult.inboxUsed || 'unknown',
-          'X-Coordinator-Domain': coordResult.domainUsed || 'unknown',
-          'List-Unsubscribe': `<${decision.message.unsubscribeUrl}>`,
-        },
-      })
-
-      if (!response.success) {
-        await markQueueJobFailed(context, response.error ?? 'smtp send failed')
-        console.error(
-          `[Worker] smtp error queue_job=${context.job.id} to=${context.contact.email}: ${response.error}`
-        )
-        if (queued._raw) {
-          await ackProcessingJob(queued._raw)
-        }
+      if (result.action === 'skipped' || result.action === 'deferred') {
+        errorStreak = 0
+        if (queued._raw) await ackProcessingJob(queued._raw)
         return
       }
 
-      await markQueueJobCompleted(context, decision.selection, response.providerMessageId ?? null)
+      await markQueueJobCompleted(context, decision.selection, result.providerMessageId ?? null)
       if (queued._raw) {
         await ackProcessingJob(queued._raw)
       }
-      console.log(
-        `[Worker] sent queue_job=${context.job.id} to=${context.contact.email} inbox=${coordResult.inboxUsed} domain=${coordResult.domainUsed}`
-      )
+      errorStreak = 0
+      console.log(`[Worker] sent queue_job=${context.job.id} to=${context.contact.email}`)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'unknown worker send failure'
+      errorStreak++
       await markQueueJobFailed(context, message)
       console.error(`[Worker] failed queue_job=${context.job.id}:`, error)
       if (queued._raw) {
         await ackProcessingJob(queued._raw)
       }
+      // Slow down on unexpected exceptions.
+      await sleep(Math.min(30_000, 2_000 * errorStreak))
     }
   }
 }

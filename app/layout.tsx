@@ -12,6 +12,9 @@ export const metadata: Metadata = {
   title: 'Xavira Orbit',
   description: 'Outbound Infrastructure for Scalable Lead Generation',
   icons: {
+    // Browsers will default-request /favicon.ico; we intentionally do not ship it
+    // so the tab icon always uses our XO mark.
+    shortcut: '/icon.svg',
     icon: [
       {
         url: '/icon-light-32x32.png',
@@ -36,10 +39,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${geist.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground`}
+        className={`${geist.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground transition-colors duration-200`}
       >
         <Providers>
           <NextDevToolsOff />

@@ -132,3 +132,14 @@
 html {
   color-scheme: dark;
 }
+
+/* Hide Next.js dev-only floating "N" button (DevTools / indicator).
+   This is purely visual and keeps demos/screenshots clean. */
+[data-nextjs-devtools-button],
+[data-nextjs-devtools-button] *,
+[data-nextjs-dev-indicator],
+[data-nextjs-dev-indicator] * {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

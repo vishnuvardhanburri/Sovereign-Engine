@@ -12,6 +12,7 @@ export interface LoadBalancerConstraints {
   per_inbox_daily_cap?: number
   per_domain_daily_cap?: number
   min_seconds_between_identity_sends?: number
+  lane?: 'normal' | 'low_risk' | 'slow'
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -22,9 +23,26 @@ export async function selectSenderIdentity(
   clientId: number,
   constraints: LoadBalancerConstraints = {}
 ): Promise<LoadBalancerSelection | null> {
-  const perInboxCap = constraints.per_inbox_daily_cap ?? 350
-  const perDomainCap = constraints.per_domain_daily_cap ?? 20000
-  const minGap = constraints.min_seconds_between_identity_sends ?? 60
+  const lane = constraints.lane ?? 'normal'
+  const perInboxCap =
+    constraints.per_inbox_daily_cap ?? (lane === 'slow' ? 30 : lane === 'low_risk' ? 60 : 350)
+  const perDomainCap =
+    constraints.per_domain_daily_cap ?? (lane === 'slow' ? 500 : lane === 'low_risk' ? 3000 : 20000)
+  const minGap =
+    constraints.min_seconds_between_identity_sends ?? (lane === 'slow' ? 180 : lane === 'low_risk' ? 120 : 60)
+
+  const extraDomainFilters =
+    lane === 'low_risk'
+      ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE
+         AND d.health_score >= 80
+         AND d.bounce_rate <= 1.5
+         AND d.spam_rate <= 0.0200`
+      : lane === 'slow'
+        ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE
+           AND d.health_score >= 85
+           AND d.bounce_rate <= 1.0
+           AND d.spam_rate <= 0.0150`
+        : `AND d.health_score >= 30`
 
   // Pick a healthy domain + identity, avoid spikes via last_sent_at and daily counters.
   const rows = await query<{
@@ -55,9 +73,9 @@ export async function selectSenderIdentity(
       AND d.client_id = $1
       AND i.status = 'active'
       AND d.status = 'active'
-      AND i.sent_today < $2
-      AND d.sent_today < $3
-      AND d.health_score >= 30
+      AND i.sent_today < LEAST(i.daily_limit, $2)
+      AND d.sent_today < LEAST(d.daily_limit, $3)
+      ${extraDomainFilters}
     ORDER BY
       d.health_score DESC,
       d.bounce_rate ASC,
@@ -89,4 +107,3 @@ export async function selectSenderIdentity(
     reason: `health=${clamp(Number(pick.health_score) || 0, 0, 100)} sent_today(identity=${pick.identity_sent_today},domain=${pick.domain_sent_today})`,
   }
 }
-

@@ -227,6 +227,15 @@ export async function buildExecutionPlan(input: {
       }
     }
 
+    // Strict separation: Manual mode can ONLY operate over imported/manual-upload contacts.
+    // Auto mode is free to build audiences dynamically unless the user explicitly filters source.
+    if (input.mode === 'manual') {
+      input.command.filters = {
+        ...(input.command.filters ?? {}),
+        sourceIn: (input.command.filters?.sourceIn?.length ? input.command.filters.sourceIn : ['manual_upload']),
+      }
+    }
+
     if (input.command.action === 'adjust_send_rate') {
       const mode = String(input.command.params?.sendRateMode ?? 'reduce_20pct') as any
       const domainId = input.command.params?.domainId ? Number(input.command.params.domainId) : undefined
@@ -314,6 +323,8 @@ export async function buildExecutionPlan(input: {
 
     const name = String(input.command.params?.campaignNameNew ?? 'AI Campaign').trim()
     const dailyTarget = sendPlan.projectedDailySend > 0 ? sendPlan.projectedDailySend : clamp(desiredDailyTarget ?? 200, 10, 5000)
+    // Structured outreach default: run over ~30 days even if capacity is high.
+    const durationDays = Math.max(30, sendPlan.estimatedDurationDays || 0)
 
     const actions = [
       {
@@ -326,6 +337,8 @@ export async function buildExecutionPlan(input: {
           name,
           sequenceId,
           dailyTarget,
+          durationDays,
+          audienceMode: input.mode === 'manual' ? 'manual' : 'auto',
           contactIds,
         },
         requiresApproval: true as const,
