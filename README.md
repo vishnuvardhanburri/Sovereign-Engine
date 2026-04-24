@@ -144,6 +144,8 @@ See [PERFORMANCE_GUIDE.md](./PERFORMANCE_GUIDE.md) for detailed optimization doc
 
 ## Getting Started
 
+Docs live in `docs/` (start with `docs/architecture.md`).
+
 ### Demo Credentials
 
 The application includes mock authentication. Use these credentials:
