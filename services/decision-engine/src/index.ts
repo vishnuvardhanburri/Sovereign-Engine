@@ -40,3 +40,4 @@ export function decide(input: DecisionInput): DecisionOutput {
   return { action: 'send', lane: 'normal', reason: 'validator_valid' }
 }
 
+export { decideAdvanced } from './advanced'
