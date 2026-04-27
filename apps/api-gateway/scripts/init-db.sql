@@ -198,6 +198,10 @@ CREATE TABLE IF NOT EXISTS queue_jobs (
   UNIQUE (campaign_id, contact_id, sequence_step)
 );
 
+-- Backward compatible: earlier databases may have queue_jobs without idempotency_key.
+ALTER TABLE queue_jobs
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY,
   client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -227,7 +231,22 @@ CREATE TABLE IF NOT EXISTS events (
   delivered_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
+-- Email validation cache (used by validator-engine and sender-worker pre-send checks).
+CREATE TABLE IF NOT EXISTS email_validations (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  normalized_email TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('valid','risky','invalid','unknown')),
+  score NUMERIC(3,2) NOT NULL,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  mx JSONB,
+  smtp JSONB,
+  catch_all JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_email_validations_normalized ON email_validations(normalized_email);
+CREATE INDEX IF NOT EXISTS idx_email_validations_domain ON email_validations(domain);
 ALTER TABLE events
   DROP CONSTRAINT IF EXISTS events_event_type_check;
 

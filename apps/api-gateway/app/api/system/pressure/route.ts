@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     // Backpressure heuristic: if depth/wait is rising, slow ramp globally (soft -15%).
     const pressureHigh = queueDepth > 500 || avgWaitMs > 5 * 60_000
     if (pressureHigh) {
-      await redis.set(`xv:${REGION}:adaptive:pressure_slow:${clientId}`, '0.85', { EX: 10 * 60 })
+      await redis.set(`xv:${REGION}:adaptive:pressure_slow:${clientId}`, '0.85', 'EX', 10 * 60)
 
       // Pressure-aware queueing:
       // - pull up high-priority jobs

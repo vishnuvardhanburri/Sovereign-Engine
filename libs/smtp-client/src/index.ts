@@ -22,6 +22,10 @@ export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promi
     host: config.host,
     port: config.port ?? (config.secure ? 465 : 587),
     secure: Boolean(config.secure),
+    // Prevent hanging workers on slow/bad SMTP connections.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
     auth: {
       user: config.user,
       pass: config.pass,
@@ -39,4 +43,3 @@ export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promi
 
   return { messageId: info.messageId ?? '' }
 }
-

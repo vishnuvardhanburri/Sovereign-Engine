@@ -33,6 +33,11 @@ export async function ingestEvent(deps: TrackingDeps, event: TrackingIngestEvent
       event.queueJobId
         ? `${base}|qj:${event.queueJobId}`
         : (() => {
+            // If we have an idempotency key from the sender, use it to avoid collisions
+            // across separate test sends / retries that don't have queue_job_id/provider_message_id.
+            const idem = String((metadata as any).idempotency_key ?? '').trim()
+            if (idem) return `${base}|idem:${idem}`
+
             const ts = event.occurredAt ? new Date(event.occurredAt).getTime() : Date.now()
             const bucket = Math.floor(ts / (5 * 60_000))
             return `${base}|bucket:${bucket}`

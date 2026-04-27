@@ -36,6 +36,7 @@ const navItems: NavItem[] = [
   { href: '/sequences', label: 'Message Sequences', icon: ListOrdered, prefetch: 'prefetchSequences' },
   { href: '/analytics', label: 'Performance', icon: LineChart, prefetch: 'prefetchAnalytics' },
   { href: '/inbox', label: 'Conversations', icon: MessageCircle, prefetch: 'prefetchInbox' },
+  { href: '/sent', label: 'Sent Mail', icon: Mail },
   { href: '/settings', label: 'Workspace', icon: Settings },
 ]
 

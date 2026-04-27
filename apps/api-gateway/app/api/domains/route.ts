@@ -37,7 +37,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
     console.error('[API] Failed to create domain', error)
+    const msg = (error as any)?.message ?? ''
+    if (String(msg).toLowerCase().includes('invalid domain')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return NextResponse.json({ error: 'Failed to create domain' }, { status: 500 })
   }
 }
-

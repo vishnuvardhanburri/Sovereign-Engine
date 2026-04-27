@@ -1950,25 +1950,25 @@ export async function enqueueCampaignJobs(
            (( (e.rn - 1) % $6 )::numeric * (36000::numeric / $6::numeric))::int AS second_slot
          FROM eligible e
        )
-       SELECT
-         $1,
-         p.id,
-         $2,
-         ss.step_index,
-         (
-           CURRENT_TIMESTAMP
+	       SELECT
+	         $1,
+	         p.id,
+	         $2::bigint,
+	         ss.step_index,
+	         (
+	           CURRENT_TIMESTAMP
            + (p.day_slot * INTERVAL '1 day')
            + (p.second_slot * INTERVAL '1 second')
            + make_interval(days => ss.day_delay)
          ) AS scheduled_at,
          p.email,
          CASE WHEN ss.cc_mode = 'none' THEN NULL ELSE '[]'::jsonb END,
-         md5(
-           lower(trim(p.email))
-           || '|' || $2::text
-           || '|' || ss.step_index::text
-           || '|' || COALESCE(ss.variant_key, 'primary')
-         ),
+	         md5(
+	           lower(trim(p.email))
+	           || '|' || ($2::bigint)::text
+	           || '|' || ss.step_index::text
+	           || '|' || COALESCE(ss.variant_key, 'primary')
+	         ),
          jsonb_build_object(
            'email_domain', p.email_domain,
            'company_domain', p.company_domain,
@@ -2069,11 +2069,15 @@ export async function createDomain(
   clientId: number,
   input: { domain: string; dailyLimit?: number }
 ) {
+  const normalized = input.domain.trim().toLowerCase()
+  if (normalized.includes('@')) {
+    throw new Error('Invalid domain: expected a bare domain like "example.com" (not an email address)')
+  }
   return queryOne<Domain>(
     `INSERT INTO domains (client_id, domain, daily_limit)
      VALUES ($1, $2, $3)
      RETURNING *`,
-    [clientId, input.domain.trim().toLowerCase(), clamp(input.dailyLimit ?? 400, 200, 5_000)]
+    [clientId, normalized, clamp(input.dailyLimit ?? 400, 200, 5_000)]
   )
 }
 
@@ -2127,6 +2131,17 @@ export async function updateDomainStatus(
      WHERE client_id = $1 AND id = $2
      RETURNING *`,
     [clientId, domainId, status]
+  )
+}
+
+export async function deleteDomain(clientId: number, domainId: number) {
+  // Hard delete: identities cascade; events keep history (domain_id becomes NULL via FK).
+  // This is intentionally simple and reversible only via backups.
+  return queryOne<Domain>(
+    `DELETE FROM domains
+     WHERE client_id = $1 AND id = $2
+     RETURNING *`,
+    [clientId, domainId]
   )
 }
 

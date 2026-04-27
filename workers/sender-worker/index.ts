@@ -29,11 +29,49 @@ const SEND_DLQ = process.env.SEND_DLQ ?? 'xv-send-dlq'
 const MAX_SEND_ATTEMPTS = Number(process.env.SEND_MAX_ATTEMPTS ?? 6)
 const ADAPTIVE_CANARY = process.env.ADAPTIVE_CANARY === 'true'
 const ADAPTIVE_EXPERIMENT = process.env.ADAPTIVE_EXPERIMENT === 'true'
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]
+  if (raw == null) return fallback
+  const v = String(raw).trim().toLowerCase()
+  if (!v) return fallback
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'on') return true
+  if (v === '0' || v === 'false' || v === 'no' || v === 'n' || v === 'off') return false
+  return fallback
+}
+
+const SEND_ALLOW_UNKNOWN_VALIDATION = envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
+
+// Legacy API-gateway queue (minimal JSON payloads).
+// The current API enqueues into this queue to preserve `pnpm dev` parity.
+const LEGACY_READY_QUEUE = process.env.LEGACY_READY_QUEUE ?? 'email:queue'
+const LEGACY_SCHEDULED_QUEUE = process.env.LEGACY_SCHEDULED_QUEUE ?? 'email:queue:scheduled'
+const LEGACY_PROCESSING_QUEUE = process.env.LEGACY_PROCESSING_QUEUE ?? 'email:queue:processing'
+const LEGACY_VISIBILITY_ZSET = process.env.LEGACY_VISIBILITY_ZSET ?? 'email:queue:visibility'
+const LEGACY_VISIBILITY_TIMEOUT_SEC = Number(process.env.LEGACY_VISIBILITY_TIMEOUT_SEC ?? 5 * 60)
 
 function reqEnv(name: string) {
   const v = process.env[name]
   if (!v) throw new Error(`Missing required env var: ${name}`)
   return v
+}
+
+function readJsonArray(name: string): any[] {
+  const raw = process.env[name]
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function stableIndex(key: string, mod: number) {
+  if (mod <= 1) return 0
+  // Use a stable hash so any idempotency key format works (not just hex prefixes).
+  const hex = crypto.createHash('sha256').update(String(key)).digest('hex')
+  const n = parseInt(hex.slice(0, 8), 16)
+  return n % mod
 }
 
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
@@ -44,6 +82,14 @@ const GLOBAL_SHAPER_RATE_PER_SEC = Number(process.env.GLOBAL_SHAPER_RATE_PER_SEC
 const GLOBAL_SHAPER_BURST = Number(process.env.GLOBAL_SHAPER_BURST ?? 10) // max tokens
 
 const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
+const sendQueue = new BullQueue<SendJob>(SEND_QUEUE, { connection: { url: reqEnv('REDIS_URL') } })
+
+const SMTP_HOST = reqEnv('SMTP_HOST')
+const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587)
+const SMTP_SECURE = process.env.SMTP_SECURE === 'true'
+const SMTP_ACCOUNTS = readJsonArray('SMTP_ACCOUNTS')
+  .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
+  .filter((x) => x.user && x.pass)
 
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
 const GLOBAL_RISK_WINDOW_SEC = 60 * 60 // 1h
@@ -65,6 +111,12 @@ function experimentGroup(idemKey: string): 'adaptive' | 'baseline' {
 }
 
 type SmtpClass = 'deferral' | 'block' | 'bounce' | 'unknown'
+
+function truncateText(raw: unknown, maxLen: number): string {
+  const s = String(raw ?? '')
+  if (s.length <= maxLen) return s
+  return s.slice(0, maxLen) + `\n\n...[truncated ${s.length - maxLen} chars]`
+}
 
 function classifySmtpFailure(err: any): { smtpClass: SmtpClass; responseCode: number | null } {
   const code = Number(err?.responseCode ?? err?.code ?? err?.response?.statusCode ?? NaN)
@@ -147,6 +199,295 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+type LegacyQueuePayload = {
+  id: number | string
+  client_id: number | string
+  campaign_id: number | string
+  contact_id: number | string
+  sequence_step: number
+  scheduled_at: string
+  idempotency_key?: string
+}
+
+async function backfillLegacyFromDb(limit = 25) {
+  // Safety net: if Redis queue state is lost (restart/deploy/manual flush),
+  // republish due DB jobs so the legacy bridge can continue to make progress.
+  const res = await db<{
+    id: number
+    client_id: number
+    campaign_id: number
+    contact_id: number
+    sequence_step: number
+    scheduled_at: any
+    idempotency_key: string | null
+    status: string
+    reserved_at: any
+  }>(
+    `SELECT id, client_id, campaign_id, contact_id, sequence_step, scheduled_at, idempotency_key, status, reserved_at
+     FROM queue_jobs
+     WHERE (
+         (status IN ('pending','retry') AND scheduled_at <= CURRENT_TIMESTAMP)
+         OR (status = 'processing' AND (reserved_at IS NULL OR reserved_at < (CURRENT_TIMESTAMP - INTERVAL '10 minutes')))
+       )
+     ORDER BY scheduled_at ASC
+     LIMIT $1`,
+    [limit]
+  )
+
+  if (!res.rows.length) return 0
+
+  let published = 0
+  for (const row of res.rows) {
+    const idemKey = `email:idem:${row.id}`
+    const ok = await redis.set(idemKey, '1', 'EX', 60 * 60 * 24 * 7, 'NX')
+    if (!ok) continue
+
+    const scheduledAt = row.scheduled_at instanceof Date ? row.scheduled_at.toISOString() : new Date(row.scheduled_at).toISOString()
+    const payload: LegacyQueuePayload = {
+      id: row.id,
+      client_id: row.client_id,
+      campaign_id: row.campaign_id,
+      contact_id: row.contact_id,
+      sequence_step: row.sequence_step,
+      scheduled_at: scheduledAt,
+      idempotency_key: row.idempotency_key ?? undefined,
+    }
+    await redis.rpush(LEGACY_READY_QUEUE, JSON.stringify(payload))
+    published += 1
+
+    if (row.status === 'processing') {
+      await db(
+        `UPDATE queue_jobs
+         SET status = 'retry',
+             last_error = COALESCE(last_error, 'recovered_from_stale_processing'),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2 AND status = 'processing'`,
+        [row.client_id, row.id]
+      ).catch(() => {})
+    }
+  }
+
+  if (published > 0) {
+    console.warn('[sender-worker] backfilled legacy queue from DB due jobs', { published })
+  }
+  return published
+}
+
+async function promoteLegacyDue(limit = 10) {
+  const now = Date.now()
+  const due = (await redis.zrangebyscore(LEGACY_SCHEDULED_QUEUE, 0, now, 'LIMIT', 0, limit)) as string[]
+  if (!due.length) return 0
+  const pipeline = redis.pipeline()
+  for (const item of due) {
+    pipeline.zrem(LEGACY_SCHEDULED_QUEUE, item)
+    pipeline.rpush(LEGACY_READY_QUEUE, item)
+  }
+  await pipeline.exec()
+  return due.length
+}
+
+async function reclaimLegacyVisibility(limit = 25) {
+  const now = Date.now()
+  const expired = (await redis.zrangebyscore(LEGACY_VISIBILITY_ZSET, 0, now, 'LIMIT', 0, limit)) as string[]
+  if (!expired.length) return 0
+
+  const pipeline = redis.pipeline()
+  for (const item of expired) {
+    pipeline.zrem(LEGACY_VISIBILITY_ZSET, item)
+    pipeline.lrem(LEGACY_PROCESSING_QUEUE, 1, item)
+    pipeline.rpush(LEGACY_READY_QUEUE, item)
+  }
+  await pipeline.exec()
+  console.warn('[sender-worker] reclaimed legacy visibility items', { count: expired.length })
+  return expired.length
+}
+
+async function ackLegacyPayload(raw: string) {
+  const pipeline = redis.pipeline()
+  pipeline.zrem(LEGACY_VISIBILITY_ZSET, raw)
+  pipeline.lrem(LEGACY_PROCESSING_QUEUE, 1, raw)
+  await pipeline.exec()
+}
+
+function parseRetryLater(msg: string): { backoffMs: number } | null {
+  if (!msg.startsWith('retry_later:')) return null
+  if (msg.includes('adaptive_throttle')) return { backoffMs: jitterMs(25_000, 0.3) }
+  if (msg.includes('domain_concurrency_cap')) return { backoffMs: jitterMs(10_000, 0.5) }
+  if (msg.includes('global_shaper')) return { backoffMs: jitterMs(15_000, 0.4) }
+  if (msg.includes('global_cap')) return { backoffMs: jitterMs(45_000, 0.2) }
+  if (msg.includes('inflight_lock')) return { backoffMs: jitterMs(8_000, 0.6) }
+  if (msg.includes('recent_failure')) return { backoffMs: jitterMs(60_000, 0.2) }
+  return { backoffMs: jitterMs(30_000, 0.3) }
+}
+
+async function requeueLegacyRaw(raw: string, backoffMs: number) {
+  if (backoffMs <= 0) {
+    await redis.rpush(LEGACY_READY_QUEUE, raw)
+    return
+  }
+  await redis.zadd(LEGACY_SCHEDULED_QUEUE, Date.now() + backoffMs, raw)
+}
+
+async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<SendJob | null> {
+  const qjId = Number(payload.id)
+  const clientId = Number(payload.client_id)
+  if (!Number.isFinite(qjId) || !Number.isFinite(clientId)) return null
+
+  const res = await db<{
+    queue_job_id: number
+    campaign_id: number
+    contact_id: number
+    to_email: string
+    subject: string
+    body: string
+    idempotency_key: string | null
+  }>(
+    `SELECT
+       qj.id AS queue_job_id,
+       qj.campaign_id,
+       qj.contact_id,
+       c.email AS to_email,
+       ss.subject AS subject,
+       ss.body AS body,
+       qj.idempotency_key
+     FROM queue_jobs qj
+     JOIN contacts c ON c.id = qj.contact_id AND c.client_id = qj.client_id
+     JOIN campaigns ca ON ca.id = qj.campaign_id AND ca.client_id = qj.client_id
+     JOIN sequence_steps ss ON ss.sequence_id = ca.sequence_id AND ss.step_index = qj.sequence_step
+     WHERE qj.client_id = $1 AND qj.id = $2
+     LIMIT 1`,
+    [clientId, qjId]
+  )
+  const row = res.rows[0]
+  if (!row) return null
+
+  return {
+    clientId,
+    campaignId: Number(row.campaign_id),
+    contactId: Number(row.contact_id),
+    queueJobId: Number(row.queue_job_id),
+    toEmail: row.to_email,
+    subject: row.subject,
+    text: row.body,
+    idempotencyKey: (payload.idempotency_key ?? row.idempotency_key ?? undefined) || undefined,
+  }
+}
+
+async function runLegacyQueueLoop() {
+  console.log('[sender-worker] legacy queue bridge enabled', {
+    ready: LEGACY_READY_QUEUE,
+    scheduled: LEGACY_SCHEDULED_QUEUE,
+    processing: LEGACY_PROCESSING_QUEUE,
+    visibility: LEGACY_VISIBILITY_ZSET,
+  })
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const promoted = await promoteLegacyDue(25)
+      if (promoted > 0) {
+        console.log('[sender-worker] promoted legacy scheduled items', { promoted })
+      }
+
+      await reclaimLegacyVisibility(25)
+
+      // If Redis has nothing ready but DB has due jobs, republish them.
+      if (promoted === 0) {
+        const readyLen = Number((await redis.llen(LEGACY_READY_QUEUE)) ?? 0)
+        if (readyLen === 0) {
+          await backfillLegacyFromDb(25).catch(() => {})
+        }
+      }
+
+      const raw = (await redis.lmove(LEGACY_READY_QUEUE, LEGACY_PROCESSING_QUEUE, 'LEFT', 'RIGHT')) as string | null
+      if (!raw) continue
+
+      let payload: LegacyQueuePayload | null = null
+      try {
+        payload = JSON.parse(raw) as LegacyQueuePayload
+      } catch {
+        payload = null
+      }
+      if (!payload) continue
+
+      await redis.zadd(LEGACY_VISIBILITY_ZSET, Date.now() + LEGACY_VISIBILITY_TIMEOUT_SEC * 1000, raw)
+
+      const job = await buildSendJobFromLegacy(payload)
+      if (!job) continue
+
+      // Best-effort DB state transition (keeps UI coherent).
+      await db(
+        `UPDATE queue_jobs
+         SET status = 'processing', reserved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2 AND status = 'pending'`,
+        [job.clientId, job.queueJobId ?? 0]
+      ).catch(() => {})
+
+      console.log('[sender-worker] legacy send start', {
+        queueJobId: job.queueJobId,
+        campaignId: job.campaignId,
+        to: job.toEmail,
+      })
+
+      try {
+        await runSend(job)
+      } catch (err) {
+        const msg = (err as any)?.message ?? String(err)
+        const retry = parseRetryLater(msg)
+        if (retry) {
+          await db(
+            `UPDATE queue_jobs
+             SET status = 'retry',
+                 attempts = attempts + 1,
+                 last_error = $3,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE client_id = $1 AND id = $2`,
+            [job.clientId, job.queueJobId ?? 0, msg]
+          ).catch(() => {})
+
+          await ackLegacyPayload(raw).catch(() => {})
+          await requeueLegacyRaw(raw, retry.backoffMs)
+          console.warn('[sender-worker] legacy job deferred (retry_later)', {
+            queueJobId: job.queueJobId,
+            reason: msg,
+            backoffMs: retry.backoffMs,
+          })
+          continue
+        }
+
+        await db(
+          `UPDATE queue_jobs
+           SET status = 'failed',
+               attempts = attempts + 1,
+               last_error = $3,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE client_id = $1 AND id = $2`,
+          [job.clientId, job.queueJobId ?? 0, msg]
+        ).catch(() => {})
+
+        await ackLegacyPayload(raw).catch(() => {})
+        console.error('[sender-worker] legacy job failed', { queueJobId: job.queueJobId, err: msg })
+        continue
+      }
+
+      await db(
+        `UPDATE queue_jobs
+         SET status = 'completed',
+             completed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, job.queueJobId ?? 0]
+      ).catch(() => {})
+
+      await ackLegacyPayload(raw).catch(() => {})
+      console.log('[sender-worker] legacy send completed', { queueJobId: job.queueJobId })
+    } catch (err) {
+      console.error('[sender-worker] legacy queue loop error', err)
+      await sleep(1000)
+    }
+  }
+}
+
 function jitterMs(base: number, pct = 0.15) {
   const j = base * pct
   return Math.max(0, Math.floor(base + (Math.random() * 2 - 1) * j))
@@ -189,7 +530,7 @@ async function getBestHours(clientId: number, domainId: number): Promise<number[
 
   const best = scored.slice(0, 3).map((x) => x.hour)
   if (!best.length) return null
-  await redis.set(cacheKey, JSON.stringify(best), { EX: 6 * 60 * 60 })
+  await redis.set(cacheKey, JSON.stringify(best), 'EX', 6 * 60 * 60)
   return best
 }
 
@@ -206,7 +547,7 @@ async function bootstrapFromSnapshots() {
   } catch (err) {
     console.error('[sender-worker] redis unavailable; entering degraded conservative mode', { err: (err as any)?.message ?? String(err) })
     // Degraded mode: no ramp; keep deploy conservative factor longer.
-    await redis.set(`xv:${REGION}:deploy:conservative`, '0.5', { EX: 30 * 60 })
+    await redis.set(`xv:${REGION}:deploy:conservative`, '0.5', 'EX', 30 * 60)
     return
   }
 
@@ -238,7 +579,7 @@ async function bootstrapFromSnapshots() {
       restoredFrom: 'snapshot',
       snapshotCreatedAt: row.created_at,
     }
-    await redis.set(stateKey, JSON.stringify(restored), { EX: 60 * 60 * 24 * 7 })
+    await redis.set(stateKey, JSON.stringify(restored), 'EX', 60 * 60 * 24 * 7)
     console.log('[sender-worker] snapshot_restored', { clientId: d.client_id, domainId: d.domain_id })
     await recordMetric(d.client_id, 'snapshot_restored', 1, { domainId: d.domain_id })
   }
@@ -263,7 +604,7 @@ async function bootstrapFromSnapshots() {
       if (!s) continue
       const throttle = Math.max(0, Math.min(0.5, Number(s.throttle_factor ?? 0)))
       if (throttle <= 0) continue
-      await redis.set(riskKey, String(throttle), { EX: 60 * 60 })
+      await redis.set(riskKey, String(throttle), 'EX', 60 * 60)
       console.log('[sender-worker] snapshot_restored_provider', { clientId: row.client_id, provider: p, throttle })
       await recordMetric(row.client_id, 'snapshot_restored', 1, { provider: p })
     }
@@ -324,8 +665,8 @@ async function resolveIdempotencyKey(job: SendJob, bullJobId: string | number | 
   return crypto.createHash('sha256').update(fallbackPayload).digest('hex').slice(0, 40)
 }
 
-async function runSend(job: SendJob, bull: Job<SendJob>) {
-  const bullJobId = bull.id
+async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsMade'>) {
+  const bullJobId = bull?.id
   const idemKey = await resolveIdempotencyKey(job, bullJobId)
   const doneKey = `xv:${REGION}:send:done:${job.clientId}:${idemKey}`
   const inflightKey = `xv:${REGION}:send:inflight:${job.clientId}:${idemKey}`
@@ -349,7 +690,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
   }
 
   // In-flight lock to prevent concurrent duplicate sends.
-  const inflightOk = await redis.set(inflightKey, String(bullJobId ?? 'job'), { NX: true, EX: 10 * 60 })
+  const inflightOk = await redis.set(inflightKey, String(bullJobId ?? 'job'), 'EX', 10 * 60, 'NX')
   if (!inflightOk) {
     console.warn('[sender-worker] duplicate suppressed (inflight)', { bullJobId, queueJobId: job.queueJobId, idemKey })
     await recordMetric(job.clientId, 'inflight_conflicts', 1, { scope: 'worker' })
@@ -358,9 +699,19 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     throw new Error('retry_later:inflight_lock')
   }
 
+  let expGroup: 'adaptive' | 'baseline' | null = null
+
   try {
+    console.log('[sender-worker] send attempt start', {
+      bullJobId,
+      queueJobId: job.queueJobId,
+      campaignId: job.campaignId,
+      to: String(job.toEmail || '').trim().toLowerCase(),
+      idemKey,
+    })
+
     const useCanary = ADAPTIVE_CANARY ? sampleCanary(idemKey) : true
-    const expGroup = ADAPTIVE_EXPERIMENT ? experimentGroup(idemKey) : null
+    expGroup = ADAPTIVE_EXPERIMENT ? experimentGroup(idemKey) : null
     const useAdaptiveControl = expGroup ? expGroup === 'adaptive' : true
 
     // Jitter injection: avoid batchy patterns.
@@ -391,6 +742,12 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     }
 
     const validation = await lookupValidation(job.toEmail)
+    // Local/demo safety: if validator has not run yet, don't stall sending forever.
+    // Treat unknown as risky and route to a conservative lane.
+    const effectiveValidation =
+      validation.verdict === 'unknown' && SEND_ALLOW_UNKNOWN_VALIDATION
+        ? { ...validation, verdict: 'risky' as const, score: Math.max(validation.score, 0.55) }
+        : validation
 
   // Best-effort: domain score is used to route valid traffic if domain is unhealthy.
   const domainIdRes = await db<{ id: number }>(
@@ -403,13 +760,23 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
   const domainId = domainIdRes.rows[0]?.id
   const domainScore = domainId ? (await getDomainScore({ db }, job.clientId, domainId))?.score : undefined
 
-  const decision = decide({
-    email: job.toEmail,
-    verdict: validation.verdict,
-    score: validation.score,
-    domainScore,
-    catchAll: validation.catchAll,
-  })
+	  const decision = decide({
+	    email: job.toEmail,
+	    verdict: effectiveValidation.verdict,
+	    score: effectiveValidation.score,
+	    domainScore,
+	    catchAll: effectiveValidation.catchAll,
+	  })
+
+    console.log('[sender-worker] decision', {
+      bullJobId,
+      queueJobId: job.queueJobId,
+      action: (decision as any).action,
+      lane: (decision as any).lane,
+      reason: (decision as any).reason,
+      verdict: effectiveValidation.verdict,
+      score: effectiveValidation.score,
+    })
 
   if (decision.action === 'drop') {
     await handleTracking({
@@ -427,8 +794,24 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     throw new Error(`retry_later:${decision.reason}`)
   }
 
-    const lane: Lane = decision.lane
-    const selection = await rotateInbox({ db }, job.clientId, lane)
+    let lane: Lane = decision.lane
+    let selection = await rotateInbox({ db }, job.clientId, lane)
+
+    // Production behavior: if the preferred lane is too strict for the currently configured domains
+    // (common when SPF/DKIM/DMARC aren't populated yet), gracefully fall back to normal lane
+    // instead of hard-failing the send pipeline.
+    if (!selection && lane !== 'normal') {
+      console.warn('[sender-worker] no sender available for lane; falling back to normal', {
+        queueJobId: job.queueJobId,
+        bullJobId,
+        clientId: job.clientId,
+        requestedLane: lane,
+      })
+      await recordMetric(job.clientId, 'lane_fallback_to_normal', 1, { from: lane })
+      lane = 'normal'
+      selection = await rotateInbox({ db }, job.clientId, lane)
+    }
+
     if (!selection) throw new Error('no_sender_identity_available')
 
     const caps = enforceCaps(selection, lane)
@@ -449,7 +832,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     const prevState: AdaptiveState | undefined = prevStateRaw ? (JSON.parse(prevStateRaw) as any) : undefined
 
     const { throughput: adaptive, nextState } = computeAdaptiveThroughput(domainSignals, providerSignals, prevState, Date.now())
-    await redis.set(adaptiveStateKey, JSON.stringify(nextState), { EX: 60 * 60 * 24 * 7 })
+    await redis.set(adaptiveStateKey, JSON.stringify(nextState), 'EX', 60 * 60 * 24 * 7)
 
     if (adaptive.shouldPauseDomain) {
       await recordMetric(job.clientId, 'domain_pause_triggered', 1, { domainId: selection.domain.id })
@@ -499,8 +882,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
             },
           },
         })
-        await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
-        await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+        await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
+        await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
         await redis.del(inflightKey)
         await redis.del(failedKey)
         return
@@ -550,7 +933,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
         const n = await redis.incr(riskBucket)
         if (n === 1) await redis.expire(riskBucket, 10 * 60)
         if (n >= GLOBAL_RISK_THRESHOLD) {
-          await redis.set(`xv:${REGION}:adaptive:global_risk:${job.clientId}`, '1', { EX: GLOBAL_RISK_WINDOW_SEC })
+          await redis.set(`xv:${REGION}:adaptive:global_risk:${job.clientId}`, '1', 'EX', GLOBAL_RISK_WINDOW_SEC)
           await recordMetric(job.clientId, 'cooldown_events', 1, { scope: 'global', reason: 'multi_domain_risk' })
         }
       }
@@ -598,23 +981,44 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     let messageId = ''
     let smtpAttempted = false
     try {
-      const smtpHost = reqEnv('SMTP_HOST')
-      const smtpUser = reqEnv('SMTP_USER')
-      const smtpPass = reqEnv('SMTP_PASS')
       smtpAttempted = true
 
-      const sent = await sendSmtp(
-        { host: smtpHost, user: smtpUser, pass: smtpPass },
-        {
-          from: selection.identity.email,
-          to: job.toEmail,
-          subject: job.subject,
-          html: job.html,
-          text: job.text,
-          headers: { 'X-Xavira-Lane': lane, 'X-Xavira-Adaptive': adaptive.reasons.join(',') },
-        }
-      )
+      const account =
+        SMTP_ACCOUNTS.length > 0
+          ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]!
+          : { user: reqEnv('SMTP_USER'), pass: reqEnv('SMTP_PASS') }
+
+      console.log('[sender-worker] smtp send start', {
+        from: account.user,
+        to: String(job.toEmail || '').trim().toLowerCase(),
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_SECURE,
+      })
+
+      const sent = await Promise.race([
+        sendSmtp(
+          { host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, user: account.user, pass: account.pass },
+          {
+            from: account.user,
+            to: job.toEmail,
+            subject: job.subject,
+            html: job.html,
+            text: job.text,
+            headers: {
+              'X-Xavira-Lane': lane,
+              'X-Xavira-Adaptive': adaptive.reasons.join(','),
+              'X-Xavira-QueueJobId': String(job.queueJobId ?? ''),
+              'X-Xavira-CampaignId': String(job.campaignId ?? ''),
+            },
+          }
+        ),
+        sleep(35_000).then(() => {
+          throw new Error('smtp_timeout')
+        }),
+      ])
       messageId = sent.messageId
+      console.log('[sender-worker] smtp send completed', { messageId, to: String(job.toEmail || '').trim().toLowerCase() })
     } finally {
       // Best-effort release: if process crashes, TTL expires.
       await redis.decr(concKey).catch(() => {})
@@ -654,8 +1058,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
     if (Number(dupRes.rows[0]?.count ?? 0) > 0) {
       await recordMetric(job.clientId, 'duplicate_send_prevented', 1, { scope: 'worker', reason: 'recent_window' })
       console.warn('[sender-worker] duplicate anomaly suppressed (recent window)', { bullJobId, idemKey, to: normalizedTo })
-      await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
-      await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+      await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
+      await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
       await redis.del(inflightKey)
       await redis.del(failedKey)
       await handleTracking({
@@ -681,6 +1085,10 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
       metadata: {
         event_code: 'EMAIL_SENT',
         to_email: normalizedTo,
+        from_email: String((SMTP_ACCOUNTS.length > 0 ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]?.user : process.env.SMTP_USER) ?? '').toLowerCase(),
+        subject: job.subject,
+        body_text: truncateText(job.text, 20_000),
+        body_html: truncateText(job.html, 40_000),
         idempotency_key: idemKey,
         adaptive: {
           throughput_current: effectiveMaxPerMinute,
@@ -704,16 +1112,34 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
       },
     })
 
+    if (job.queueJobId) {
+      await db(
+        `UPDATE queue_jobs
+         SET provider_message_id = $3,
+             status = CASE WHEN status IN ('pending','processing','retry') THEN 'completed' ELSE status END,
+             completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, job.queueJobId, messageId]
+      ).catch(() => {})
+    }
+
     // Mark idempotency as completed after we successfully sent and tracked.
-    await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
-    await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+    await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
+    await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
     await redis.del(inflightKey)
     await redis.del(failedKey)
     await recordMetric(job.clientId, 'send_success_rate', 1, { scope: 'worker' })
     await recordMetric(job.clientId, 'duplicate_send_prevented', 0, { scope: 'worker' })
   } catch (err) {
+    console.error('[sender-worker] send attempt error', {
+      bullJobId,
+      queueJobId: job.queueJobId,
+      idemKey,
+      err: (err as any)?.message ?? String(err),
+    })
     // DLQ handling: after N attempts, stop retrying and move to DLQ with reason.
-    const attemptsMade = bull.attemptsMade ?? 0
+    const attemptsMade = bull?.attemptsMade ?? 0
     if (attemptsMade >= MAX_SEND_ATTEMPTS) {
       const { smtpClass, responseCode } = classifySmtpFailure(err)
       await recordMetric(job.clientId, 'dlq_moved_count', 1, { smtpClass })
@@ -746,8 +1172,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
         },
       }).catch(() => {})
 
-      await redis.set(doneKey, '1', { EX: 60 * 60 * 24 * 7 })
-      await redis.set(legacyDoneKey, '1', { EX: 60 * 60 * 24 * 7 })
+      await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
+      await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
       await redis.del(inflightKey)
       await redis.del(failedKey)
       return
@@ -762,7 +1188,8 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
       msg.startsWith('retry_later:global_shaper') ||
       msg.startsWith('retry_later:domain_concurrency_cap') ||
       msg.startsWith('retry_later:inflight_lock') ||
-      msg.startsWith('retry_later:recent_failure')
+      msg.startsWith('retry_later:recent_failure') ||
+      msg.startsWith('retry_later:validator_unknown')
 
     if (!isInternalThrottle) {
       const { smtpClass, responseCode } = classifySmtpFailure(err)
@@ -772,7 +1199,7 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
         const pk = `xv:${REGION}:adaptive:provider_risk:${job.clientId}:${detectProvider(job.toEmail)}`
         const cur = Number((await redis.get(pk)) ?? 0)
         const next = Math.min(0.5, Math.max(cur, smtpClass === 'block' ? 0.3 : smtpClass === 'deferral' ? 0.15 : 0.1))
-        await redis.set(pk, String(next), { EX: 60 * 60 }) // 1h TTL
+        await redis.set(pk, String(next), 'EX', 60 * 60) // 1h TTL
         await recordMetric(job.clientId, smtpClass === 'block' ? 'block_rate' : smtpClass === 'deferral' ? 'deferral_rate' : 'bounce_rate', 1, {
           provider: detectProvider(job.toEmail),
         })
@@ -788,16 +1215,42 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
           event_code: smtpClass === 'bounce' ? 'EMAIL_BOUNCED' : 'EMAIL_FAILED',
           idempotency_key: idemKey,
           to_email: String(job.toEmail || '').trim().toLowerCase(),
+          from_email: String(
+            (SMTP_ACCOUNTS.length > 0 ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]?.user : process.env.SMTP_USER) ?? ''
+          )
+            .trim()
+            .toLowerCase(),
+          subject: job.subject,
+          body_text: truncateText(job.text, 20_000),
+          body_html: truncateText(job.html, 40_000),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: msg,
           adaptive_experiment: expGroup,
         },
       } as any).catch(() => {})
+
+      if (job.queueJobId) {
+        await db(
+          `UPDATE queue_jobs
+           SET status = CASE
+               WHEN attempts + 1 >= max_attempts THEN 'failed'
+               ELSE 'retry'
+             END,
+             attempts = attempts + 1,
+             last_error = $3,
+             updated_at = CURRENT_TIMESTAMP
+           WHERE client_id = $1 AND id = $2`,
+          [job.clientId, job.queueJobId, msg]
+        ).catch(() => {})
+      }
     }
 
     // Failure state: allow retry with backoff; do not deadlock.
-    await redis.set(failedKey, String((err as any)?.message ?? 'failed'), { EX: 5 * 60 })
+    // For internal throttles, do not poison retries with "recent_failure".
+    if (!isInternalThrottle) {
+      await redis.set(failedKey, String((err as any)?.message ?? 'failed'), 'EX', 5 * 60)
+    }
     await redis.del(inflightKey)
     await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: (err as any)?.message ?? String(err) })
     throw err
@@ -806,16 +1259,38 @@ async function runSend(job: SendJob, bull: Job<SendJob>) {
 
 async function main() {
   console.log('[sender-worker] starting', { queue: SEND_QUEUE })
+  console.log('[sender-worker] config', { SEND_ALLOW_UNKNOWN_VALIDATION })
 
   // Auto-safe deploy: after restart, be conservative for 10 minutes to avoid burst-on-deploy.
-  await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', { EX: 10 * 60 })
+  await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', 'EX', 10 * 60)
 
   await bootstrapFromSnapshots()
+
+  void runLegacyQueueLoop()
 
   const w = new BullWorker<SendJob>(
     SEND_QUEUE,
     async (job) => {
-      await runSend(job.data, job)
+      try {
+        await runSend(job.data, job)
+      } catch (err) {
+        const msg = (err as any)?.message ?? String(err)
+        const retry = parseRetryLater(msg)
+        if (retry) {
+          // Don't burn attempts on internal throttles; re-enqueue a delayed clone.
+          // Avoid BullMQ lock edge cases by not moving the current job state.
+          await sendQueue.add('__internal_retry__', job.data as any, {
+            delay: retry.backoffMs,
+            removeOnComplete: true,
+            removeOnFail: false,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 10_000 },
+          })
+          console.warn('[sender-worker] bull job re-enqueued (retry_later)', { id: job.id, reason: msg, backoffMs: retry.backoffMs })
+          return
+        }
+        throw err
+      }
     },
     {
       connection: { url: reqEnv('REDIS_URL') },

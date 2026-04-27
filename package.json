@@ -10,10 +10,13 @@
     "db:init": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway db:init",
     "env:check": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway env:check",
     "user:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway user:create",
+    "demo:outbound": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/demo-outbound.ts",
+    "send:test": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/send-test.ts",
     "validator:api": "pnpm -C services/validator-engine validator:api",
     "validator:worker": "pnpm -C services/validator-engine validator:worker",
-    "worker:sender": "pnpm -C workers/sender-worker worker:dev",
-    "worker:optimizer": "pnpm -C workers/optimizer-worker worker:dev",
+    "worker:sender": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/sender-worker worker:dev",
+    "worker:optimizer": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/optimizer-worker worker:dev",
+    "worker:inbound": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/inbound-worker worker:dev",
     "tool:api": "pnpm -C services/tool-api tool:api"
   }
 }

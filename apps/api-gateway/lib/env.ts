@@ -92,13 +92,41 @@ export const appEnv = {
   smtpHost: () => required('SMTP_HOST'),
   smtpPort: () => optionalInt('SMTP_PORT', 587),
   smtpSecure: () => process.env.SMTP_SECURE === 'true',
-  smtpUser: () => required('SMTP_USER'),
-  smtpPass: () => required('SMTP_PASS'),
+  smtpAccountsJson: () => process.env.SMTP_ACCOUNTS || '',
+  smtpUser: () => process.env.SMTP_USER || '',
+  smtpPass: () => process.env.SMTP_PASS || '',
+  smtpAccounts: () => {
+    const raw = process.env.SMTP_ACCOUNTS
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
+        .filter((x) => x.user && x.pass)
+    } catch {
+      return []
+    }
+  },
   imapHost: () => process.env.IMAP_HOST || process.env.SMTP_HOST || '',
   imapPort: () => optionalInt('IMAP_PORT', 993),
   imapSecure: () => process.env.IMAP_SECURE !== 'false',
+  imapAccountsJson: () => process.env.IMAP_ACCOUNTS || '',
   imapUser: () => process.env.IMAP_USER || process.env.SMTP_USER || '',
   imapPass: () => process.env.IMAP_PASS || process.env.SMTP_PASS || '',
+  imapAccounts: () => {
+    const raw = process.env.IMAP_ACCOUNTS
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
+        .filter((x) => x.user && x.pass)
+    } catch {
+      return []
+    }
+  },
   imapMailbox: () => process.env.IMAP_MAILBOX || 'INBOX',
   smtpFromEmail: () => process.env.SMTP_FROM_EMAIL || `no-reply@${process.env.SMTP_HOST?.split(':')[0] ?? 'xaviraorbit.com'}`,
   smtpTestMode: () => process.env.SMTP_TEST_MODE === 'true',
@@ -167,10 +195,14 @@ export function validateApiEnv(): void {
 export function validateWorkerEnv(): void {
   validateApiEnv()
   appEnv.smtpHost()
-  appEnv.smtpUser()
-  appEnv.smtpPass()
   appEnv.smtpPort()
   appEnv.smtpFromEmail()
+
+  const smtpAccounts = appEnv.smtpAccounts()
+  if (smtpAccounts.length === 0) {
+    if (!appEnv.smtpUser()) throw new Error('Missing required environment variable: SMTP_USER (or set SMTP_ACCOUNTS)')
+    if (!appEnv.smtpPass()) throw new Error('Missing required environment variable: SMTP_PASS (or set SMTP_ACCOUNTS)')
+  }
 
   if (appEnv.smtpTestMode() && appEnv.smtpTestRecipients().length === 0) {
     throw new Error(

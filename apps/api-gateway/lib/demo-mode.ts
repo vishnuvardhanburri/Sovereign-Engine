@@ -227,7 +227,7 @@ async function saveState(next: DemoState): Promise<void> {
   localState = next
   try {
     const client = await getRedisClient()
-    await client.set(REDIS_KEY, JSON.stringify(next), { EX: 60 * 60 * 24 })
+    await client.set(REDIS_KEY, JSON.stringify(next), 'EX', 60 * 60 * 24)
   } catch {
     // ignore: fall back to local state
   }

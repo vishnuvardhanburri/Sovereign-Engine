@@ -20,7 +20,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { MoreHorizontal, Pause, Play } from 'lucide-react'
+import { MoreHorizontal, Pause, Play, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface Domain {
   id: number
@@ -38,6 +51,9 @@ interface Domain {
 
 export function DomainManager() {
   const queryClient = useQueryClient()
+  const [deleteTarget, setDeleteTarget] = useState<Domain | null>(null)
+  const [deleteOptIn, setDeleteOptIn] = useState(false)
+  const [deleteTyped, setDeleteTyped] = useState('')
 
   const { data: domains = [], isLoading } = useQuery({
     queryKey: ['domains'],
@@ -80,6 +96,32 @@ export function DomainManager() {
     },
     onError: () => {
       toast.error('Failed to resume domain')
+    },
+  })
+
+  const deleteEnabled = useMemo(() => {
+    if (!deleteTarget) return false
+    return deleteOptIn && deleteTyped.trim().toLowerCase() === deleteTarget.domain.trim().toLowerCase()
+  }, [deleteOptIn, deleteTarget, deleteTyped])
+
+  const deleteMutation = useMutation({
+    mutationFn: async (domainId: number) => {
+      const res = await fetch(`/api/domains/${domainId}?confirm=true`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error ?? 'Failed to delete domain')
+      }
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['domains'] })
+      toast.success('Domain deleted')
+      setDeleteTarget(null)
+      setDeleteOptIn(false)
+      setDeleteTyped('')
+    },
+    onError: (err: any) => {
+      toast.error(err?.message ?? 'Failed to delete domain')
     },
   })
 
@@ -184,6 +226,17 @@ export function DomainManager() {
                         Resume
                       </DropdownMenuItem>
                     )}
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => {
+                        setDeleteTarget(domain)
+                        setDeleteOptIn(false)
+                        setDeleteTyped('')
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete domain…
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -191,6 +244,61 @@ export function DomainManager() {
           ))}
         </TableBody>
       </Table>
+
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete domain</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the domain and all identities under it. Historical events will be kept, but the domain will be removed from your configuration.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                checked={deleteOptIn}
+                onCheckedChange={(v) => setDeleteOptIn(Boolean(v))}
+                id="domain-delete-optin"
+              />
+              <label htmlFor="domain-delete-optin" className="text-sm leading-snug">
+                I understand this action is irreversible.
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                Type <span className="font-mono">{deleteTarget?.domain ?? ''}</span> to confirm.
+              </div>
+              <Input
+                value={deleteTyped}
+                onChange={(e) => setDeleteTyped(e.target.value)}
+                placeholder="domain.com"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteTarget(null)
+                setDeleteOptIn(false)
+                setDeleteTyped('')
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!deleteEnabled || deleteMutation.isPending || !deleteTarget}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

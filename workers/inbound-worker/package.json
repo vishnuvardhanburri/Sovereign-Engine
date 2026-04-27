@@ -1,0 +1,31 @@
+{
+  "name": "@xavira/inbound-worker",
+  "version": "1.0.0",
+  "description": "IMAP inbound worker that ingests replies into tracking/events",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "worker:dev": "tsx index.ts",
+    "start": "tsx index.ts",
+    "dev": "NODE_ENV=development tsx watch index.ts",
+    "build": "tsc",
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@xavira/tracking-engine": "workspace:*",
+    "@xavira/types": "workspace:*",
+    "dotenv": "^16.6.1",
+    "imapflow": "^1.0.187",
+    "ioredis": "^5.10.1",
+    "mailparser": "^3.7.4",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.20.6",
+    "typescript": "5.7.3"
+  }
+}
+

@@ -53,7 +53,7 @@ export async function GET(req: Request) {
           throughputCurrent: Number(row.throughput_current ?? 2),
           cooldownUntil: row.cooldown_active ? Date.now() + 30 * 60_000 : 0,
         }
-        await redis.set(stateKey, JSON.stringify(restored), { EX: 60 * 60 * 24 * 7 })
+        await redis.set(stateKey, JSON.stringify(restored), 'EX', 60 * 60 * 24 * 7)
         state = restored
         source = 'snapshot'
       } else {
