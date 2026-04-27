@@ -375,6 +375,15 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  services/followups:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   services/intelligence-engine:
     dependencies:
       '@xavira/provider-engine':
@@ -386,6 +395,19 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  services/lead-intel:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
     devDependencies:
       '@types/node':
         specifier: ^22
@@ -445,7 +467,29 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  services/personalizer:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   services/provider-engine:
+    dependencies:
+      '@xavira/types':
+        specifier: workspace:*
+        version: link:../../libs/types
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  services/reply-handler:
     dependencies:
       '@xavira/types':
         specifier: workspace:*
