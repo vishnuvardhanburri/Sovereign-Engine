@@ -6,11 +6,64 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      production-dependencies:
+      production-patches:
         dependency-type: production
-      development-dependencies:
+        update-types:
+          - patch
+      development-patches:
         dependency-type: development
+        update-types:
+          - patch
+    ignore:
+      # Runtime-adjacent majors need manual upgrade branches and full smoke tests.
+      - dependency-name: "@hookform/resolvers"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@vercel/analytics"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "eslint"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "lucide-react"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "nodemailer"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "puppeteer"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "react-resizable-panels"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "recharts"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "redis"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "sonner"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "typescript"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "zod"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "zustand"
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - version-update:semver-major
