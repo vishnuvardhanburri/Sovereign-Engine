@@ -14,12 +14,12 @@
     "@xavira/simulation-engine": "workspace:*",
     "@xavira/tracking-engine": "workspace:*",
     "@xavira/types": "workspace:*",
-    "bullmq": "^5.76.1",
-    "dotenv": "^16.6.1",
+    "bullmq": "^5.76.4",
+    "dotenv": "^17.4.2",
     "fastify": "^5.8.5",
     "ioredis": "^5.10.1",
     "pg": "^8.11.3",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22",

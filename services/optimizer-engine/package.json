@@ -6,7 +6,7 @@
   "dependencies": {
     "@xavira/types": "workspace:*",
     "ioredis": "^5.10.1",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22",

@@ -4,11 +4,11 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "nodemailer": "^6.9.4"
+    "nodemailer": "^8.0.7"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "@types/nodemailer": "^6.0.0",
+    "@types/nodemailer": "^8.0.0",
     "typescript": "5.7.3"
   }
 }

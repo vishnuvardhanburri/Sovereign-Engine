@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@xavira/optimizer-engine": "workspace:*",
-    "dotenv": "^16.6.1",
+    "dotenv": "^17.4.2",
     "ioredis": "^5.10.1",
     "pg": "^8.11.3"
   },

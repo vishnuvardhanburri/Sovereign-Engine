@@ -28,8 +28,8 @@
     "@xavira/smtp-client": "workspace:*",
     "@xavira/tracking-engine": "workspace:*",
     "@xavira/types": "workspace:*",
-    "bullmq": "^5.76.1",
-    "dotenv": "^16.6.1",
+    "bullmq": "^5.76.4",
+    "dotenv": "^17.4.2",
     "ioredis": "^5.10.1",
     "pg": "^8.11.3"
   },

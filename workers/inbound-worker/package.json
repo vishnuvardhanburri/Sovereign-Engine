@@ -15,8 +15,8 @@
   "dependencies": {
     "@xavira/tracking-engine": "workspace:*",
     "@xavira/types": "workspace:*",
-    "dotenv": "^16.6.1",
-    "imapflow": "^1.0.187",
+    "dotenv": "^17.4.2",
+    "imapflow": "^1.3.3",
     "ioredis": "^5.10.1",
     "mailparser": "^3.7.4",
     "pg": "^8.11.3"
