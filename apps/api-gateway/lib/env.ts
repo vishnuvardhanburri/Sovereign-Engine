@@ -70,6 +70,11 @@ export const appEnv = {
     const domain = required('APP_DOMAIN').trim()
     if (/^https?:\/\//i.test(domain)) return domain
 
+    const forcedProto = (process.env.APP_PROTOCOL || '').trim().toLowerCase()
+    if (forcedProto === 'http' || forcedProto === 'https') {
+      return `${forcedProto}://${domain}`
+    }
+
     // Default to HTTPS for real deployments; use http for local dev hosts.
     const isLocal =
       domain.startsWith('localhost') ||

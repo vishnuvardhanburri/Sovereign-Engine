@@ -7,11 +7,16 @@ const PUBLIC_PATHS = new Set(['/login', '/api/auth/login', '/api/auth/me', '/api
 const SESSION_COOKIE = 'xo_session'
 
 export function proxy(request: NextRequest) {
-  // Cloudflare-ready HTTPS enforcement.
-  // Only redirect in production to avoid breaking localhost dev.
+  // HTTPS enforcement:
+  // - Safe by default for real domains behind a reverse proxy.
+  // - Explicitly disabled when APP_PROTOCOL=http or APP_BASE_URL starts with http://
+  //   (common for early EC2 deployments where TLS termination isn't configured yet).
   if (process.env.NODE_ENV === 'production') {
+    const appProtocol = (process.env.APP_PROTOCOL || '').trim().toLowerCase()
+    const baseUrl = (process.env.APP_BASE_URL || '').trim().toLowerCase()
+    const forceHttps = appProtocol !== 'http' && !baseUrl.startsWith('http://')
     const xfProto = request.headers.get('x-forwarded-proto')
-    if (xfProto && xfProto.toLowerCase() === 'http') {
+    if (forceHttps && xfProto && xfProto.toLowerCase() === 'http') {
       const url = request.nextUrl.clone()
       url.protocol = 'https:'
       return NextResponse.redirect(url, 308)

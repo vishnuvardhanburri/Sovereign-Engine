@@ -15,6 +15,7 @@
     "validator:api": "pnpm -C services/validator-engine validator:api",
     "validator:worker": "pnpm -C services/validator-engine validator:worker",
     "worker:sender": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/sender-worker worker:dev",
+    "worker:reputation": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/reputation-worker worker:dev",
     "worker:optimizer": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/optimizer-worker worker:dev",
     "worker:inbound": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/inbound-worker worker:dev",
     "tool:api": "pnpm -C services/tool-api tool:api"

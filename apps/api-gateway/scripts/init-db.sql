@@ -340,6 +340,40 @@ CREATE TABLE IF NOT EXISTS provider_health_snapshots (
 CREATE INDEX IF NOT EXISTS idx_provider_health_snapshots_client_provider_created
   ON provider_health_snapshots (client_id, provider, created_at DESC);
 
+-- Seed placement measurements (measurement-only; used to detect inbox placement drift).
+CREATE TABLE IF NOT EXISTS seed_placement_events (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook', 'yahoo', 'other')),
+  mailbox TEXT NOT NULL,
+  message_id TEXT,
+  placement TEXT NOT NULL CHECK (placement IN ('inbox', 'spam', 'unknown')),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_seed_placement_events_client_provider_created
+  ON seed_placement_events (client_id, provider, created_at DESC);
+
+-- Durable per-domain/provider reputation state (source of truth; workers also cache in Redis).
+CREATE TABLE IF NOT EXISTS reputation_state (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  domain_id BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook', 'yahoo', 'other')),
+  state TEXT NOT NULL CHECK (state IN ('warmup', 'normal', 'degraded', 'cooldown', 'paused')),
+  max_per_minute INT NOT NULL DEFAULT 2,
+  max_concurrency INT NOT NULL DEFAULT 2,
+  cooldown_until TIMESTAMPTZ,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  metrics_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (client_id, domain_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reputation_state_client_domain_provider
+  ON reputation_state (client_id, domain_id, provider);
+
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (
   id TEXT PRIMARY KEY,
