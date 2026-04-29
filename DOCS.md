@@ -108,3 +108,89 @@ Xavira Orbit is built to be infrastructure agnostic. It can run on AWS EC2, Dock
 - Keep Postgres and Redis shared.
 - Let the Reputation Worker and Adaptive Controller decide what is safe to send.
 - Watch `/api/health/stats` and the reputation dashboard to prove the system is alive, scaled, and controlled.
+
+## Reputation Shield API
+
+Xavira Orbit now exposes its reputation intelligence as a public product surface:
+
+```bash
+curl http://localhost:3000/api/v1/reputation/score/example.com
+```
+
+If `REPUTATION_PUBLIC_API_KEY` is set, callers must include:
+
+```bash
+curl -H "x-api-key: $REPUTATION_PUBLIC_API_KEY" \
+  http://localhost:3000/api/v1/reputation/score/example.com
+```
+
+The API returns a domain score, provider lane health, observed ramp limits, and recommendations. This turns the internal Adaptive Controller into a standalone deliverability intelligence product.
+
+## Multi-Region Reputation Sync
+
+The central source of truth is still Postgres. Redis is the real-time lane signal bus for sender workers.
+
+To publish adaptive lane decisions into multiple regional Redis clusters, configure:
+
+```bash
+ADAPTIVE_REDIS_PEERS=us-east=redis://10.0.1.10:6379,eu-west=redis://10.0.2.10:6379,ap-south=redis://10.0.3.10:6379
+```
+
+The Reputation Worker writes provider lane state into each region using region-scoped keys:
+
+```text
+xv:{region}:adaptive:lane:{clientId}:{domainId}:{provider}
+xv:{region}:adaptive:lane_pause:{clientId}:{domainId}:{provider}
+```
+
+Sender workers in each region set `XV_REGION` to their local region and read their local Redis keys. This lets one central brain coordinate many distributed muscle nodes.
+
+## Investor Mode
+
+Open the hidden investor view:
+
+```text
+/reputation?investor=1
+```
+
+Investor Mode shows:
+
+- Value generated today at the configured B2B lead value.
+- Estimated sending cost.
+- Gross margin.
+- ROI multiple.
+- Projected daily capacity from current lane limits.
+
+Configure assumptions:
+
+```bash
+INVESTOR_LEAD_VALUE_USD=1
+COST_PER_SEND=0.002
+```
+
+## Content AI Boundary
+
+Xavira Orbit supports compliant template quality and approved variation workflows, but it does not build evasion systems whose purpose is to bypass ISP or AI pattern filters. Sustainable deliverability comes from relevance, consent, authentication, suppression, pacing, and reputation discipline.
+
+The safe product direction is:
+
+- Generate clearer, more relevant copy from approved claims.
+- Preserve unsubscribe and sender identity requirements.
+- Keep audit trails for generated copy.
+- Reject misleading, impersonating, or detection-evasion prompts.
+
+## Founder's Manifesto: The Five-Year AI-Deliverability War
+
+Email is becoming an adversarial trust market. Inbox providers will keep improving automated filtering. Senders will keep searching for shortcuts. Xavira Orbit's position is different: we win by becoming the most disciplined reputation operating system in the market.
+
+Year 1: Build the control tower. The product must make every send explainable, every pause auditable, and every ramp decision defensible.
+
+Year 2: Turn reputation intelligence into a standalone API. Customers should be able to use Xavira Orbit even when another system sends their email.
+
+Year 3: Become infrastructure agnostic. The same brain should control workers across AWS, VPS providers, Kubernetes, and edge regions.
+
+Year 4: Build a trusted data moat. Aggregate anonymized provider-lane signals, seed placement outcomes, suppression patterns, and recovery playbooks into a continuously improving reputation model.
+
+Year 5: Own the compliant outbound category. The market will punish reckless bulk systems. Xavira Orbit should be known as the platform that scales outreach without hiding from rules, users, or providers.
+
+The founding principle is simple: durable inbox placement is not hacked. It is earned, measured, protected, and compounded.

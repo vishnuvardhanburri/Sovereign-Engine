@@ -29,6 +29,22 @@ const SENDING_IPS = String(process.env.SENDING_IPS ?? '')
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
+function parseRedisPeers(raw: string | undefined) {
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [regionRaw, ...urlParts] = entry.split('=')
+      const region = regionRaw?.trim()
+      const url = urlParts.join('=').trim()
+      if (!region || !url) return null
+      return { region, redis: new IORedis(url) }
+    })
+    .filter(Boolean) as Array<{ region: string; redis: IORedis }>
+}
+
 type DbExecutor = <T = any>(text: string, params?: any[]) => Promise<{ rows: T[]; rowCount: number }>
 const db: DbExecutor = async (text, params = []) => {
   const client = await pool.connect()
@@ -39,7 +55,8 @@ const db: DbExecutor = async (text, params = []) => {
     client.release()
   }
 }
-const controlEngine = new AdaptiveControlEngine({ db: db as any, redis, region: REGION })
+const REDIS_PEERS = parseRedisPeers(process.env.ADAPTIVE_REDIS_PEERS)
+const controlEngine = new AdaptiveControlEngine({ db: db as any, redis, region: REGION, redisPeers: REDIS_PEERS })
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))

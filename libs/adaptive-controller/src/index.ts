@@ -413,6 +413,10 @@ export type AdaptiveControlEngineDeps = {
     set(key: string, value: string, modeOrTtl?: any, durationOrMode?: any, maybeMode?: any): Promise<any>
     del(...keys: string[]): Promise<any>
   }
+  redisPeers?: Array<{
+    region: string
+    redis: AdaptiveControlEngineDeps['redis']
+  }>
   region?: string
   now?: () => number
 }
@@ -461,6 +465,7 @@ function hoursBetween(aMs: number, bMs: number) {
 export class AdaptiveControlEngine {
   private readonly db: DbExecutor
   private readonly redis: AdaptiveControlEngineDeps['redis']
+  private readonly redisPeers: NonNullable<AdaptiveControlEngineDeps['redisPeers']>
   private readonly region: string
   private readonly now: () => number
   private readonly maxLanePerHour: number
@@ -468,6 +473,7 @@ export class AdaptiveControlEngine {
   constructor(deps: AdaptiveControlEngineDeps & { maxLanePerHour?: number }) {
     this.db = deps.db
     this.redis = deps.redis
+    this.redisPeers = deps.redisPeers ?? []
     this.region = deps.region ?? 'local'
     this.now = deps.now ?? (() => Date.now())
     this.maxLanePerHour = deps.maxLanePerHour ?? Number(process.env.ADAPTIVE_MAX_LANE_PER_HOUR ?? 5_000)
@@ -715,15 +721,7 @@ export class AdaptiveControlEngine {
       ]
     )
 
-    const laneKey = `xv:${this.region}:adaptive:lane:${signal.clientId}:${signal.domainId}:${signal.provider}`
-    await this.redis.set(laneKey, JSON.stringify(signal), 'EX', 60 * 10)
-
-    const pauseKey = `xv:${this.region}:adaptive:lane_pause:${signal.clientId}:${signal.domainId}:${signal.provider}`
-    if (signal.state === 'paused' || signal.action === 'pause') {
-      await this.redis.set(pauseKey, JSON.stringify(signal), 'EX', 60 * 60)
-    } else {
-      await this.redis.del(pauseKey)
-    }
+    await this.publishSignal(signal)
 
     const changed =
       !previousComparable ||
@@ -770,6 +768,26 @@ export class AdaptiveControlEngine {
         }),
         JSON.stringify(signal.metrics),
       ]
+    )
+  }
+
+  private async publishSignal(signal: AdaptiveControlSignal) {
+    const peers = [{ region: this.region, redis: this.redis }, ...this.redisPeers]
+    await Promise.allSettled(
+      peers.map(async (peer) => {
+        const laneKey = `xv:${peer.region}:adaptive:lane:${signal.clientId}:${signal.domainId}:${signal.provider}`
+        await peer.redis.set(laneKey, JSON.stringify(signal), 'EX', 60 * 10)
+
+        const pauseKey = `xv:${peer.region}:adaptive:lane_pause:${signal.clientId}:${signal.domainId}:${signal.provider}`
+        if (signal.state === 'paused' || signal.action === 'pause') {
+          await peer.redis.set(pauseKey, JSON.stringify(signal), 'EX', 60 * 60)
+        } else {
+          await peer.redis.del(pauseKey)
+        }
+
+        const syncKey = `xv:${peer.region}:adaptive:last_sync:${signal.clientId}:${signal.domainId}:${signal.provider}`
+        await peer.redis.set(syncKey, new Date(this.now()).toISOString(), 'EX', 60 * 60)
+      })
     )
   }
 

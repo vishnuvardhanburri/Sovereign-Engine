@@ -1,0 +1,9 @@
+* @vishnuvardhanburri
+
+/apps/api-gateway/app/api/security/ @vishnuvardhanburri
+/apps/api-gateway/app/api/v1/ @vishnuvardhanburri
+/libs/adaptive-controller/ @vishnuvardhanburri
+/workers/sender-worker/ @vishnuvardhanburri
+/workers/reputation-worker/ @vishnuvardhanburri
+/docker-compose.prod.yml @vishnuvardhanburri
+/Dockerfile @vishnuvardhanburri

@@ -67,6 +67,15 @@ type RampRow = {
   max_per_hour: string | number | null
 }
 
+type InvestorRow = {
+  sent_today: string
+  replies_today: string
+  bounces_today: string
+  complaints_today: string
+  domains_active: string
+  active_capacity_per_hour: string
+}
+
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -157,7 +166,7 @@ export async function GET(request: NextRequest) {
       domainWhere.push(`id = $${domainParams.length}`)
     }
 
-    const [domainResult, stateResult, eventResult, rampResult] = await Promise.all([
+    const [domainResult, stateResult, eventResult, rampResult, investorResult] = await Promise.all([
       query<DomainRow>(
         `SELECT id, domain, status, daily_limit
          FROM domains
@@ -253,6 +262,23 @@ export async function GET(request: NextRequest) {
          LIMIT 300`,
         [clientId, domainId]
       ),
+      query<InvestorRow>(
+        `SELECT
+           COUNT(*) FILTER (WHERE e.event_type = 'sent' AND e.created_at >= CURRENT_DATE)::text AS sent_today,
+           COUNT(*) FILTER (WHERE e.event_type = 'reply' AND e.created_at >= CURRENT_DATE)::text AS replies_today,
+           COUNT(*) FILTER (WHERE e.event_type = 'bounce' AND e.created_at >= CURRENT_DATE)::text AS bounces_today,
+           COUNT(*) FILTER (WHERE e.event_type = 'complaint' AND e.created_at >= CURRENT_DATE)::text AS complaints_today,
+           (SELECT COUNT(*)::text FROM domains d WHERE d.client_id = $1 AND d.status = 'active') AS domains_active,
+           (SELECT COALESCE(SUM(rs.max_per_hour), 0)::text
+            FROM reputation_state rs
+            WHERE rs.client_id = $1
+              AND rs.state <> 'paused'
+              AND ($2::bigint IS NULL OR rs.domain_id = $2::bigint)) AS active_capacity_per_hour
+         FROM events e
+         WHERE e.client_id = $1
+           AND ($2::bigint IS NULL OR e.domain_id = $2::bigint)`,
+        [clientId, domainId]
+      ),
     ])
 
     const states = stateResult.rows.map((row) => ({
@@ -280,6 +306,13 @@ export async function GET(request: NextRequest) {
       seedSample24h: toNumber(row.seed_sample_24h),
       metricsSnapshot: row.metrics_snapshot,
     }))
+    const investor = investorResult.rows[0]
+    const leadValueUsd = toNumber(process.env.INVESTOR_LEAD_VALUE_USD, 1)
+    const costPerSendUsd = toNumber(process.env.COST_PER_SEND, 0.002)
+    const sentToday = toNumber(investor?.sent_today)
+    const sendingCostsUsd = sentToday * costPerSendUsd
+    const valueGeneratedUsd = sentToday * leadValueUsd
+    const projectedDailyCapacity = toNumber(investor?.active_capacity_per_hour) * 10
 
     return NextResponse.json({
       ok: true,
@@ -316,6 +349,21 @@ export async function GET(request: NextRequest) {
         domain: row.domain,
         maxPerHour: toNumber(row.max_per_hour),
       })),
+      investor: {
+        leadValueUsd,
+        costPerSendUsd,
+        sentToday,
+        repliesToday: toNumber(investor?.replies_today),
+        bouncesToday: toNumber(investor?.bounces_today),
+        complaintsToday: toNumber(investor?.complaints_today),
+        activeDomains: toNumber(investor?.domains_active),
+        activeCapacityPerHour: toNumber(investor?.active_capacity_per_hour),
+        projectedDailyCapacity,
+        valueGeneratedUsd,
+        sendingCostsUsd,
+        grossMarginUsd: valueGeneratedUsd - sendingCostsUsd,
+        roiMultiple: sendingCostsUsd > 0 ? valueGeneratedUsd / sendingCostsUsd : null,
+      },
     })
   } catch (error) {
     console.error('[api/reputation/monitor] failed', error)

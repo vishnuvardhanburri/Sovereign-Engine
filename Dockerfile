@@ -30,6 +30,10 @@ ENV NODE_ENV=production \
   SMTP_SECURE=false \
   ZEROBOUNCE_API_KEY=mock \
   SECURITY_KILL_SWITCH_TOKEN=build-only \
+  REPUTATION_PUBLIC_API_KEY= \
+  ADAPTIVE_REDIS_PEERS= \
+  INVESTOR_LEAD_VALUE_USD=1 \
+  COST_PER_SEND=0.002 \
   MOCK_SMTP=true
 
 RUN pnpm -C apps/api-gateway build

@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
+  DollarSign,
   Gauge,
   Pause,
   Play,
@@ -119,6 +120,21 @@ type ReputationMonitorResponse = {
   states: LaneState[]
   events: ReputationEvent[]
   ramp: RampPoint[]
+  investor?: {
+    leadValueUsd: number
+    costPerSendUsd: number
+    sentToday: number
+    repliesToday: number
+    bouncesToday: number
+    complaintsToday: number
+    activeDomains: number
+    activeCapacityPerHour: number
+    projectedDailyCapacity: number
+    valueGeneratedUsd: number
+    sendingCostsUsd: number
+    grossMarginUsd: number
+    roiMultiple: number | null
+  }
 }
 
 const providerOrder: ProviderKey[] = ['gmail', 'outlook', 'yahoo', 'other']
@@ -136,6 +152,14 @@ function pct(value: number, digits = 1) {
 
 function numberFmt(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(value || 0))
+}
+
+function moneyFmt(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: value >= 1000 ? 0 : 2,
+  }).format(Number(value || 0))
 }
 
 function shortTime(value: string) {
@@ -195,6 +219,11 @@ export default function ReputationDashboardPage() {
   const [clientId, setClientId] = useState(1)
   const [domainId, setDomainId] = useState('all')
   const [busyOverride, setBusyOverride] = useState<string | null>(null)
+  const [investorMode, setInvestorMode] = useState(false)
+
+  useEffect(() => {
+    setInvestorMode(new URLSearchParams(window.location.search).get('investor') === '1')
+  }, [])
 
   const queryKey = ['reputation-monitor', clientId, domainId]
   const { data, isLoading, error, isFetching } = useQuery({
@@ -298,6 +327,52 @@ export default function ReputationDashboardPage() {
           <CardContent className="flex items-center gap-3 pt-6 text-red-600">
             <AlertTriangle className="h-5 w-5" />
             Reputation monitor API failed. Check Postgres/Redis env and run migrations.
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {investorMode && data?.investor ? (
+        <Card className="overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-background to-sky-500/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-emerald-600" />
+              Investor View
+              <Badge variant="outline" className="border-emerald-500/20 bg-emerald-500/10 text-emerald-600">
+                hidden mode
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border bg-background/80 p-4">
+                <p className="text-xs text-muted-foreground">Value generated today</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.valueGeneratedUsd)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {numberFmt(data.investor.sentToday)} leads x {moneyFmt(data.investor.leadValueUsd)}
+                </p>
+              </div>
+              <div className="rounded-xl border bg-background/80 p-4">
+                <p className="text-xs text-muted-foreground">Estimated sending cost</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.sendingCostsUsd)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {moneyFmt(data.investor.costPerSendUsd)} per send model
+                </p>
+              </div>
+              <div className="rounded-xl border bg-background/80 p-4">
+                <p className="text-xs text-muted-foreground">Gross margin proof</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.grossMarginUsd)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  ROI {data.investor.roiMultiple ? `${data.investor.roiMultiple.toFixed(1)}x` : 'N/A'}
+                </p>
+              </div>
+              <div className="rounded-xl border bg-background/80 p-4">
+                <p className="text-xs text-muted-foreground">Projected daily capacity</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{numberFmt(data.investor.projectedDailyCapacity)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {numberFmt(data.investor.activeCapacityPerHour)}/hr across active lanes
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       ) : null}
