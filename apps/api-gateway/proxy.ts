@@ -39,6 +39,7 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/campaigns') ||
     pathname.startsWith('/contacts') ||
     pathname.startsWith('/domains') ||
+    pathname.startsWith('/reputation') ||
     pathname.startsWith('/sequences') ||
     pathname.startsWith('/inbox') ||
     pathname.startsWith('/settings') ||

@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Settings,
   Bot,
+  Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { href: '/ai-assistant', label: 'Autonomous Engine', icon: Bot },
   { href: '/campaigns', label: 'Outbound Campaigns', icon: Mail, prefetch: 'prefetchCampaigns' },
   { href: '/domains', label: 'Sending Health', icon: Globe, prefetch: 'prefetchDomains' },
+  { href: '/reputation', label: 'Reputation Brain', icon: Activity },
   { href: '/contacts', label: 'Prospects', icon: Users, prefetch: 'prefetchContacts' },
   { href: '/sequences', label: 'Message Sequences', icon: ListOrdered, prefetch: 'prefetchSequences' },
   { href: '/analytics', label: 'Performance', icon: LineChart, prefetch: 'prefetchAnalytics' },
