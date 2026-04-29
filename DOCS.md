@@ -85,7 +85,7 @@ To prove queue throughput without sending real email:
 
 ```bash
 MOCK_SMTP=true MOCK_SMTP_FASTLANE=true SENDER_WORKER_CONCURRENCY=50 pnpm worker:sender
-STRESS_COUNT=10000 pnpm stress:test
+STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:test
 ```
 
 The stress test creates mock contacts, marks them as validator-approved, creates queue jobs, pushes them through Redis, lets sender workers process them, and verifies `sent` events were ingested into Postgres.
@@ -211,7 +211,7 @@ Open the hidden investor view:
 
 Investor Mode shows:
 
-- Value generated today at the configured B2B lead value.
+- Value generated today from estimated inboxed emails at the configured B2B lead value.
 - Estimated sending cost.
 - Gross margin.
 - ROI multiple.
@@ -220,7 +220,7 @@ Investor Mode shows:
 Configure assumptions:
 
 ```bash
-INVESTOR_LEAD_VALUE_USD=1
+INVESTOR_LEAD_VALUE_USD=0.5
 COST_PER_SEND=0.002
 ```
 

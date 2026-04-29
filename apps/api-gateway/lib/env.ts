@@ -55,6 +55,9 @@ const optionalBool = (name: string, fallback: boolean): boolean => {
   return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
 }
 
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value))
+
 export const appEnv = {
   databaseUrl: () => validateDatabaseUrl(required('DATABASE_URL')),
   redisUrl: () => required('REDIS_URL'),

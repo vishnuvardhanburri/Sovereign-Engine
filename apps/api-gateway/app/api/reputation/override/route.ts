@@ -7,6 +7,7 @@ type Provider = 'gmail' | 'outlook' | 'yahoo' | 'other'
 type OverrideAction = 'pause' | 'resume'
 
 const REGION = process.env.XV_REGION ?? 'local'
+const PROVIDERS: Provider[] = ['gmail', 'outlook', 'yahoo', 'other']
 
 let redis: IORedis | null = null
 
@@ -19,6 +20,7 @@ function getRedis() {
 
 function normalizeProvider(value: unknown): Provider | null {
   const raw = String(value ?? '').trim().toLowerCase()
+  if (!raw || raw === 'all') return null
   if (raw === 'icloud') return 'other'
   if (raw === 'gmail' || raw === 'outlook' || raw === 'yahoo' || raw === 'other') return raw
   return null
@@ -95,140 +97,192 @@ function buildSignal(input: {
   }
 }
 
+function overrideMessage(input: {
+  action: OverrideAction
+  provider: Provider
+  domain: string
+  bulk: boolean
+}) {
+  if (input.action === 'pause') {
+    return input.bulk
+      ? `Manual override paused ${providerLabel(input.provider)} lane for ${input.domain} during Pause All.`
+      : `Manual override paused ${providerLabel(input.provider)} lane for ${input.domain}.`
+  }
+
+  return input.bulk
+    ? `Manual override resumed ${providerLabel(input.provider)} lane for ${input.domain} at safe-ramp 50/hr during Resume All.`
+    : `Manual override resumed ${providerLabel(input.provider)} lane for ${input.domain} at safe-ramp 50/hr.`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const clientId = await resolveClientId({ body, headers: request.headers })
-    const domainId = Number(body.domain_id ?? body.domainId)
+    const rawDomainId = body.domain_id ?? body.domainId
+    const domainId =
+      rawDomainId === undefined || rawDomainId === null || rawDomainId === ''
+        ? null
+        : Number(rawDomainId)
+    const rawProvider = String(body.provider ?? '').trim().toLowerCase()
+    const hasSpecificProvider = Boolean(rawProvider && rawProvider !== 'all')
     const provider = normalizeProvider(body.provider)
     const action = normalizeAction(body.action)
+    const providers = provider ? [provider] : PROVIDERS
 
-    if (!Number.isFinite(domainId) || domainId <= 0) {
-      return NextResponse.json({ ok: false, error: 'domain_id is required' }, { status: 400 })
+    if (domainId !== null && (!Number.isFinite(domainId) || domainId <= 0)) {
+      return NextResponse.json({ ok: false, error: 'domain_id must be a positive number when provided' }, { status: 400 })
     }
-    if (!provider) {
-      return NextResponse.json({ ok: false, error: 'provider must be gmail, outlook, yahoo, or other' }, { status: 400 })
+    if (hasSpecificProvider && !provider) {
+      return NextResponse.json({ ok: false, error: 'provider must be gmail, outlook, yahoo, other, icloud, or all' }, { status: 400 })
     }
     if (!action) {
       return NextResponse.json({ ok: false, error: 'action must be pause or resume' }, { status: 400 })
     }
 
     const result = await transaction(async (exec) => {
-      const domainRes = await exec<{ domain: string }>(
-        `SELECT domain
+      const domainParams: unknown[] = [clientId]
+      const domainWhere = ['client_id = $1']
+      if (domainId !== null) {
+        domainParams.push(domainId)
+        domainWhere.push(`id = $${domainParams.length}`)
+      }
+
+      const domainRes = await exec<{ id: string | number; domain: string }>(
+        `SELECT id, domain
          FROM domains
-         WHERE client_id = $1 AND id = $2
-         LIMIT 1`,
-        [clientId, domainId]
+         WHERE ${domainWhere.join(' AND ')}
+         ORDER BY domain ASC`,
+        domainParams
       )
-      const domain = domainRes.rows[0]?.domain
-      if (!domain) {
-        return { notFound: true as const }
+
+      if (!domainRes.rows.length) {
+        return { notFound: true as const, lanes: [] }
       }
 
-      const previousRes = await exec<{
-        state: string
-        max_per_hour: number | string
-        max_per_minute: number | string
-        max_concurrency: number | string
-        cooldown_until: string | null
-        reasons: unknown
-      }>(
-        `SELECT state, max_per_hour, max_per_minute, max_concurrency, cooldown_until, reasons
-         FROM reputation_state
-         WHERE client_id = $1 AND domain_id = $2 AND provider = $3
-         LIMIT 1`,
-        [clientId, domainId, provider]
-      )
+      const lanes: Array<{
+        domainId: number
+        domain: string
+        provider: Provider
+        signal: ReturnType<typeof buildSignal>['signal']
+        message: string
+      }> = []
+      const bulk = domainRes.rows.length > 1 || providers.length > 1
 
-      const { signal, persistence } = buildSignal({ clientId, domainId, provider, action, domain })
+      for (const domainRow of domainRes.rows) {
+        const currentDomainId = Number(domainRow.id)
+        for (const currentProvider of providers) {
+          const previousRes = await exec<{
+            state: string
+            max_per_hour: number | string
+            max_per_minute: number | string
+            max_concurrency: number | string
+            cooldown_until: string | null
+            reasons: unknown
+          }>(
+            `SELECT state, max_per_hour, max_per_minute, max_concurrency, cooldown_until, reasons
+             FROM reputation_state
+             WHERE client_id = $1 AND domain_id = $2 AND provider = $3
+             LIMIT 1`,
+            [clientId, currentDomainId, currentProvider]
+          )
 
-      const upsertRes = await exec<{ id: string | number }>(
-        `INSERT INTO reputation_state (
-           client_id,
-           domain_id,
-           provider,
-           state,
-           max_per_hour,
-           max_per_minute,
-           max_concurrency,
-           cooldown_until,
-           reasons,
-           metrics_snapshot,
-           updated_at
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,CURRENT_TIMESTAMP)
-         ON CONFLICT (client_id, domain_id, provider)
-         DO UPDATE SET
-           state = EXCLUDED.state,
-           max_per_hour = EXCLUDED.max_per_hour,
-           max_per_minute = EXCLUDED.max_per_minute,
-           max_concurrency = EXCLUDED.max_concurrency,
-           cooldown_until = EXCLUDED.cooldown_until,
-           reasons = EXCLUDED.reasons,
-           metrics_snapshot = EXCLUDED.metrics_snapshot,
-           updated_at = CURRENT_TIMESTAMP
-         RETURNING id`,
-        [
-          clientId,
-          domainId,
-          provider,
-          persistence.state,
-          persistence.maxPerHour,
-          persistence.maxPerMinute,
-          persistence.maxConcurrency,
-          persistence.cooldownUntil,
-          JSON.stringify(persistence.reasons),
-          JSON.stringify(persistence.metricsSnapshot),
-        ]
-      )
+          const { signal, persistence } = buildSignal({
+            clientId,
+            domainId: currentDomainId,
+            provider: currentProvider,
+            action,
+            domain: domainRow.domain,
+          })
 
-      const eventType = action === 'pause' ? 'pause' : 'resume'
-      const severity = action === 'pause' ? 'critical' : 'info'
-      const message =
-        action === 'pause'
-          ? `Manual override paused ${providerLabel(provider)} lane for ${domain}.`
-          : `Manual override resumed ${providerLabel(provider)} lane for ${domain} at safe-ramp 50/hr.`
+          await exec(
+            `INSERT INTO reputation_state (
+               client_id,
+               domain_id,
+               provider,
+               state,
+               max_per_hour,
+               max_per_minute,
+               max_concurrency,
+               cooldown_until,
+               reasons,
+               metrics_snapshot,
+               updated_at
+             )
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,CURRENT_TIMESTAMP)
+             ON CONFLICT (client_id, domain_id, provider)
+             DO UPDATE SET
+               state = EXCLUDED.state,
+               max_per_hour = EXCLUDED.max_per_hour,
+               max_per_minute = EXCLUDED.max_per_minute,
+               max_concurrency = EXCLUDED.max_concurrency,
+               cooldown_until = EXCLUDED.cooldown_until,
+               reasons = EXCLUDED.reasons,
+               metrics_snapshot = EXCLUDED.metrics_snapshot,
+               updated_at = CURRENT_TIMESTAMP`,
+            [
+              clientId,
+              currentDomainId,
+              currentProvider,
+              persistence.state,
+              persistence.maxPerHour,
+              persistence.maxPerMinute,
+              persistence.maxConcurrency,
+              persistence.cooldownUntil,
+              JSON.stringify(persistence.reasons),
+              JSON.stringify(persistence.metricsSnapshot),
+            ]
+          )
 
-      await exec(
-        `INSERT INTO reputation_events (
-           client_id,
-           domain_id,
-           provider,
-           event_type,
-           severity,
-           message,
-           previous_state,
-           next_state,
-           metrics_snapshot
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)`,
-        [
-          clientId,
-          domainId,
-          provider,
-          eventType,
-          severity,
-          message,
-          JSON.stringify(previousRes.rows[0] ?? null),
-          JSON.stringify({
-            state: persistence.state,
-            max_per_hour: persistence.maxPerHour,
-            max_per_minute: persistence.maxPerMinute,
-            max_concurrency: persistence.maxConcurrency,
-            reasons: persistence.reasons,
-          }),
-          JSON.stringify(persistence.metricsSnapshot),
-        ]
-      )
+          const message = overrideMessage({
+            action,
+            provider: currentProvider,
+            domain: domainRow.domain,
+            bulk,
+          })
 
-      return {
-        notFound: false as const,
-        domain,
-        reputationStateId: upsertRes.rows[0]?.id,
-        signal,
-        message,
+          await exec(
+            `INSERT INTO reputation_events (
+               client_id,
+               domain_id,
+               provider,
+               event_type,
+               severity,
+               message,
+               previous_state,
+               next_state,
+               metrics_snapshot
+             )
+             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)`,
+            [
+              clientId,
+              currentDomainId,
+              currentProvider,
+              action === 'pause' ? 'pause' : 'resume',
+              action === 'pause' ? 'critical' : 'info',
+              message,
+              JSON.stringify(previousRes.rows[0] ?? null),
+              JSON.stringify({
+                state: persistence.state,
+                max_per_hour: persistence.maxPerHour,
+                max_per_minute: persistence.maxPerMinute,
+                max_concurrency: persistence.maxConcurrency,
+                reasons: persistence.reasons,
+              }),
+              JSON.stringify(persistence.metricsSnapshot),
+            ]
+          )
+
+          lanes.push({
+            domainId: currentDomainId,
+            domain: domainRow.domain,
+            provider: currentProvider,
+            signal,
+            message,
+          })
+        }
       }
+
+      return { notFound: false as const, lanes }
     })
 
     if (result.notFound) {
@@ -236,25 +290,27 @@ export async function POST(request: NextRequest) {
     }
 
     const redisClient = getRedis()
-    const laneKey = `xv:${REGION}:adaptive:lane:${clientId}:${domainId}:${provider}`
-    const pauseKey = `xv:${REGION}:adaptive:lane_pause:${clientId}:${domainId}:${provider}`
     const ttlSeconds = action === 'pause' ? 60 * 60 : 60 * 10
-
-    await redisClient.set(laneKey, JSON.stringify(result.signal), 'EX', ttlSeconds)
-    if (action === 'pause') {
-      await redisClient.set(pauseKey, JSON.stringify(result.signal), 'EX', ttlSeconds)
-    } else {
-      await redisClient.del(pauseKey)
+    for (const lane of result.lanes) {
+      const laneKey = `xv:${REGION}:adaptive:lane:${clientId}:${lane.domainId}:${lane.provider}`
+      const pauseKey = `xv:${REGION}:adaptive:lane_pause:${clientId}:${lane.domainId}:${lane.provider}`
+      await redisClient.set(laneKey, JSON.stringify(lane.signal), 'EX', ttlSeconds)
+      if (action === 'pause') {
+        await redisClient.set(pauseKey, JSON.stringify(lane.signal), 'EX', ttlSeconds)
+      } else {
+        await redisClient.del(pauseKey)
+      }
     }
 
     return NextResponse.json({
       ok: true,
       clientId,
       domainId,
-      provider,
+      provider: provider ?? 'all',
       action,
-      message: result.message,
-      redis: { synced: true, laneKey, pauseKey },
+      affectedLanes: result.lanes.length,
+      messages: result.lanes.map((lane) => lane.message),
+      redis: { synced: true, region: REGION },
     })
   } catch (error) {
     console.error('[api/reputation/override] failed', error)

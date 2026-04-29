@@ -337,7 +337,7 @@ async function waitForCompletion(clientId: number, campaignId: number, count: nu
 async function main() {
   const clientId = intEnv('STRESS_CLIENT_ID', intEnv('DEFAULT_CLIENT_ID', 1))
   const count = intEnv('STRESS_COUNT', 10_000)
-  const timeoutMs = intEnv('STRESS_TIMEOUT_MS', 120_000)
+  const timeoutMs = intEnv('STRESS_TIMEOUT_MS', 60_000)
   const region = process.env.XV_REGION ?? 'local'
   const runId = process.env.STRESS_RUN_ID ?? `${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`
   const enqueueOnly = boolEnv('STRESS_ENQUEUE_ONLY', false)

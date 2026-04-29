@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       clientId,
       time: now.toISOString(),
-      baseUrl: appEnv.baseUrl(),
+      baseUrl: appEnv.appBaseUrl(),
       rates: {
         send_rate_per_min: Number(sent1m.rows[0]?.count ?? 0),
         send_rate_per_hour: Number(sent1h.rows[0]?.count ?? 0),
@@ -122,4 +122,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'failed' }, { status: 500 })
   }
 }
-

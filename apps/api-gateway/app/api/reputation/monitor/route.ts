@@ -81,6 +81,25 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function metricFromSnapshot(row: StateRow, names: string[], fallback: unknown) {
+  const snapshot = asRecord(row.metrics_snapshot)
+  const nested = asRecord(snapshot.metrics)
+  const signal = asRecord(snapshot.signal)
+  const signalMetrics = asRecord(signal.metrics)
+
+  for (const name of names) {
+    const value = nested[name] ?? signalMetrics[name] ?? snapshot[name]
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+
+  return fallback
+}
+
 function normalizeJsonArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String)
   if (typeof value === 'string') {
@@ -98,8 +117,12 @@ function laneStatus(row: StateRow): LaneStatus {
   const maxPerHour = toNumber(row.max_per_hour)
   const state = row.state
   const throttleFactor = toNumber(row.throttle_factor, 1)
-  const deferralRate = toNumber(row.deferral_rate_1h)
-  const blockRate = toNumber(row.block_rate_1h)
+  const deferralRate = toNumber(
+    metricFromSnapshot(row, ['deferralRate1h', 'deferral_rate_1h', 'deferral_rate'], row.deferral_rate_1h)
+  )
+  const blockRate = toNumber(
+    metricFromSnapshot(row, ['blockRate1h', 'block_rate_1h', 'block_rate'], row.block_rate_1h)
+  )
 
   if (state === 'paused' || maxPerHour <= 0) return 'PAUSED'
   if (
@@ -128,9 +151,12 @@ function summarizeProvider(provider: Provider, rows: StateRow[]) {
 
   const maxPerHour = providerRows.reduce((sum, row) => sum + toNumber(row.max_per_hour), 0)
   const maxConcurrency = providerRows.reduce((sum, row) => sum + toNumber(row.max_concurrency), 0)
-  const avg = (key: keyof StateRow, fallback = 0) => {
+  const avgMetric = (names: string[], key: keyof StateRow, fallback = 0) => {
     if (!providerRows.length) return fallback
-    return providerRows.reduce((sum, row) => sum + toNumber(row[key], fallback), 0) / providerRows.length
+    return (
+      providerRows.reduce((sum, row) => sum + toNumber(metricFromSnapshot(row, names, row[key]), fallback), 0) /
+      providerRows.length
+    )
   }
 
   return {
@@ -142,10 +168,14 @@ function summarizeProvider(provider: Provider, rows: StateRow[]) {
     throttledDomains: statuses.filter((item) => item === 'THROTTLED').length,
     maxPerHour,
     maxConcurrency,
-    deferralRate1h: avg('deferral_rate_1h'),
-    blockRate1h: avg('block_rate_1h'),
-    sendSuccessRate1h: avg('send_success_rate_1h', 1),
-    seedPlacementInboxRate: avg('seed_inbox_rate_24h', 1),
+    deferralRate1h: avgMetric(['deferralRate1h', 'deferral_rate_1h', 'deferral_rate'], 'deferral_rate_1h'),
+    blockRate1h: avgMetric(['blockRate1h', 'block_rate_1h', 'block_rate'], 'block_rate_1h'),
+    sendSuccessRate1h: avgMetric(['sendSuccessRate1h', 'success_rate_1h', 'success_rate'], 'send_success_rate_1h', 1),
+    seedPlacementInboxRate: avgMetric(
+      ['seedPlacementInboxRate', 'seed_placement_inbox_rate', 'inbox_placement_rate'],
+      'seed_inbox_rate_24h',
+      1
+    ),
     seedSample24h: providerRows.reduce((sum, row) => sum + toNumber(row.seed_sample_24h), 0),
   }
 }
@@ -297,21 +327,39 @@ export async function GET(request: NextRequest) {
       cooldownUntil: row.cooldown_until,
       reasons: normalizeJsonArray(row.reasons),
       updatedAt: row.updated_at,
-      deferralRate1h: toNumber(row.deferral_rate_1h),
-      blockRate1h: toNumber(row.block_rate_1h),
-      sendSuccessRate1h: toNumber(row.send_success_rate_1h, 1),
+      deferralRate1h: toNumber(
+        metricFromSnapshot(row, ['deferralRate1h', 'deferral_rate_1h', 'deferral_rate'], row.deferral_rate_1h)
+      ),
+      blockRate1h: toNumber(
+        metricFromSnapshot(row, ['blockRate1h', 'block_rate_1h', 'block_rate'], row.block_rate_1h)
+      ),
+      sendSuccessRate1h: toNumber(
+        metricFromSnapshot(row, ['sendSuccessRate1h', 'success_rate_1h', 'success_rate'], row.send_success_rate_1h),
+        1
+      ),
       throttleFactor: toNumber(row.throttle_factor, 1),
       providerSnapshotAt: row.provider_snapshot_at,
-      seedPlacementInboxRate: toNumber(row.seed_inbox_rate_24h, 1),
+      seedPlacementInboxRate: toNumber(
+        metricFromSnapshot(
+          row,
+          ['seedPlacementInboxRate', 'seed_placement_inbox_rate', 'inbox_placement_rate'],
+          row.seed_inbox_rate_24h
+        ),
+        1
+      ),
       seedSample24h: toNumber(row.seed_sample_24h),
       metricsSnapshot: row.metrics_snapshot,
     }))
     const investor = investorResult.rows[0]
-    const leadValueUsd = toNumber(process.env.INVESTOR_LEAD_VALUE_USD, 1)
+    const leadValueUsd = toNumber(process.env.INVESTOR_LEAD_VALUE_USD, 0.5)
     const costPerSendUsd = toNumber(process.env.COST_PER_SEND, 0.002)
     const sentToday = toNumber(investor?.sent_today)
     const sendingCostsUsd = sentToday * costPerSendUsd
-    const valueGeneratedUsd = sentToday * leadValueUsd
+    const avgInboxPlacementRate = states.length
+      ? states.reduce((sum, row) => sum + row.seedPlacementInboxRate, 0) / states.length
+      : 1
+    const estimatedInboxedToday = Math.floor(sentToday * Math.max(0, Math.min(1, avgInboxPlacementRate)))
+    const valueGeneratedUsd = estimatedInboxedToday * leadValueUsd
     const projectedDailyCapacity = toNumber(investor?.active_capacity_per_hour) * 10
 
     return NextResponse.json({
@@ -359,6 +407,8 @@ export async function GET(request: NextRequest) {
         activeDomains: toNumber(investor?.domains_active),
         activeCapacityPerHour: toNumber(investor?.active_capacity_per_hour),
         projectedDailyCapacity,
+        estimatedInboxedToday,
+        avgInboxPlacementRate,
         valueGeneratedUsd,
         sendingCostsUsd,
         grossMarginUsd: valueGeneratedUsd - sendingCostsUsd,

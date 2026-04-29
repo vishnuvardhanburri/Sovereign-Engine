@@ -130,6 +130,8 @@ type ReputationMonitorResponse = {
     activeDomains: number
     activeCapacityPerHour: number
     projectedDailyCapacity: number
+    estimatedInboxedToday: number
+    avgInboxPlacementRate: number
     valueGeneratedUsd: number
     sendingCostsUsd: number
     grossMarginUsd: number
@@ -265,6 +267,29 @@ export default function ReputationDashboardPage() {
     }
   }
 
+  async function overrideAll(action: 'pause' | 'resume') {
+    const key = `all:${action}`
+    setBusyOverride(key)
+    try {
+      const payload: Record<string, unknown> = {
+        client_id: clientId,
+        action,
+        scope: 'all',
+      }
+      if (domainId !== 'all') payload.domain_id = Number(domainId)
+
+      const res = await fetch('/api/reputation/override', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error(`${action === 'pause' ? 'Pause All' : 'Resume'} failed`)
+      await queryClient.invalidateQueries({ queryKey: ['reputation-monitor'] })
+    } finally {
+      setBusyOverride(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -314,13 +339,71 @@ export default function ReputationDashboardPage() {
               </select>
             </div>
             <div className="flex items-end">
-              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                Manual overrides are lane-scoped. Pause Gmail without stopping Outlook, Yahoo, or iCloud.
+              <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                <div className="text-sm text-muted-foreground">
+                  Manual overrides write to Postgres + Redis immediately. Pause one lane, or stop every visible lane.
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busyOverride !== null || isLoading}
+                    onClick={() => overrideAll('pause')}
+                  >
+                    <Pause className="mr-1 h-3.5 w-3.5" />
+                    {busyOverride === 'all:pause' ? 'Pausing All' : 'Pause All'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busyOverride !== null || isLoading}
+                    onClick={() => overrideAll('resume')}
+                  >
+                    <Play className="mr-1 h-3.5 w-3.5" />
+                    {busyOverride === 'all:resume' ? 'Resuming' : 'Resume'}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {data?.investor ? (
+        <Card className="overflow-hidden border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-background to-cyan-500/10">
+          <CardContent className="grid gap-4 pt-6 md:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr]">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">
+                <DollarSign className="h-3.5 w-3.5" />
+                Value Ticker
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Estimated inboxed emails x {moneyFmt(data.investor.leadValueUsd)} average lead value.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Estimated inboxed today</p>
+              <p className="mt-1 text-3xl font-bold">{numberFmt(data.investor.estimatedInboxedToday)}</p>
+              <p className="text-xs text-muted-foreground">
+                Inbox rate model {pct(data.investor.avgInboxPlacementRate)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Revenue generated</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-600">{moneyFmt(data.investor.valueGeneratedUsd)}</p>
+              <p className="text-xs text-muted-foreground">
+                {numberFmt(data.investor.estimatedInboxedToday)} x {moneyFmt(data.investor.leadValueUsd)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Live capacity</p>
+              <p className="mt-1 text-3xl font-bold">{numberFmt(data.investor.activeCapacityPerHour)}/hr</p>
+              <p className="text-xs text-muted-foreground">
+                {numberFmt(data.investor.projectedDailyCapacity)} projected/day
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {error ? (
         <Card className="border-red-500/30 bg-red-500/5">
@@ -348,7 +431,7 @@ export default function ReputationDashboardPage() {
                 <p className="text-xs text-muted-foreground">Value generated today</p>
                 <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.valueGeneratedUsd)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {numberFmt(data.investor.sentToday)} leads x {moneyFmt(data.investor.leadValueUsd)}
+                  {numberFmt(data.investor.estimatedInboxedToday)} inboxed x {moneyFmt(data.investor.leadValueUsd)}
                 </p>
               </div>
               <div className="rounded-xl border bg-background/80 p-4">
