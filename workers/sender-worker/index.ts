@@ -3,6 +3,7 @@ import { Worker as BullWorker, Queue as BullQueue, type Job } from 'bullmq'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
 import crypto from 'crypto'
+import os from 'os'
 import { decide } from '@xavira/decision-engine'
 import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
@@ -46,6 +47,8 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 const SEND_ALLOW_UNKNOWN_VALIDATION = envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
+const MOCK_SMTP = envBool('MOCK_SMTP', false)
+const MOCK_SMTP_FASTLANE = MOCK_SMTP && envBool('MOCK_SMTP_FASTLANE', false)
 
 // Legacy API-gateway queue (minimal JSON payloads).
 // The current API enqueues into this queue to preserve `pnpm dev` parity.
@@ -86,6 +89,16 @@ const REGION = process.env.XV_REGION ?? 'local'
 const GLOBAL_SENDS_PER_MINUTE = Number(process.env.GLOBAL_SENDS_PER_MINUTE ?? 120)
 const GLOBAL_SHAPER_RATE_PER_SEC = Number(process.env.GLOBAL_SHAPER_RATE_PER_SEC ?? 2) // tokens/sec
 const GLOBAL_SHAPER_BURST = Number(process.env.GLOBAL_SHAPER_BURST ?? 10) // max tokens
+const WORKER_CONCURRENCY = Number(process.env.SENDER_WORKER_CONCURRENCY ?? 10)
+const WORKER_ID =
+  process.env.WORKER_ID ??
+  `${os.hostname()}:${process.pid}:${crypto.randomUUID().slice(0, 8)}`
+const WORKER_HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS ?? 15_000)
+const WORKER_HEARTBEAT_TTL_SEC = Number(process.env.WORKER_HEARTBEAT_TTL_SEC ?? 60)
+const WORKER_STARTED_AT = new Date().toISOString()
+const WORKER_HEARTBEAT_KEY = `xv:${REGION}:workers:sender:${WORKER_ID}`
+let heartbeatTimer: NodeJS.Timeout | null = null
+let bullWorker: BullWorker<SendJob> | null = null
 
 const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
 const sendQueue = new BullQueue<SendJob>(SEND_QUEUE, { connection: { url: reqEnv('REDIS_URL') } })
@@ -800,6 +813,44 @@ async function recordMetric(clientId: number, name: string, value: number, metad
   }
 }
 
+async function writeWorkerHeartbeat() {
+  await redis
+    .set(
+      WORKER_HEARTBEAT_KEY,
+      JSON.stringify({
+        workerId: WORKER_ID,
+        role: 'sender',
+        queue: SEND_QUEUE,
+        region: REGION,
+        host: os.hostname(),
+        pid: process.pid,
+        concurrency: WORKER_CONCURRENCY,
+        mockSmtp: MOCK_SMTP,
+        startedAt: WORKER_STARTED_AT,
+        lastSeenAt: new Date().toISOString(),
+      }),
+      'EX',
+      WORKER_HEARTBEAT_TTL_SEC
+    )
+    .catch((err) => {
+      console.warn('[sender-worker] heartbeat failed', { err: (err as any)?.message ?? String(err) })
+    })
+}
+
+function startWorkerHeartbeat() {
+  void writeWorkerHeartbeat()
+  heartbeatTimer = setInterval(() => void writeWorkerHeartbeat(), WORKER_HEARTBEAT_INTERVAL_MS)
+  heartbeatTimer.unref?.()
+}
+
+async function stopWorkerHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
+  await redis.del(WORKER_HEARTBEAT_KEY).catch(() => {})
+}
+
 async function resolveIdempotencyKey(job: SendJob, bullJobId: string | number | undefined): Promise<string> {
   if (job.idempotencyKey) return job.idempotencyKey
 
@@ -871,25 +922,27 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     expGroup = ADAPTIVE_EXPERIMENT ? experimentGroup(idemKey) : null
     const useAdaptiveControl = expGroup ? expGroup === 'adaptive' : true
 
-    // Jitter injection: avoid batchy patterns.
-    await sleep(jitterMs(250, 0.8))
+    // Jitter injection: avoid batchy patterns. Internal mock fastlane keeps videos/tests snappy without touching real SMTP.
+    await sleep(MOCK_SMTP_FASTLANE ? 0 : jitterMs(250, 0.8))
 
     // Global cap safety: queue instead of sending if we exceed global throughput.
     // This protects domains during load spikes.
     const minuteBucket = new Date().toISOString().slice(0, 16) // minute bucket
-    const globalKey = `xv:${REGION}:cap:global_send:${minuteBucket}`
-    const globalCount = await redis.incr(globalKey)
-    if (globalCount === 1) {
-      await redis.expire(globalKey, 60)
-    }
-    if (globalCount > GLOBAL_SENDS_PER_MINUTE) {
-      await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_cap' })
-      throw new Error('retry_later:global_cap')
+    if (!MOCK_SMTP_FASTLANE) {
+      const globalKey = `xv:${REGION}:cap:global_send:${minuteBucket}`
+      const globalCount = await redis.incr(globalKey)
+      if (globalCount === 1) {
+        await redis.expire(globalKey, 60)
+      }
+      if (globalCount > GLOBAL_SENDS_PER_MINUTE) {
+        await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_cap' })
+        throw new Error('retry_later:global_cap')
+      }
     }
 
     // Global shaper (anti-burst): token bucket across all domains for this client/org.
     // Always apply during experiment so timing isn't wildly different.
-    if (useCanary || ADAPTIVE_EXPERIMENT) {
+    if (!MOCK_SMTP_FASTLANE && (useCanary || ADAPTIVE_EXPERIMENT)) {
       const ok = await takeGlobalToken(job.clientId)
       if (!ok) {
         await recordMetric(job.clientId, 'defer_rate', 1, { scope: 'worker', reason: 'global_shaper' })
@@ -1139,7 +1192,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       effectiveMaxPerMinute = Math.max(1, Math.min(effectiveMaxPerMinute, laneSignal.maxPerMinute || 1))
     }
 
-    if (laneSignal) {
+    if (!MOCK_SMTP_FASTLANE && laneSignal) {
       const laneBucketKey = `xv:${REGION}:adaptive:lane_bucket:${job.clientId}:${selection.domain.id}:${recipientProvider}`
       const ok = await takeTokenBucket(
         laneBucketKey,
@@ -1161,83 +1214,102 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     // Per-domain per-minute limiter.
     // NOTE: minuteBucket already defined above for global cap; keep it consistent for shaping.
     const domainRateKey = `xv:${REGION}:adaptive:domain_rate:${job.clientId}:${selection.domain.id}:${minuteBucket}`
-    const count = await redis.incr(domainRateKey)
-    if (count === 1) await redis.expire(domainRateKey, 70)
-    if (count > effectiveMaxPerMinute) {
-      await recordMetric(job.clientId, 'adaptive_throttled', 1, {
-        domainId: selection.domain.id,
-        maxPerMinute: effectiveMaxPerMinute,
-        targetPerDay: adaptive.targetPerDay,
-        reasons: adaptive.reasons,
-        nextWindowAction: adaptive.nextWindowAction,
-      })
-      // Graceful drain: jittered retry so we don't synchronize.
-      throw new Error('retry_later:adaptive_throttle')
+    if (!MOCK_SMTP_FASTLANE) {
+      const count = await redis.incr(domainRateKey)
+      if (count === 1) await redis.expire(domainRateKey, 70)
+      if (count > effectiveMaxPerMinute) {
+        await recordMetric(job.clientId, 'adaptive_throttled', 1, {
+          domainId: selection.domain.id,
+          maxPerMinute: effectiveMaxPerMinute,
+          targetPerDay: adaptive.targetPerDay,
+          reasons: adaptive.reasons,
+          nextWindowAction: adaptive.nextWindowAction,
+        })
+        // Graceful drain: jittered retry so we don't synchronize.
+        throw new Error('retry_later:adaptive_throttle')
+      }
     }
 
     // Max concurrent SMTP connections per domain (hard safety floor).
     // Provider-aware concurrency ceiling (recipient provider).
     const maxConcurrency = Math.max(1, Math.min(3, providerPolicy.maxDomainConcurrency, laneSignal?.maxConcurrency ?? 3))
     const concKey = `xv:${REGION}:adaptive:smtp_conc:${job.clientId}:${selection.domain.id}`
-    const conc = await redis.incr(concKey)
-    if (conc === 1) await redis.expire(concKey, 30)
-    if (conc > maxConcurrency) {
+    const conc = MOCK_SMTP_FASTLANE ? 1 : await redis.incr(concKey)
+    if (!MOCK_SMTP_FASTLANE && conc === 1) await redis.expire(concKey, 30)
+    if (!MOCK_SMTP_FASTLANE && conc > maxConcurrency) {
       await recordMetric(job.clientId, 'deferral_rate', 1, { scope: 'worker', reason: 'domain_concurrency_cap', maxConcurrency })
       throw new Error('retry_later:domain_concurrency_cap')
     }
 
     let messageId = ''
+    let fromAddress = ''
     let smtpAttempted = false
     try {
       smtpAttempted = true
 
-      const account =
-        SMTP_ACCOUNTS.length > 0
-          ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]!
-          : { user: reqEnv('SMTP_USER'), pass: reqEnv('SMTP_PASS') }
+      const sent = MOCK_SMTP
+        ? await (async () => {
+            fromAddress = String(selection.identity.email ?? `mock@${selection.domain.domain}`).toLowerCase()
+            console.log('[sender-worker] mock smtp send start', {
+              from: maskEmail(fromAddress),
+              to: maskEmail(job.toEmail),
+              queueJobId: job.queueJobId,
+            })
+            await sleep(jitterMs(5, 0.5))
+            return {
+              messageId: `<mock-${idemKey}-${Date.now()}@${selection.domain.domain}>`,
+            }
+          })()
+        : await (async () => {
+            const account =
+              SMTP_ACCOUNTS.length > 0
+                ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]!
+                : { user: reqEnv('SMTP_USER'), pass: reqEnv('SMTP_PASS') }
+            fromAddress = String(account.user).toLowerCase()
 
-      console.log('[sender-worker] smtp send start', {
-        from: maskEmail(account.user),
-        to: maskEmail(job.toEmail),
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_SECURE,
-      })
+            console.log('[sender-worker] smtp send start', {
+              from: maskEmail(account.user),
+              to: maskEmail(job.toEmail),
+              host: SMTP_HOST,
+              port: SMTP_PORT,
+              secure: SMTP_SECURE,
+            })
 
-      const sent = await Promise.race([
-        sendSmtp(
-          { host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, user: account.user, pass: account.pass },
-          {
-            from: account.user,
-            to: job.toEmail,
-            subject: job.subject,
-            html: job.html,
-            text: job.text,
-            headerContext: {
-              clientId: job.clientId,
-              campaignId: job.campaignId ?? null,
-              queueJobId: job.queueJobId ?? null,
-              idempotencyKey: idemKey,
-              sendingDomain: selection.domain.domain,
-              provider: recipientProvider,
-            },
-            headers: {
-              'X-Xavira-Lane': lane,
-              'X-Xavira-Adaptive': adaptive.reasons.join(','),
-              'X-Xavira-QueueJobId': String(job.queueJobId ?? ''),
-              'X-Xavira-CampaignId': String(job.campaignId ?? ''),
-            },
-          }
-        ),
-        sleep(35_000).then(() => {
-          throw new Error('smtp_timeout')
-        }),
-      ])
+            return Promise.race([
+              sendSmtp(
+                { host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, user: account.user, pass: account.pass },
+                {
+                  from: account.user,
+                  to: job.toEmail,
+                  subject: job.subject,
+                  html: job.html,
+                  text: job.text,
+                  headerContext: {
+                    clientId: job.clientId,
+                    campaignId: job.campaignId ?? null,
+                    queueJobId: job.queueJobId ?? null,
+                    idempotencyKey: idemKey,
+                    sendingDomain: selection.domain.domain,
+                    provider: recipientProvider,
+                  },
+                  headers: {
+                    'X-Xavira-Lane': lane,
+                    'X-Xavira-Adaptive': adaptive.reasons.join(','),
+                    'X-Xavira-QueueJobId': String(job.queueJobId ?? ''),
+                    'X-Xavira-CampaignId': String(job.campaignId ?? ''),
+                  },
+                }
+              ),
+              sleep(35_000).then(() => {
+                throw new Error('smtp_timeout')
+              }),
+            ])
+          })()
       messageId = sent.messageId
       console.log('[sender-worker] smtp send completed', { messageId, to: maskEmail(job.toEmail) })
     } finally {
       // Best-effort release: if process crashes, TTL expires.
-      await redis.decr(concKey).catch(() => {})
+      if (!MOCK_SMTP_FASTLANE) await redis.decr(concKey).catch(() => {})
     }
 
   await db(
@@ -1301,7 +1373,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       metadata: {
         event_code: 'EMAIL_SENT',
         to_email: normalizedTo,
-        from_email: String((SMTP_ACCOUNTS.length > 0 ? SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]?.user : process.env.SMTP_USER) ?? '').toLowerCase(),
+        from_email: fromAddress,
         subject: job.subject,
         body_text: truncateText(job.text, 20_000),
         body_html: truncateText(job.html, 40_000),
@@ -1490,17 +1562,18 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 }
 
 async function main() {
-  console.log('[sender-worker] starting', { queue: SEND_QUEUE })
-  console.log('[sender-worker] config', { SEND_ALLOW_UNKNOWN_VALIDATION })
+  console.log('[sender-worker] starting', { queue: SEND_QUEUE, workerId: WORKER_ID })
+  console.log('[sender-worker] config', { SEND_ALLOW_UNKNOWN_VALIDATION, MOCK_SMTP, MOCK_SMTP_FASTLANE, WORKER_CONCURRENCY })
 
   // Auto-safe deploy: after restart, be conservative for 10 minutes to avoid burst-on-deploy.
   await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', 'EX', 10 * 60)
 
   await bootstrapFromSnapshots()
+  startWorkerHeartbeat()
 
   void runLegacyQueueLoop()
 
-  const w = new BullWorker<SendJob>(
+  bullWorker = new BullWorker<SendJob>(
     SEND_QUEUE,
     async (job) => {
       try {
@@ -1545,12 +1618,12 @@ async function main() {
     },
     {
       connection: { url: reqEnv('REDIS_URL') },
-      concurrency: 10,
+      concurrency: WORKER_CONCURRENCY,
       lockDuration: 30_000,
     }
   )
 
-  w.on('failed', (job, err) => {
+  bullWorker.on('failed', (job, err) => {
     console.error('[sender-worker] job failed', { id: job?.id, err: sanitizeLogValue(err?.message) })
   })
 
@@ -1560,7 +1633,8 @@ async function main() {
 
 async function shutdown(signal: string) {
   console.log('[sender-worker] shutting down', { signal })
-  await Promise.allSettled([dlq.close(), redis.quit(), pool.end()])
+  await stopWorkerHeartbeat()
+  await Promise.allSettled([bullWorker?.close(), sendQueue.close(), dlq.close(), redis.quit(), pool.end()])
   process.exit(0)
 }
 

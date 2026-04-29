@@ -270,6 +270,31 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  internal:
+    dependencies:
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
+      pg:
+        specifier: ^8.11.3
+        version: 8.20.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      tsx:
+        specifier: ^4.20.6
+        version: 4.21.0
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   libs/adaptive-controller:
     dependencies:
       '@xavira/types':

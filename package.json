@@ -12,6 +12,7 @@
     "user:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway user:create",
     "demo:outbound": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/demo-outbound.ts",
     "send:test": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/send-test.ts",
+    "stress:test": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C internal stress:test",
     "validator:api": "pnpm -C services/validator-engine validator:api",
     "validator:worker": "pnpm -C services/validator-engine validator:worker",
     "worker:sender": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/sender-worker worker:dev",

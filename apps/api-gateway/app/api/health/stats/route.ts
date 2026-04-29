@@ -16,6 +16,32 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; latencyMs: nu
   return { value, latencyMs: Math.round((performance.now() - started) * 100) / 100 }
 }
 
+async function scanSenderHeartbeats(redis: IORedis, region: string) {
+  const pattern = `xv:${region}:workers:sender:*`
+  let cursor = '0'
+  const keys: string[] = []
+
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100)
+    cursor = nextCursor
+    keys.push(...batch)
+  } while (cursor !== '0')
+
+  if (!keys.length) return []
+
+  const raw = await redis.mget(...keys)
+  return raw
+    .map((value, index) => {
+      if (!value) return null
+      try {
+        return { key: keys[index], ...(JSON.parse(value) as Record<string, unknown>) }
+      } catch {
+        return { key: keys[index], parseError: true }
+      }
+    })
+    .filter(Boolean)
+}
+
 export async function GET(request: NextRequest) {
   let redis: IORedis | null = null
   let queue: Queue | null = null
@@ -27,11 +53,12 @@ export async function GET(request: NextRequest) {
     })
     const redisUrl = reqEnv('REDIS_URL')
     const queueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
+    const region = process.env.XV_REGION ?? 'local'
     redis = new IORedis(redisUrl, { maxRetriesPerRequest: 1 })
     queue = new Queue(queueName, { connection: { url: redisUrl } })
 
     const redisKey = `xv:health:${clientId}:${Date.now()}`
-    const [redisSet, redisGet, dbState, bullCounts, queueRows] = await Promise.all([
+    const [redisSet, redisGet, dbState, bullCounts, queueRows, workerHeartbeats] = await Promise.all([
       timed(async () => redis!.set(redisKey, '1', 'EX', 30)),
       timed(async () => {
         await redis!.set(redisKey, '1', 'EX', 30)
@@ -58,6 +85,7 @@ export async function GET(request: NextRequest) {
           [clientId]
         )
       ),
+      timed(async () => scanSenderHeartbeats(redis!, region)),
     ])
 
     const dbRow = dbState.value.rows[0]
@@ -73,6 +101,7 @@ export async function GET(request: NextRequest) {
         db_reputation_state_ms: dbState.latencyMs,
         bullmq_counts_ms: bullCounts.latencyMs,
         db_queue_counts_ms: queueRows.latencyMs,
+        worker_heartbeat_scan_ms: workerHeartbeats.latencyMs,
       },
       redis: {
         set_ok: redisSet.value === 'OK',
@@ -95,6 +124,12 @@ export async function GET(request: NextRequest) {
         active: Number(queueRow?.active ?? 0),
         retry: Number(queueRow?.retry ?? 0),
         failed: Number(queueRow?.failed ?? 0),
+      },
+      workers: {
+        sender: {
+          active: workerHeartbeats.value.length,
+          nodes: workerHeartbeats.value,
+        },
       },
     })
   } catch (error) {

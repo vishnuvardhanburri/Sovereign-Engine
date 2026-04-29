@@ -1,0 +1,126 @@
+name: xavira-orbit
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  APP_DOMAIN: ${APP_DOMAIN:-localhost:3000}
+  APP_PROTOCOL: ${APP_PROTOCOL:-http}
+  DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/xavira_orbit?sslmode=disable}
+  REDIS_URL: ${CONTAINER_REDIS_URL:-redis://redis:6379}
+  SEND_QUEUE: ${SEND_QUEUE:-xv-send-queue}
+  SEND_DLQ: ${SEND_DLQ:-xv-send-dlq}
+  XV_REGION: ${XV_REGION:-prod}
+  SEND_ALLOW_UNKNOWN_VALIDATION: ${SEND_ALLOW_UNKNOWN_VALIDATION:-true}
+  GLOBAL_SENDS_PER_MINUTE: ${GLOBAL_SENDS_PER_MINUTE:-120}
+  GLOBAL_SHAPER_RATE_PER_SEC: ${GLOBAL_SHAPER_RATE_PER_SEC:-2}
+  GLOBAL_SHAPER_BURST: ${GLOBAL_SHAPER_BURST:-10}
+  WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-15000}
+  MOCK_SMTP: ${MOCK_SMTP:-true}
+  SMTP_HOST: ${SMTP_HOST:-mock.local}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-mock@localhost}
+  SMTP_PASS: ${SMTP_PASS:-mock}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_ACCOUNTS: ${SMTP_ACCOUNTS:-}
+  ZEROBOUNCE_API_KEY: ${ZEROBOUNCE_API_KEY:-mock}
+  CRON_SECRET: ${CRON_SECRET:-change-me}
+  AUTH_SECRET: ${AUTH_SECRET:-change-me}
+  SECURITY_KILL_SWITCH_TOKEN: ${SECURITY_KILL_SWITCH_TOKEN:-change-me}
+
+x-app-service: &app-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: *app-environment
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-xavira_orbit}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - xavira_orbit_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-xavira_orbit}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - xavira_orbit_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app-service
+    restart: "no"
+    command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm db:init"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api-gateway:
+    <<: *app-service
+    restart: unless-stopped
+    command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C apps/api-gateway start -p 3000"]
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/api/health/stats?client_id=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  reputation-worker:
+    <<: *app-service
+    restart: unless-stopped
+    command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C workers/reputation-worker start"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  sender-worker:
+    <<: *app-service
+    restart: unless-stopped
+    command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C workers/sender-worker start"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  xavira_orbit_pgdata:
+  xavira_orbit_redisdata:
