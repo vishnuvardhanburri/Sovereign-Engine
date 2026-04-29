@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
+import { resolve4 } from 'dns/promises'
 import { AdaptiveControlEngine, type ProviderLane } from '@xavira/adaptive-controller'
 
 function reqEnv(name: string) {
@@ -11,6 +12,20 @@ function reqEnv(name: string) {
 
 const REGION = process.env.XV_REGION ?? 'local'
 const INTERVAL_MS = Number(process.env.REPUTATION_TICK_MS ?? 30_000)
+const BLACKLIST_CHECK_ENABLED = process.env.BLACKLIST_CHECK_ENABLED !== 'false'
+const BLACKLIST_CHECK_INTERVAL_MS = Number(process.env.BLACKLIST_CHECK_INTERVAL_MS ?? 6 * 60 * 60_000)
+const DOMAIN_BLACKLIST_ZONES = String(process.env.BLACKLIST_DOMAIN_ZONES ?? 'dbl.spamhaus.org,multi.uribl.com')
+  .split(',')
+  .map((zone) => zone.trim())
+  .filter(Boolean)
+const IP_BLACKLIST_ZONES = String(process.env.BLACKLIST_IP_ZONES ?? 'zen.spamhaus.org')
+  .split(',')
+  .map((zone) => zone.trim())
+  .filter(Boolean)
+const SENDING_IPS = String(process.env.SENDING_IPS ?? '')
+  .split(',')
+  .map((ip) => ip.trim())
+  .filter(Boolean)
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
@@ -32,6 +47,174 @@ function clamp(n: number, min: number, max: number) {
 
 function providerList(): ProviderLane[] {
   return ['gmail', 'outlook', 'yahoo', 'other']
+}
+
+function reverseIp(ip: string) {
+  const parts = ip.split('.')
+  return parts.length === 4 && parts.every((part) => Number(part) >= 0 && Number(part) <= 255)
+    ? parts.reverse().join('.')
+    : null
+}
+
+async function dnsblListed(queryName: string): Promise<string[] | null> {
+  try {
+    const answers = await resolve4(queryName)
+    return answers.length ? answers : null
+  } catch (error: any) {
+    if (error?.code === 'ENOTFOUND' || error?.code === 'ENODATA' || error?.code === 'ETIMEOUT') return null
+    return null
+  }
+}
+
+async function checkDomainBlacklists(domain: string) {
+  const hits: Array<{ zone: string; query: string; answers: string[] }> = []
+  for (const zone of DOMAIN_BLACKLIST_ZONES) {
+    const query = `${domain}.${zone}`
+    const answers = await dnsblListed(query)
+    if (answers) hits.push({ zone, query, answers })
+  }
+  return hits
+}
+
+async function checkIpBlacklists() {
+  const hits: Array<{ ip: string; zone: string; query: string; answers: string[] }> = []
+  for (const ip of SENDING_IPS) {
+    const reversed = reverseIp(ip)
+    if (!reversed) continue
+    for (const zone of IP_BLACKLIST_ZONES) {
+      const query = `${reversed}.${zone}`
+      const answers = await dnsblListed(query)
+      if (answers) hits.push({ ip, zone, query, answers })
+    }
+  }
+  return hits
+}
+
+async function pauseDomainForBlacklist(input: {
+  clientId: number
+  domainId: number
+  domain: string
+  hits: unknown[]
+}) {
+  await db(
+    `UPDATE domains
+     SET status = 'paused', paused = TRUE, updated_at = CURRENT_TIMESTAMP
+     WHERE client_id = $1 AND id = $2`,
+    [input.clientId, input.domainId]
+  )
+
+  await db(
+    `INSERT INTO domain_pause_events (client_id, domain_id, reason, metrics_snapshot)
+     VALUES ($1,$2,$3,$4::jsonb)`,
+    [
+      input.clientId,
+      input.domainId,
+      'blacklist_flagged',
+      JSON.stringify({ hits: input.hits, checked_at: new Date().toISOString() }),
+    ]
+  ).catch(() => {})
+
+  for (const provider of providerList()) {
+    const signal = {
+      clientId: input.clientId,
+      domainId: input.domainId,
+      provider,
+      state: 'paused',
+      action: 'pause',
+      maxPerHour: 0,
+      maxPerMinute: 0,
+      maxConcurrency: 0,
+      ratePerSecond: 0,
+      burst: 0,
+      jitterPct: 0.15,
+      cooldownUntil: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      reasons: ['blacklist_flagged'],
+      metrics: {
+        deferralRate1h: 0,
+        blockRate1h: 1,
+        sendSuccessRate1h: 0,
+        seedPlacementInboxRate: 0,
+        providerRisk: 1,
+      },
+    }
+    await db(
+      `INSERT INTO reputation_state (
+         client_id, domain_id, provider, state, max_per_hour, max_per_minute,
+         max_concurrency, cooldown_until, reasons, metrics_snapshot, updated_at
+       )
+       VALUES ($1,$2,$3,'paused',0,0,0,$4,$5::jsonb,$6::jsonb,CURRENT_TIMESTAMP)
+       ON CONFLICT (client_id, domain_id, provider)
+       DO UPDATE SET
+         state = 'paused',
+         max_per_hour = 0,
+         max_per_minute = 0,
+         max_concurrency = 0,
+         cooldown_until = EXCLUDED.cooldown_until,
+         reasons = EXCLUDED.reasons,
+         metrics_snapshot = EXCLUDED.metrics_snapshot,
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        input.clientId,
+        input.domainId,
+        provider,
+        signal.cooldownUntil,
+        JSON.stringify(signal.reasons),
+        JSON.stringify({ metrics: signal.metrics, blacklist_hits: input.hits }),
+      ]
+    ).catch(() => {})
+
+    await redis.set(
+      `xv:${REGION}:adaptive:lane:${input.clientId}:${input.domainId}:${provider}`,
+      JSON.stringify(signal),
+      'EX',
+      24 * 60 * 60
+    ).catch(() => {})
+    await redis.set(
+      `xv:${REGION}:adaptive:lane_pause:${input.clientId}:${input.domainId}:${provider}`,
+      JSON.stringify(signal),
+      'EX',
+      24 * 60 * 60
+    ).catch(() => {})
+  }
+
+  await db(
+    `INSERT INTO reputation_events (client_id, domain_id, provider, event_type, severity, message, next_state, metrics_snapshot)
+     VALUES ($1,$2,NULL,'pause','critical',$3,$4::jsonb,$5::jsonb)`,
+    [
+      input.clientId,
+      input.domainId,
+      `Paused ${input.domain} automatically because blacklist monitoring returned a positive listing.`,
+      JSON.stringify({ state: 'paused', max_per_hour: 0, reasons: ['blacklist_flagged'] }),
+      JSON.stringify({ blacklist_hits: input.hits }),
+    ]
+  ).catch(() => {})
+}
+
+async function runBlacklistCheck() {
+  if (!BLACKLIST_CHECK_ENABLED) return
+  const lockKey = `xv:${REGION}:blacklist-check:lock`
+  const locked = await redis.set(lockKey, '1', 'EX', Math.ceil(BLACKLIST_CHECK_INTERVAL_MS / 1000), 'NX')
+  if (!locked) return
+
+  const ipHits = await checkIpBlacklists()
+  const domains = await db<{ client_id: number; id: number; domain: string }>(
+    `SELECT client_id, id, domain
+     FROM domains
+     WHERE status = 'active'
+     ORDER BY id ASC`
+  )
+
+  for (const domain of domains.rows) {
+    const domainHits = await checkDomainBlacklists(domain.domain)
+    const hits = [...domainHits, ...ipHits]
+    if (!hits.length) continue
+    await pauseDomainForBlacklist({
+      clientId: Number(domain.client_id),
+      domainId: Number(domain.id),
+      domain: domain.domain,
+      hits,
+    })
+  }
 }
 
 async function computeProviderLaneSignals(clientId: number, domainId: number) {
@@ -126,6 +309,7 @@ async function main() {
     const started = Date.now()
     try {
       await tickOnce()
+      await runBlacklistCheck()
     } catch (err) {
       console.error('[reputation-worker] tick failed', err)
     }

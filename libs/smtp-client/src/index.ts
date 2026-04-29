@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import crypto from 'crypto'
 
 export interface SmtpConfig {
   host: string
@@ -15,6 +16,85 @@ export interface SendEmailRequest {
   html?: string
   text?: string
   headers?: Record<string, string>
+  headerContext?: HeaderFactoryContext
+}
+
+export interface HeaderFactoryContext {
+  clientId?: number
+  campaignId?: number | null
+  queueJobId?: number | null
+  idempotencyKey?: string | null
+  sendingDomain?: string | null
+  provider?: string | null
+  traceId?: string | null
+}
+
+export interface BuiltSmtpHeaders {
+  messageId: string
+  headers: Record<string, string>
+}
+
+function cleanHeaderValue(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[^\t\x20-\x7e]/g, '')
+    .trim()
+}
+
+function domainFromEmail(email: string): string {
+  const domain = email.split('@')[1]?.trim().toLowerCase()
+  return domain && /^[a-z0-9.-]+$/.test(domain) ? domain : 'localhost'
+}
+
+function stableHex(parts: Array<unknown>, len = 24): string {
+  return crypto.createHash('sha256').update(parts.map((part) => String(part ?? '')).join('|')).digest('hex').slice(0, len)
+}
+
+/**
+ * Compliance-safe SMTP header factory.
+ *
+ * This intentionally does not impersonate consumer/webmail clients. The goal is
+ * RFC-clean, stable, traceable enterprise mail headers that align with the
+ * authenticated sending domain and avoid accidental header leakage.
+ */
+export function buildCompliantSmtpHeaders(req: SendEmailRequest): BuiltSmtpHeaders {
+  const ctx = req.headerContext ?? {}
+  const sendingDomain = cleanHeaderValue(ctx.sendingDomain) || domainFromEmail(req.from)
+  const traceId = cleanHeaderValue(ctx.traceId) || stableHex([
+    ctx.clientId,
+    ctx.campaignId,
+    ctx.queueJobId,
+    ctx.idempotencyKey,
+    req.to,
+  ], 32)
+  const localPart = [
+    'xo',
+    stableHex([traceId, ctx.idempotencyKey, ctx.provider], 12),
+    Date.now().toString(36),
+  ].join('.')
+
+  const baseHeaders: Record<string, string> = {
+    'X-Mailer': 'Xavira Orbit Enterprise Mailer',
+    'X-Entity-Ref-ID': traceId,
+    'X-Xavira-Trace': traceId,
+    'X-Xavira-Provider-Lane': cleanHeaderValue(ctx.provider ?? 'unknown'),
+    'MIME-Version': '1.0',
+  }
+
+  const userHeaders = Object.fromEntries(
+    Object.entries(req.headers ?? {})
+      .filter(([key]) => !/^message-id$/i.test(key))
+      .map(([key, value]) => [cleanHeaderValue(key), cleanHeaderValue(value)])
+      .filter(([key]) => Boolean(key))
+  )
+
+  return {
+    messageId: `<${localPart}@${sendingDomain}>`,
+    headers: {
+      ...baseHeaders,
+      ...userHeaders,
+    },
+  }
 }
 
 export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promise<{ messageId: string }> {
@@ -32,13 +112,15 @@ export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promi
     },
   })
 
+  const built = buildCompliantSmtpHeaders(req)
   const info = await transporter.sendMail({
     from: req.from,
     to: req.to,
     subject: req.subject,
     html: req.html,
     text: req.text,
-    headers: req.headers,
+    messageId: built.messageId,
+    headers: built.headers,
   })
 
   return { messageId: info.messageId ?? '' }

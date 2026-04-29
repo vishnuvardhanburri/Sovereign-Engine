@@ -118,6 +118,32 @@ function experimentGroup(idemKey: string): 'adaptive' | 'baseline' {
 
 type SmtpClass = 'deferral' | 'block' | 'bounce' | 'unknown'
 
+function maskEmail(raw: unknown): string {
+  const email = String(raw ?? '').trim().toLowerCase()
+  const [local, domain] = email.split('@')
+  if (!local || !domain) return email ? '[redacted]' : ''
+  const visible = local.length <= 2 ? local[0] ?? '*' : `${local[0]}***${local[local.length - 1]}`
+  return `${visible}@${domain}`
+}
+
+function sanitizeLogValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeLogValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+        const lower = key.toLowerCase()
+        if (lower.includes('pass') || lower.includes('secret') || lower.includes('token')) return [key, '[redacted]']
+        if (lower.includes('email') || lower === 'to' || lower === 'from') return [key, maskEmail(item)]
+        return [key, sanitizeLogValue(item)]
+      })
+    )
+  }
+  if (typeof value === 'string' && /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value)) {
+    return value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, (email) => maskEmail(email))
+  }
+  return value
+}
+
 function truncateText(raw: unknown, maxLen: number): string {
   const s = String(raw ?? '')
   if (s.length <= maxLen) return s
@@ -129,15 +155,13 @@ function classifySmtpFailure(err: any): { smtpClass: SmtpClass; responseCode: nu
   const msg = String(err?.response ?? err?.message ?? '').toLowerCase()
   const responseCode = Number.isFinite(code) ? code : null
 
-  // 4xx => deferral, with special patterns treated as rate limit / block
+  // 4xx => temporary deferral unless the provider explicitly says policy/blacklist.
   if (responseCode && responseCode >= 400 && responseCode < 500) {
     if (
-      responseCode === 421 ||
-      responseCode === 450 ||
-      msg.includes('rate') ||
-      msg.includes('throttle') ||
-      msg.includes('too many') ||
-      msg.includes('temporarily rejected')
+      msg.includes('blocked') ||
+      msg.includes('blacklist') ||
+      msg.includes('policy') ||
+      msg.includes('spam')
     ) {
       return { smtpClass: 'block', responseCode }
     }
@@ -405,6 +429,48 @@ function parseRetryLater(msg: string): { backoffMs: number } | null {
   return { backoffMs: jitterMs(30_000, 0.3) }
 }
 
+async function computeSmartSmtpRetry(input: {
+  clientId: number
+  domainId?: number | null
+  provider: string
+  retryCount: number
+  smtpClass: SmtpClass
+  responseCode: number | null
+}): Promise<{ backoffMs: number; reason: string; laneState: string | null } | null> {
+  if (input.smtpClass !== 'deferral') return null
+  if (input.responseCode && (input.responseCode < 400 || input.responseCode >= 500)) return null
+
+  const retryCount = Math.max(0, Math.min(10, input.retryCount))
+  let laneState: string | null = null
+  let maxPerHour: number | null = null
+
+  if (input.domainId) {
+    const res = await db<{ state: string; max_per_hour: string | number }>(
+      `SELECT state, max_per_hour
+       FROM reputation_state
+       WHERE client_id = $1 AND domain_id = $2 AND provider = $3
+       LIMIT 1`,
+      [input.clientId, input.domainId, input.provider]
+    ).catch(() => ({ rows: [], rowCount: 0 }))
+    laneState = res.rows[0]?.state ?? null
+    maxPerHour = res.rows[0] ? Number(res.rows[0].max_per_hour ?? 0) : null
+  }
+
+  const throttled = laneState
+    ? ['warmup', 'degraded', 'cooldown', 'paused'].includes(laneState) || Number(maxPerHour ?? 0) <= 50
+    : false
+  const base = throttled ? 10 * 60_000 : 5 * 60_000
+  const multiplier = throttled ? Math.pow(2, retryCount) : Math.max(1, retryCount + 1)
+  const maxDelay = Number(process.env.SMART_RETRY_MAX_DELAY_MS ?? 6 * 60 * 60_000)
+  const backoffMs = jitterMs(Math.min(maxDelay, base * multiplier), 0.2)
+
+  return {
+    backoffMs,
+    laneState,
+    reason: throttled ? 'smtp_4xx_deferral_lane_throttled' : 'smtp_4xx_deferral_lane_checked',
+  }
+}
+
 async function requeueLegacyRaw(raw: string, backoffMs: number) {
   if (backoffMs <= 0) {
     await redis.rpush(LEGACY_READY_QUEUE, raw)
@@ -511,7 +577,7 @@ async function runLegacyQueueLoop() {
       console.log('[sender-worker] legacy send start', {
         queueJobId: job.queueJobId,
         campaignId: job.campaignId,
-        to: job.toEmail,
+        to: maskEmail(job.toEmail),
       })
 
       try {
@@ -519,7 +585,10 @@ async function runLegacyQueueLoop() {
       } catch (err) {
         const msg = (err as any)?.message ?? String(err)
         const retry = parseRetryLater(msg)
-        if (retry) {
+        const smartRetry = (err as any)?.smartRetry as { backoffMs: number; reason: string; laneState: string | null } | undefined
+        if (retry || smartRetry) {
+          const backoffMs = retry?.backoffMs ?? smartRetry!.backoffMs
+          const reason = retry ? msg : smartRetry!.reason
           await db(
             `UPDATE queue_jobs
              SET status = 'retry',
@@ -527,15 +596,16 @@ async function runLegacyQueueLoop() {
                  last_error = $3,
                  updated_at = CURRENT_TIMESTAMP
              WHERE client_id = $1 AND id = $2`,
-            [job.clientId, job.queueJobId ?? 0, msg]
+            [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(reason))]
           ).catch(() => {})
 
           await ackLegacyPayload(raw).catch(() => {})
-          await requeueLegacyRaw(raw, retry.backoffMs)
-          console.warn('[sender-worker] legacy job deferred (retry_later)', {
+          await requeueLegacyRaw(raw, backoffMs)
+          console.warn('[sender-worker] legacy job deferred', {
             queueJobId: job.queueJobId,
-            reason: msg,
-            backoffMs: retry.backoffMs,
+            reason,
+            backoffMs,
+            laneState: smartRetry?.laneState ?? null,
           })
           continue
         }
@@ -547,11 +617,11 @@ async function runLegacyQueueLoop() {
                last_error = $3,
                updated_at = CURRENT_TIMESTAMP
            WHERE client_id = $1 AND id = $2`,
-          [job.clientId, job.queueJobId ?? 0, msg]
+          [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(msg))]
         ).catch(() => {})
 
         await ackLegacyPayload(raw).catch(() => {})
-        console.error('[sender-worker] legacy job failed', { queueJobId: job.queueJobId, err: msg })
+        console.error('[sender-worker] legacy job failed', { queueJobId: job.queueJobId, err: sanitizeLogValue(msg) })
         continue
       }
 
@@ -756,6 +826,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   const doneKey = `xv:${REGION}:send:done:${job.clientId}:${idemKey}`
   const inflightKey = `xv:${REGION}:send:inflight:${job.clientId}:${idemKey}`
   const failedKey = `xv:${REGION}:send:failed:${job.clientId}:${idemKey}`
+  let selectedDomainId: number | null = null
+  let recipientProviderForRun = 'other'
 
   // Back-compat: if older keys exist (pre-region), respect them so we don't re-send.
   const legacyDoneKey = `xv:send:done:${job.clientId}:${idemKey}`
@@ -791,7 +863,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       bullJobId,
       queueJobId: job.queueJobId,
       campaignId: job.campaignId,
-      to: String(job.toEmail || '').trim().toLowerCase(),
+      to: maskEmail(job.toEmail),
       idemKey,
     })
 
@@ -898,6 +970,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     }
 
     if (!selection) throw new Error('no_sender_identity_available')
+    selectedDomainId = selection.domain.id
 
     const caps = enforceCaps(selection, lane)
     if (!caps.ok) {
@@ -908,6 +981,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     // Adaptive sending control (per-domain, provider-safe, abuse-resistant).
     // Multi-signal gating + EMA + cooldown + ramp profiles.
     const recipientProvider = detectProvider(job.toEmail)
+    recipientProviderForRun = recipientProvider
     const providerPolicy = getProviderPolicy(recipientProvider)
     const bestHours = await getBestHours(job.clientId, selection.domain.id)
     const nowHour = new Date().getUTCHours()
@@ -1123,8 +1197,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           : { user: reqEnv('SMTP_USER'), pass: reqEnv('SMTP_PASS') }
 
       console.log('[sender-worker] smtp send start', {
-        from: account.user,
-        to: String(job.toEmail || '').trim().toLowerCase(),
+        from: maskEmail(account.user),
+        to: maskEmail(job.toEmail),
         host: SMTP_HOST,
         port: SMTP_PORT,
         secure: SMTP_SECURE,
@@ -1139,6 +1213,14 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             subject: job.subject,
             html: job.html,
             text: job.text,
+            headerContext: {
+              clientId: job.clientId,
+              campaignId: job.campaignId ?? null,
+              queueJobId: job.queueJobId ?? null,
+              idempotencyKey: idemKey,
+              sendingDomain: selection.domain.domain,
+              provider: recipientProvider,
+            },
             headers: {
               'X-Xavira-Lane': lane,
               'X-Xavira-Adaptive': adaptive.reasons.join(','),
@@ -1152,7 +1234,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         }),
       ])
       messageId = sent.messageId
-      console.log('[sender-worker] smtp send completed', { messageId, to: String(job.toEmail || '').trim().toLowerCase() })
+      console.log('[sender-worker] smtp send completed', { messageId, to: maskEmail(job.toEmail) })
     } finally {
       // Best-effort release: if process crashes, TTL expires.
       await redis.decr(concKey).catch(() => {})
@@ -1191,7 +1273,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     )
     if (Number(dupRes.rows[0]?.count ?? 0) > 0) {
       await recordMetric(job.clientId, 'duplicate_send_prevented', 1, { scope: 'worker', reason: 'recent_window' })
-      console.warn('[sender-worker] duplicate anomaly suppressed (recent window)', { bullJobId, idemKey, to: normalizedTo })
+      console.warn('[sender-worker] duplicate anomaly suppressed (recent window)', { bullJobId, idemKey, to: maskEmail(normalizedTo) })
       await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
       await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
       await redis.del(inflightKey)
@@ -1271,7 +1353,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       bullJobId,
       queueJobId: job.queueJobId,
       idemKey,
-      err: (err as any)?.message ?? String(err),
+      err: sanitizeLogValue((err as any)?.message ?? String(err)),
     })
     // DLQ handling: after N attempts, stop retrying and move to DLQ with reason.
     const attemptsMade = bull?.attemptsMade ?? 0
@@ -1282,9 +1364,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         'send_dlq',
         {
           ...job,
+          toEmail: maskEmail(job.toEmail),
           dlq: {
             reason: smtpClass,
-            last_error: String((err as any)?.message ?? String(err)),
+            last_error: String(sanitizeLogValue((err as any)?.message ?? String(err))),
             smtp_response_code: responseCode,
           },
         } as any,
@@ -1301,7 +1384,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           reason: 'dlq',
           smtp_class: smtpClass,
           smtp_response_code: responseCode,
-          error: String((err as any)?.message ?? String(err)),
+          error: String(sanitizeLogValue((err as any)?.message ?? String(err))),
           idempotency_key: idemKey,
           adaptive_experiment: expGroup,
         },
@@ -1330,6 +1413,17 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
     if (!isInternalThrottle) {
       const { smtpClass, responseCode } = classifySmtpFailure(err)
+      const smartRetry = await computeSmartSmtpRetry({
+        clientId: job.clientId,
+        domainId: selectedDomainId,
+        provider: recipientProviderForRun,
+        retryCount: bull?.attemptsMade ?? 0,
+        smtpClass,
+        responseCode,
+      })
+      if (smartRetry) {
+        ;(err as any).smartRetry = smartRetry
+      }
 
       // Recipient-provider memory update: elevate risk and auto-decay.
       if (smtpClass === 'block' || smtpClass === 'deferral' || smtpClass === 'bounce') {
@@ -1363,7 +1457,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           provider: detectProvider(job.toEmail),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
-          error: msg,
+          error: String(sanitizeLogValue(msg)),
           adaptive_experiment: expGroup,
         },
       } as any).catch(() => {})
@@ -1379,7 +1473,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
              last_error = $3,
              updated_at = CURRENT_TIMESTAMP
            WHERE client_id = $1 AND id = $2`,
-          [job.clientId, job.queueJobId, msg]
+          [job.clientId, job.queueJobId, String(sanitizeLogValue(msg))]
         ).catch(() => {})
       }
     }
@@ -1387,10 +1481,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     // Failure state: allow retry with backoff; do not deadlock.
     // For internal throttles, do not poison retries with "recent_failure".
     if (!isInternalThrottle) {
-      await redis.set(failedKey, String((err as any)?.message ?? 'failed'), 'EX', 5 * 60)
+      await redis.set(failedKey, String(sanitizeLogValue((err as any)?.message ?? 'failed')), 'EX', 5 * 60)
     }
     await redis.del(inflightKey)
-    await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: (err as any)?.message ?? String(err) })
+    await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: sanitizeLogValue((err as any)?.message ?? String(err)) as string })
     throw err
   }
 }
@@ -1414,7 +1508,10 @@ async function main() {
       } catch (err) {
         const msg = (err as any)?.message ?? String(err)
         const retry = parseRetryLater(msg)
-        if (retry) {
+        const smartRetry = (err as any)?.smartRetry as { backoffMs: number; reason: string; laneState: string | null } | undefined
+        if (retry || smartRetry) {
+          const backoffMs = retry?.backoffMs ?? smartRetry!.backoffMs
+          const reason = retry ? msg : smartRetry!.reason
           // Don't burn attempts on internal throttles; re-enqueue a delayed clone.
           // Avoid BullMQ lock edge cases by not moving the current job state.
           if ((job.data as any)?.queueJobId) {
@@ -1425,17 +1522,22 @@ async function main() {
                    last_error = $4,
                    updated_at = CURRENT_TIMESTAMP
                WHERE client_id = $1 AND id = $2`,
-              [(job.data as any).clientId, (job.data as any).queueJobId, retry.backoffMs, msg]
+              [(job.data as any).clientId, (job.data as any).queueJobId, backoffMs, String(sanitizeLogValue(reason))]
             ).catch(() => {})
           }
           await sendQueue.add('__internal_retry__', job.data as any, {
-            delay: retry.backoffMs,
+            delay: backoffMs,
             removeOnComplete: true,
             removeOnFail: false,
             attempts: 3,
             backoff: { type: 'exponential', delay: 10_000 },
           })
-          console.warn('[sender-worker] bull job re-enqueued (retry_later)', { id: job.id, reason: msg, backoffMs: retry.backoffMs })
+          console.warn('[sender-worker] bull job re-enqueued', {
+            id: job.id,
+            reason,
+            backoffMs,
+            laneState: smartRetry?.laneState ?? null,
+          })
           return
         }
         throw err
@@ -1449,7 +1551,7 @@ async function main() {
   )
 
   w.on('failed', (job, err) => {
-    console.error('[sender-worker] job failed', { id: job?.id, err: err?.message })
+    console.error('[sender-worker] job failed', { id: job?.id, err: sanitizeLogValue(err?.message) })
   })
 
   process.on('SIGINT', () => void shutdown('SIGINT'))

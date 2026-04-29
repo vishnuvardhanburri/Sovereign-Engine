@@ -406,6 +406,75 @@ CREATE INDEX IF NOT EXISTS idx_reputation_events_client_created
 CREATE INDEX IF NOT EXISTS idx_reputation_events_domain_provider_created
   ON reputation_events (domain_id, provider, created_at DESC);
 
+-- Sensitive data guardrails for audit/reputation logs.
+-- Keep operational logs useful while preventing recipient emails, tokens, and SMTP secrets from being persisted.
+CREATE OR REPLACE FUNCTION xavira_mask_text(input TEXT) RETURNS TEXT AS $$
+BEGIN
+  IF input IS NULL THEN
+    RETURN NULL;
+  END IF;
+  RETURN regexp_replace(
+    input,
+    '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}',
+    '[email-redacted]',
+    'gi'
+  );
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION xavira_mask_jsonb(input JSONB) RETURNS JSONB AS $$
+DECLARE
+  output JSONB;
+BEGIN
+  IF input IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF jsonb_typeof(input) = 'object' THEN
+    SELECT jsonb_object_agg(
+      key,
+      CASE
+        WHEN lower(key) ~ '(password|pass|secret|token|smtp|authorization|cookie|api[_-]?key)' THEN to_jsonb('[redacted]'::text)
+        WHEN lower(key) ~ '(^email$|_email$|email_|recipient|to$|from$)' THEN to_jsonb('[email-redacted]'::text)
+        ELSE xavira_mask_jsonb(value)
+      END
+    )
+    INTO output
+    FROM jsonb_each(input);
+    RETURN COALESCE(output, '{}'::jsonb);
+  END IF;
+
+  IF jsonb_typeof(input) = 'array' THEN
+    SELECT jsonb_agg(xavira_mask_jsonb(value))
+    INTO output
+    FROM jsonb_array_elements(input);
+    RETURN COALESCE(output, '[]'::jsonb);
+  END IF;
+
+  IF jsonb_typeof(input) = 'string' THEN
+    RETURN to_jsonb(xavira_mask_text(input #>> '{}'));
+  END IF;
+
+  RETURN input;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION xavira_mask_reputation_event() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.message := xavira_mask_text(NEW.message);
+  NEW.previous_state := xavira_mask_jsonb(NEW.previous_state);
+  NEW.next_state := COALESCE(xavira_mask_jsonb(NEW.next_state), '{}'::jsonb);
+  NEW.metrics_snapshot := COALESCE(xavira_mask_jsonb(NEW.metrics_snapshot), '{}'::jsonb);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_xavira_mask_reputation_event ON reputation_events;
+CREATE TRIGGER trg_xavira_mask_reputation_event
+BEFORE INSERT OR UPDATE ON reputation_events
+FOR EACH ROW
+EXECUTE FUNCTION xavira_mask_reputation_event();
+
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (
   id TEXT PRIMARY KEY,
@@ -729,6 +798,35 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   user_agent TEXT,
   timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE OR REPLACE FUNCTION xavira_mask_audit_log() RETURNS TRIGGER AS $$
+BEGIN
+  NEW.details := COALESCE(xavira_mask_jsonb(NEW.details), '{}'::jsonb);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_xavira_mask_audit_log ON audit_logs;
+CREATE TRIGGER trg_xavira_mask_audit_log
+BEFORE INSERT OR UPDATE ON audit_logs
+FOR EACH ROW
+EXECUTE FUNCTION xavira_mask_audit_log();
+
+CREATE TABLE IF NOT EXISTS session_revocations (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT REFERENCES clients(id) ON DELETE CASCADE,
+  revoked_after TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reason TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT 'system',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_revocations_client_created
+  ON session_revocations (client_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_session_revocations_global_created
+  ON session_revocations (created_at DESC)
+  WHERE client_id IS NULL;
 
 -- Decision Audit Log (append-only)
 -- Stores explainable decisions tied to traceId for audit + attribution.
