@@ -1,8 +1,7 @@
 import 'dotenv/config'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
-import { computeAdaptiveThroughput, loadDomainSignals, type AdaptiveState, type ProviderSignals } from '@xavira/adaptive-controller'
-import { detectProvider } from '@xavira/provider-engine'
+import { AdaptiveControlEngine, type ProviderLane } from '@xavira/adaptive-controller'
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -25,12 +24,13 @@ const db: DbExecutor = async (text, params = []) => {
     client.release()
   }
 }
+const controlEngine = new AdaptiveControlEngine({ db: db as any, redis, region: REGION })
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
 }
 
-function providerList(): Array<'gmail' | 'outlook' | 'yahoo' | 'other'> {
+function providerList(): ProviderLane[] {
   return ['gmail', 'outlook', 'yahoo', 'other']
 }
 
@@ -89,9 +89,6 @@ async function tickOnce() {
 
     for (const d of domains.rows) {
       const domainId = Number(d.id)
-      const domainSignals = await loadDomainSignals(db as any, clientId, domainId)
-      if (!domainSignals) continue
-
       const providerSignalsByLane = await computeProviderLaneSignals(clientId, domainId)
 
       for (const p of providerList()) {
@@ -110,48 +107,14 @@ async function tickOnce() {
         // Snapshot for audit/visibility.
         const throttleFactor = clamp(1 - clamp(risk, 0, 0.5), 0.5, 1)
         await db(
-          `INSERT INTO provider_health_snapshots (client_id, provider, deferral_rate, block_rate, success_rate, throttle_factor)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [clientId, p, deferralRate, blockRate, successRate, throttleFactor]
+          `INSERT INTO provider_health_snapshots (client_id, domain_id, provider, deferral_rate, block_rate, success_rate, throttle_factor)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [clientId, domainId, p, deferralRate, blockRate, successRate, throttleFactor]
         ).catch(() => {})
 
-        // Durable reputation state per domain/provider (used for recovery + UI).
-        const providerSignals: ProviderSignals = { provider: p, providerRisk: risk, timeWindowHour: new Date().getUTCHours() }
-        const stateKey = `xv:${REGION}:adaptive:state:${clientId}:${domainId}:${p}`
-        const prevRaw = await redis.get(stateKey)
-        const prev: AdaptiveState | undefined = prevRaw ? (JSON.parse(prevRaw) as any) : undefined
-        const { throughput, nextState } = computeAdaptiveThroughput(domainSignals, providerSignals, prev, Date.now())
-        await redis.set(stateKey, JSON.stringify(nextState), 'EX', 60 * 60 * 24 * 7)
-
-        const repState =
-          throughput.shouldPauseDomain ? 'paused' : throughput.nextWindowAction === 'decrease' ? 'degraded' : 'normal'
-        const maxPerMinute = Math.max(2, Math.floor(throughput.maxPerMinute))
-        const maxConcurrency = p === 'gmail' || p === 'yahoo' ? 2 : 3
-
-        await db(
-          `INSERT INTO reputation_state (client_id, domain_id, provider, state, max_per_minute, max_concurrency, cooldown_until, reasons, metrics_snapshot, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb, now())
-           ON CONFLICT (client_id, domain_id, provider)
-           DO UPDATE SET
-             state = EXCLUDED.state,
-             max_per_minute = EXCLUDED.max_per_minute,
-             max_concurrency = EXCLUDED.max_concurrency,
-             cooldown_until = EXCLUDED.cooldown_until,
-             reasons = EXCLUDED.reasons,
-             metrics_snapshot = EXCLUDED.metrics_snapshot,
-             updated_at = now()`,
-          [
-            clientId,
-            domainId,
-            p,
-            repState,
-            maxPerMinute,
-            maxConcurrency,
-            throughput.hardStop ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
-            JSON.stringify(throughput.reasons ?? []),
-            JSON.stringify({ domainSignals, laneSignals, risk, throughput }),
-          ]
-        )
+        await controlEngine.runLane(clientId, domainId, p).catch((err) => {
+          console.error('[reputation-worker] adaptive control failed', { clientId, domainId, provider: p, err })
+        })
       }
     }
   }
@@ -176,4 +139,3 @@ main().catch((e) => {
   console.error('[reputation-worker] fatal', e)
   process.exit(1)
 })
-

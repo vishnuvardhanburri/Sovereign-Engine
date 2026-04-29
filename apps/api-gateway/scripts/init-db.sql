@@ -329,6 +329,7 @@ CREATE INDEX IF NOT EXISTS idx_adaptive_state_snapshots_client_domain_created
 CREATE TABLE IF NOT EXISTS provider_health_snapshots (
   id BIGSERIAL PRIMARY KEY,
   client_id INT NOT NULL,
+  domain_id BIGINT REFERENCES domains(id) ON DELETE CASCADE,
   provider TEXT NOT NULL,
   deferral_rate NUMERIC,
   block_rate NUMERIC,
@@ -339,6 +340,11 @@ CREATE TABLE IF NOT EXISTS provider_health_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_provider_health_snapshots_client_provider_created
   ON provider_health_snapshots (client_id, provider, created_at DESC);
+
+ALTER TABLE provider_health_snapshots ADD COLUMN IF NOT EXISTS domain_id BIGINT REFERENCES domains(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_provider_health_snapshots_domain_provider_created
+  ON provider_health_snapshots (domain_id, provider, created_at DESC);
 
 -- Seed placement measurements (measurement-only; used to detect inbox placement drift).
 CREATE TABLE IF NOT EXISTS seed_placement_events (
@@ -362,6 +368,7 @@ CREATE TABLE IF NOT EXISTS reputation_state (
   domain_id BIGINT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
   provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook', 'yahoo', 'other')),
   state TEXT NOT NULL CHECK (state IN ('warmup', 'normal', 'degraded', 'cooldown', 'paused')),
+  max_per_hour INT NOT NULL DEFAULT 50,
   max_per_minute INT NOT NULL DEFAULT 2,
   max_concurrency INT NOT NULL DEFAULT 2,
   cooldown_until TIMESTAMPTZ,
@@ -373,6 +380,31 @@ CREATE TABLE IF NOT EXISTS reputation_state (
 
 CREATE INDEX IF NOT EXISTS idx_reputation_state_client_domain_provider
   ON reputation_state (client_id, domain_id, provider);
+
+ALTER TABLE reputation_state ADD COLUMN IF NOT EXISTS max_per_hour INT NOT NULL DEFAULT 50;
+
+-- Append-only throttle/pause/ramp audit trail for the UI and compliance review.
+CREATE TABLE IF NOT EXISTS reputation_events (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  domain_id BIGINT REFERENCES domains(id) ON DELETE CASCADE,
+  provider TEXT CHECK (provider IN ('gmail', 'outlook', 'yahoo', 'other')),
+  event_type TEXT NOT NULL CHECK (
+    event_type IN ('ramp', 'throttle', 'pause', 'resume', 'cooldown', 'measurement')
+  ),
+  severity TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
+  message TEXT NOT NULL,
+  previous_state JSONB,
+  next_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  metrics_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reputation_events_client_created
+  ON reputation_events (client_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_reputation_events_domain_provider_created
+  ON reputation_events (domain_id, provider, created_at DESC);
 
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (

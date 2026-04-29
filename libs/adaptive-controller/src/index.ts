@@ -380,3 +380,416 @@ export function computeAdaptiveThroughput(
     nextState,
   }
 }
+
+export type ProviderLane = 'gmail' | 'outlook' | 'yahoo' | 'other'
+
+export type AdaptiveControlSignal = {
+  clientId: number
+  domainId: number
+  provider: ProviderLane
+  state: 'warmup' | 'normal' | 'degraded' | 'cooldown' | 'paused'
+  action: 'ramp' | 'hold' | 'throttle' | 'pause' | 'cooldown' | 'resume'
+  maxPerHour: number
+  maxPerMinute: number
+  maxConcurrency: number
+  ratePerSecond: number
+  burst: number
+  jitterPct: number
+  cooldownUntil: string | null
+  reasons: string[]
+  metrics: {
+    deferralRate1h: number
+    blockRate1h: number
+    sendSuccessRate1h: number
+    seedPlacementInboxRate: number
+    providerRisk: number
+  }
+}
+
+export type AdaptiveControlEngineDeps = {
+  db: DbExecutor
+  redis: {
+    get(key: string): Promise<string | null>
+    set(key: string, value: string, modeOrTtl?: any, durationOrMode?: any, maybeMode?: any): Promise<any>
+    del(...keys: string[]): Promise<any>
+  }
+  region?: string
+  now?: () => number
+}
+
+type PreviousReputationState = {
+  state: AdaptiveControlSignal['state']
+  max_per_hour?: number | string | null
+  max_per_minute: number | string
+  max_concurrency: number | string
+  cooldown_until?: string | Date | null
+  reasons?: any
+  metrics_snapshot?: any
+  updated_at?: string | Date | null
+}
+
+function safeJsonArray(value: any): string[] {
+  if (Array.isArray(value)) return value.map(String)
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed.map(String) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function safeJsonObject(value: any): Record<string, any> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+function hoursBetween(aMs: number, bMs: number) {
+  return Math.max(0, (aMs - bMs) / (60 * 60_000))
+}
+
+export class AdaptiveControlEngine {
+  private readonly db: DbExecutor
+  private readonly redis: AdaptiveControlEngineDeps['redis']
+  private readonly region: string
+  private readonly now: () => number
+  private readonly maxLanePerHour: number
+
+  constructor(deps: AdaptiveControlEngineDeps & { maxLanePerHour?: number }) {
+    this.db = deps.db
+    this.redis = deps.redis
+    this.region = deps.region ?? 'local'
+    this.now = deps.now ?? (() => Date.now())
+    this.maxLanePerHour = deps.maxLanePerHour ?? Number(process.env.ADAPTIVE_MAX_LANE_PER_HOUR ?? 5_000)
+  }
+
+  async runLane(clientId: number, domainId: number, provider: ProviderLane): Promise<AdaptiveControlSignal | null> {
+    const input = await this.loadInputs(clientId, domainId, provider)
+    if (!input) return null
+    const signal = this.evaluate(input)
+    await this.persistAndPublish(input.previous, signal)
+    return signal
+  }
+
+  private async loadInputs(clientId: number, domainId: number, provider: ProviderLane) {
+    const [domainRes, stateRes, healthRes, seedRes] = await Promise.all([
+      this.db<{ id: number; created_at: string | Date; daily_limit: number | string; status: string }>(
+        `SELECT id, created_at, daily_limit, status
+         FROM domains
+         WHERE client_id = $1 AND id = $2
+         LIMIT 1`,
+        [clientId, domainId]
+      ),
+      this.db<PreviousReputationState>(
+        `SELECT state, max_per_hour, max_per_minute, max_concurrency, cooldown_until, reasons, metrics_snapshot, updated_at
+         FROM reputation_state
+         WHERE client_id = $1 AND domain_id = $2 AND provider = $3
+         LIMIT 1`,
+        [clientId, domainId, provider]
+      ),
+      this.db<{ deferral_rate: string | number | null; block_rate: string | number | null; success_rate: string | number | null }>(
+        `SELECT deferral_rate, block_rate, success_rate
+         FROM provider_health_snapshots
+         WHERE client_id = $1 AND provider = $2
+           AND (domain_id = $3 OR domain_id IS NULL)
+         ORDER BY CASE WHEN domain_id = $3 THEN 0 ELSE 1 END, created_at DESC
+         LIMIT 1`,
+        [clientId, provider, domainId]
+      ),
+      this.db<{ total: string; inbox: string }>(
+        `SELECT
+           COUNT(*)::text AS total,
+           COUNT(*) FILTER (WHERE placement = 'inbox')::text AS inbox
+         FROM seed_placement_events
+         WHERE client_id = $1 AND provider = $2
+           AND created_at > (CURRENT_TIMESTAMP - INTERVAL '24 hours')`,
+        [clientId, provider]
+      ),
+    ])
+
+    const domain = domainRes.rows[0]
+    if (!domain) return null
+
+    const health = healthRes.rows[0]
+    const seed = seedRes.rows[0]
+    const seedTotal = safeNum(seed?.total, 0)
+    const seedInbox = safeNum(seed?.inbox, 0)
+    const seedPlacementInboxRate = seedTotal > 0 ? seedInbox / seedTotal : 1
+    const deferralRate1h = clamp(safeNum(health?.deferral_rate, 0), 0, 1)
+    const blockRate1h = clamp(safeNum(health?.block_rate, 0), 0, 1)
+    const sendSuccessRate1h = clamp(safeNum(health?.success_rate, 1), 0, 1)
+
+    return {
+      clientId,
+      domainId,
+      provider,
+      domain: {
+        createdAtMs: new Date(domain.created_at).getTime(),
+        dailyLimit: safeNum(domain.daily_limit, 400),
+        status: String(domain.status ?? 'active'),
+      },
+      previous: stateRes.rows[0] ?? null,
+      metrics: {
+        deferralRate1h,
+        blockRate1h,
+        sendSuccessRate1h,
+        seedPlacementInboxRate,
+      },
+    }
+  }
+
+  private evaluate(input: NonNullable<Awaited<ReturnType<AdaptiveControlEngine['loadInputs']>>>): AdaptiveControlSignal {
+    const nowMs = this.now()
+    const previous = input.previous
+    const previousSnapshot = safeJsonObject(previous?.metrics_snapshot)
+    const controlMemory = safeJsonObject(previousSnapshot.control)
+    const previousMax = clamp(safeNum(previous?.max_per_hour ?? controlMemory.maxPerHour, 50), 0, this.maxLanePerHour)
+    const providerRisk = clamp(
+      input.metrics.deferralRate1h * 0.6 + input.metrics.blockRate1h * 1.2 + (1 - input.metrics.seedPlacementInboxRate) * 0.6,
+      0,
+      1
+    )
+
+    const laneCap = clamp(
+      Math.min(this.maxLanePerHour, Math.max(50, Math.floor(input.domain.dailyLimit / 10))),
+      50,
+      this.maxLanePerHour
+    )
+
+    const reasons: string[] = []
+    let action: AdaptiveControlSignal['action'] = 'hold'
+    let state: AdaptiveControlSignal['state'] = previous?.state ?? 'warmup'
+    let maxPerHour = previous ? Math.max(50, previousMax || 50) : 50
+    let cooldownUntil: string | null = null
+
+    if (input.metrics.blockRate1h > 0.05) {
+      reasons.push('block_rate_1h_gt_5_provider_lane_pause')
+      action = 'pause'
+      state = 'paused'
+      maxPerHour = 0
+      cooldownUntil = new Date(nowMs + 60 * 60_000).toISOString()
+      return this.makeSignal(input, action, state, maxPerHour, cooldownUntil, reasons, providerRisk)
+    }
+
+    const priorCooldownUntil = previous?.cooldown_until ? new Date(previous.cooldown_until).getTime() : 0
+    const comingOffCooldown = priorCooldownUntil > 0 && priorCooldownUntil <= nowMs
+    const domainAgeHours = hoursBetween(nowMs, input.domain.createdAtMs)
+    const newOrRecovering =
+      !previous ||
+      previous.state === 'warmup' ||
+      previous.state === 'cooldown' ||
+      comingOffCooldown ||
+      domainAgeHours < 48
+
+    if (newOrRecovering) {
+      state = 'warmup'
+      reasons.push('safe_ramp_slow_start')
+      const lastRampAt = safeNum(controlMemory.lastRampAt, 0)
+      const canDouble = input.metrics.deferralRate1h < 0.02 && (!lastRampAt || nowMs - lastRampAt >= 2 * 60 * 60_000)
+      if (canDouble && previous) {
+        maxPerHour = Math.min(laneCap, Math.max(50, previousMax * 2))
+        action = maxPerHour > previousMax ? 'ramp' : 'hold'
+        if (action === 'ramp') reasons.push('safe_ramp_doubled_after_two_healthy_hours')
+      } else {
+        maxPerHour = Math.max(50, Math.min(previousMax || 50, laneCap))
+      }
+    }
+
+    if (input.metrics.deferralRate1h >= 0.02) {
+      reasons.push('deferral_rate_1h_gte_2_throttle_50')
+      maxPerHour = Math.max(25, Math.floor(maxPerHour * 0.5))
+      state = 'degraded'
+      action = 'throttle'
+    }
+
+    if (input.metrics.seedPlacementInboxRate < 0.75) {
+      reasons.push('seed_placement_inbox_rate_lt_75_throttle_50')
+      maxPerHour = Math.max(25, Math.floor(maxPerHour * 0.5))
+      state = 'degraded'
+      action = 'throttle'
+    }
+
+    if (input.metrics.seedPlacementInboxRate < 0.5) {
+      reasons.push('seed_placement_inbox_rate_lt_50_cooldown')
+      state = 'cooldown'
+      action = 'cooldown'
+      cooldownUntil = new Date(nowMs + 30 * 60_000).toISOString()
+    }
+
+    if (state === 'paused') {
+      state = 'warmup'
+      action = 'resume'
+      maxPerHour = 50
+      reasons.push('provider_lane_resume_to_slow_start')
+    }
+
+    if (!reasons.length) reasons.push('provider_lane_healthy_hold')
+    return this.makeSignal(input, action, state, Math.min(maxPerHour, laneCap), cooldownUntil, reasons, providerRisk)
+  }
+
+  private makeSignal(
+    input: NonNullable<Awaited<ReturnType<AdaptiveControlEngine['loadInputs']>>>,
+    action: AdaptiveControlSignal['action'],
+    state: AdaptiveControlSignal['state'],
+    maxPerHour: number,
+    cooldownUntil: string | null,
+    reasons: string[],
+    providerRisk: number
+  ): AdaptiveControlSignal {
+    const maxPerMinute = maxPerHour > 0 ? Math.max(1, Math.ceil(maxPerHour / 60)) : 0
+    const maxConcurrency = maxPerHour <= 0 ? 0 : maxPerHour <= 50 ? 1 : maxPerHour < 500 ? 2 : 3
+    return {
+      clientId: input.clientId,
+      domainId: input.domainId,
+      provider: input.provider,
+      state,
+      action,
+      maxPerHour,
+      maxPerMinute,
+      maxConcurrency,
+      ratePerSecond: maxPerHour > 0 ? maxPerHour / 3600 : 0,
+      burst: maxPerHour > 0 ? Math.max(1, Math.min(25, Math.ceil(maxPerHour / 12))) : 0,
+      jitterPct: 0.15,
+      cooldownUntil,
+      reasons,
+      metrics: {
+        ...input.metrics,
+        providerRisk,
+      },
+    }
+  }
+
+  private async persistAndPublish(previous: PreviousReputationState | null, signal: AdaptiveControlSignal) {
+    const nowMs = this.now()
+    const prevReasons = safeJsonArray(previous?.reasons)
+    const previousComparable = previous
+      ? {
+          state: previous.state,
+          max_per_hour: safeNum(previous.max_per_hour, 50),
+          max_per_minute: safeNum(previous.max_per_minute, 1),
+          max_concurrency: safeNum(previous.max_concurrency, 1),
+          reasons: prevReasons,
+        }
+      : null
+
+    const control = {
+      maxPerHour: signal.maxPerHour,
+      lastRampAt: signal.action === 'ramp' ? nowMs : safeNum(safeJsonObject(previous?.metrics_snapshot).control?.lastRampAt, 0),
+      updatedAt: new Date(nowMs).toISOString(),
+    }
+
+    await this.db(
+      `INSERT INTO reputation_state (client_id, domain_id, provider, state, max_per_hour, max_per_minute, max_concurrency, cooldown_until, reasons, metrics_snapshot, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb, now())
+       ON CONFLICT (client_id, domain_id, provider)
+       DO UPDATE SET
+         state = EXCLUDED.state,
+         max_per_hour = EXCLUDED.max_per_hour,
+         max_per_minute = EXCLUDED.max_per_minute,
+         max_concurrency = EXCLUDED.max_concurrency,
+         cooldown_until = EXCLUDED.cooldown_until,
+         reasons = EXCLUDED.reasons,
+         metrics_snapshot = EXCLUDED.metrics_snapshot,
+         updated_at = now()`,
+      [
+        signal.clientId,
+        signal.domainId,
+        signal.provider,
+        signal.state,
+        signal.maxPerHour,
+        signal.maxPerMinute,
+        signal.maxConcurrency,
+        signal.cooldownUntil,
+        JSON.stringify(signal.reasons),
+        JSON.stringify({ control, metrics: signal.metrics, signal }),
+      ]
+    )
+
+    const laneKey = `xv:${this.region}:adaptive:lane:${signal.clientId}:${signal.domainId}:${signal.provider}`
+    await this.redis.set(laneKey, JSON.stringify(signal), 'EX', 60 * 10)
+
+    const pauseKey = `xv:${this.region}:adaptive:lane_pause:${signal.clientId}:${signal.domainId}:${signal.provider}`
+    if (signal.state === 'paused' || signal.action === 'pause') {
+      await this.redis.set(pauseKey, JSON.stringify(signal), 'EX', 60 * 60)
+    } else {
+      await this.redis.del(pauseKey)
+    }
+
+    const changed =
+      !previousComparable ||
+      previousComparable.state !== signal.state ||
+      previousComparable.max_per_hour !== signal.maxPerHour ||
+      previousComparable.max_per_minute !== signal.maxPerMinute ||
+      previousComparable.max_concurrency !== signal.maxConcurrency ||
+      previousComparable.reasons.join('|') !== signal.reasons.join('|')
+
+    if (!changed) return
+
+    const eventType =
+      signal.action === 'pause'
+        ? 'pause'
+        : signal.action === 'ramp'
+          ? 'ramp'
+          : signal.action === 'cooldown'
+            ? 'cooldown'
+            : signal.action === 'resume'
+              ? 'resume'
+              : signal.action === 'throttle'
+                ? 'throttle'
+                : 'measurement'
+    const severity = signal.action === 'pause' ? 'critical' : signal.action === 'throttle' || signal.action === 'cooldown' ? 'warning' : 'info'
+    const message = this.describeChange(signal)
+
+    await this.db(
+      `INSERT INTO reputation_events (client_id, domain_id, provider, event_type, severity, message, previous_state, next_state, metrics_snapshot)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)`,
+      [
+        signal.clientId,
+        signal.domainId,
+        signal.provider,
+        eventType,
+        severity,
+        message,
+        JSON.stringify(previousComparable),
+        JSON.stringify({
+          state: signal.state,
+          max_per_hour: signal.maxPerHour,
+          max_per_minute: signal.maxPerMinute,
+          max_concurrency: signal.maxConcurrency,
+          reasons: signal.reasons,
+        }),
+        JSON.stringify(signal.metrics),
+      ]
+    )
+  }
+
+  private describeChange(signal: AdaptiveControlSignal): string {
+    const provider = signal.provider[0].toUpperCase() + signal.provider.slice(1)
+    if (signal.action === 'pause') {
+      return `Paused ${provider} lane for client ${signal.clientId} domain ${signal.domainId} because block_rate_1h exceeded 5%.`
+    }
+    if (signal.action === 'throttle') {
+      return `Throttled ${provider} lane for client ${signal.clientId} domain ${signal.domainId} to ${signal.maxPerHour}/hr due to ${signal.reasons.join(', ')}.`
+    }
+    if (signal.action === 'ramp') {
+      return `Safe-ramped ${provider} lane for client ${signal.clientId} domain ${signal.domainId} to ${signal.maxPerHour}/hr after healthy windows.`
+    }
+    if (signal.action === 'cooldown') {
+      return `Placed ${provider} lane for client ${signal.clientId} domain ${signal.domainId} into cooldown due to placement or provider risk.`
+    }
+    if (signal.action === 'resume') {
+      return `Resumed ${provider} lane for client ${signal.clientId} domain ${signal.domainId} at slow-start pace.`
+    }
+    return `Measured ${provider} lane for client ${signal.clientId} domain ${signal.domainId}; holding ${signal.maxPerHour}/hr.`
+  }
+}

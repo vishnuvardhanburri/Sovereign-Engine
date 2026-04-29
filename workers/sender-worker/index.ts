@@ -8,7 +8,13 @@ import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
 import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
 import { sendSmtp } from '@xavira/smtp-client'
-import { computeAdaptiveThroughput, loadDomainSignals, type AdaptiveState, type ProviderSignals } from '@xavira/adaptive-controller'
+import {
+  computeAdaptiveThroughput,
+  loadDomainSignals,
+  type AdaptiveControlSignal,
+  type AdaptiveState,
+  type ProviderSignals,
+} from '@xavira/adaptive-controller'
 import { detectProvider, getProviderPolicy } from '@xavira/provider-engine'
 import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@xavira/types'
 
@@ -195,6 +201,83 @@ async function takeGlobalToken(clientId: number): Promise<boolean> {
   return Number(allowed) === 1
 }
 
+async function takeTokenBucket(key: string, ratePerSecond: number, burst: number, ttlSec = 300): Promise<boolean> {
+  if (ratePerSecond <= 0 || burst <= 0) return false
+  const [allowed] = (await redis.eval(
+    TOKEN_BUCKET_LUA,
+    1,
+    key,
+    String(ratePerSecond),
+    String(burst),
+    String(Date.now()),
+    '1',
+    String(ttlSec)
+  )) as any
+  return Number(allowed) === 1
+}
+
+function parseLaneSignal(raw: string | null): AdaptiveControlSignal | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as AdaptiveControlSignal
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!parsed.provider || !Number.isFinite(Number(parsed.maxPerHour))) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+async function loadLaneSignal(clientId: number, domainId: number, provider: string): Promise<AdaptiveControlSignal | null> {
+  const key = `xv:${REGION}:adaptive:lane:${clientId}:${domainId}:${provider}`
+  const cached = parseLaneSignal(await redis.get(key))
+  if (cached) return cached
+
+  const res = await db<{
+    state: AdaptiveControlSignal['state']
+    max_per_hour: number | string
+    max_per_minute: number | string
+    max_concurrency: number | string
+    cooldown_until: string | null
+    reasons: any
+    metrics_snapshot: any
+  }>(
+    `SELECT state, max_per_hour, max_per_minute, max_concurrency, cooldown_until, reasons, metrics_snapshot
+     FROM reputation_state
+     WHERE client_id = $1 AND domain_id = $2 AND provider = $3
+     LIMIT 1`,
+    [clientId, domainId, provider]
+  ).catch(() => ({ rows: [], rowCount: 0 }))
+
+  const row = res.rows[0]
+  if (!row) return null
+  const maxPerHour = Number(row.max_per_hour ?? 50)
+  const signal: AdaptiveControlSignal = {
+    clientId,
+    domainId,
+    provider: provider as any,
+    state: row.state,
+    action: row.state === 'paused' ? 'pause' : 'hold',
+    maxPerHour,
+    maxPerMinute: Math.max(0, Number(row.max_per_minute ?? Math.ceil(maxPerHour / 60))),
+    maxConcurrency: Math.max(0, Number(row.max_concurrency ?? 1)),
+    ratePerSecond: maxPerHour > 0 ? maxPerHour / 3600 : 0,
+    burst: maxPerHour > 0 ? Math.max(1, Math.min(25, Math.ceil(maxPerHour / 12))) : 0,
+    jitterPct: 0.15,
+    cooldownUntil: row.cooldown_until,
+    reasons: Array.isArray(row.reasons) ? row.reasons.map(String) : [],
+    metrics: {
+      deferralRate1h: Number(row.metrics_snapshot?.metrics?.deferralRate1h ?? 0),
+      blockRate1h: Number(row.metrics_snapshot?.metrics?.blockRate1h ?? 0),
+      sendSuccessRate1h: Number(row.metrics_snapshot?.metrics?.sendSuccessRate1h ?? 1),
+      seedPlacementInboxRate: Number(row.metrics_snapshot?.metrics?.seedPlacementInboxRate ?? 1),
+      providerRisk: Number(row.metrics_snapshot?.metrics?.providerRisk ?? 0),
+    },
+  }
+  await redis.set(key, JSON.stringify(signal), 'EX', 60 * 5).catch(() => {})
+  return signal
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -311,6 +394,8 @@ async function ackLegacyPayload(raw: string) {
 
 function parseRetryLater(msg: string): { backoffMs: number } | null {
   if (!msg.startsWith('retry_later:')) return null
+  if (msg.includes('provider_lane_paused')) return { backoffMs: jitterMs(10 * 60_000, 0.15) }
+  if (msg.includes('adaptive_lane_bucket')) return { backoffMs: jitterMs(60_000, 0.15) }
   if (msg.includes('adaptive_throttle')) return { backoffMs: jitterMs(25_000, 0.3) }
   if (msg.includes('domain_concurrency_cap')) return { backoffMs: jitterMs(10_000, 0.5) }
   if (msg.includes('global_shaper')) return { backoffMs: jitterMs(15_000, 0.4) }
@@ -815,7 +900,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     if (!selection) throw new Error('no_sender_identity_available')
 
     const caps = enforceCaps(selection, lane)
-    if (!caps.ok) throw new Error(`caps:${caps.reason}`)
+    if (!caps.ok) {
+      const reason = 'reason' in caps ? caps.reason : 'unknown'
+      throw new Error(`caps:${reason}`)
+    }
 
     // Adaptive sending control (per-domain, provider-safe, abuse-resistant).
     // Multi-signal gating + EMA + cooldown + ramp profiles.
@@ -825,6 +913,25 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     const nowHour = new Date().getUTCHours()
     const timeWindowOk = bestHours ? bestHours.includes(nowHour) : true
     const providerSignals: ProviderSignals = { provider: recipientProvider, timeWindowHour: nowHour }
+    const laneSignal = await loadLaneSignal(job.clientId, selection.domain.id, recipientProvider)
+
+    if (laneSignal?.state === 'paused' || laneSignal?.action === 'pause' || laneSignal?.maxPerHour === 0) {
+      await recordMetric(job.clientId, 'adaptive_lane_paused', 1, {
+        domainId: selection.domain.id,
+        provider: recipientProvider,
+        reasons: laneSignal?.reasons ?? [],
+      })
+      throw new Error('retry_later:provider_lane_paused')
+    }
+
+    if (laneSignal?.state === 'cooldown' && laneSignal.cooldownUntil && new Date(laneSignal.cooldownUntil).getTime() > Date.now()) {
+      await recordMetric(job.clientId, 'cooldown_events', 1, {
+        domainId: selection.domain.id,
+        provider: recipientProvider,
+        reason: 'provider_lane_cooldown',
+      })
+      throw new Error('retry_later:provider_lane_paused')
+    }
 
     const domainSignals = await loadDomainSignals(db, job.clientId, selection.domain.id)
     const adaptiveStateKey = `xv:${REGION}:adaptive:state:${job.clientId}:${selection.domain.id}`
@@ -923,6 +1030,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       effectiveMaxPerMinute = 2
     }
 
+    if (laneSignal) {
+      effectiveMaxPerMinute = Math.max(1, Math.min(effectiveMaxPerMinute, laneSignal.maxPerMinute || 1))
+    }
+
     if (useCanary) {
       // Cross-domain safe coupling: if multiple domains show throttling signals, slow the whole org slightly.
       const riskBucket = `xv:${REGION}:adaptive:risk_bucket:${job.clientId}:${minuteBucket}`
@@ -950,6 +1061,29 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       }
     }
 
+    if (laneSignal) {
+      effectiveMaxPerMinute = Math.max(1, Math.min(effectiveMaxPerMinute, laneSignal.maxPerMinute || 1))
+    }
+
+    if (laneSignal) {
+      const laneBucketKey = `xv:${REGION}:adaptive:lane_bucket:${job.clientId}:${selection.domain.id}:${recipientProvider}`
+      const ok = await takeTokenBucket(
+        laneBucketKey,
+        laneSignal.ratePerSecond,
+        laneSignal.burst,
+        60 * 30
+      )
+      if (!ok) {
+        await recordMetric(job.clientId, 'adaptive_lane_bucket_wait', 1, {
+          domainId: selection.domain.id,
+          provider: recipientProvider,
+          maxPerHour: laneSignal.maxPerHour,
+          burst: laneSignal.burst,
+        })
+        throw new Error('retry_later:adaptive_lane_bucket')
+      }
+    }
+
     // Per-domain per-minute limiter.
     // NOTE: minuteBucket already defined above for global cap; keep it consistent for shaping.
     const domainRateKey = `xv:${REGION}:adaptive:domain_rate:${job.clientId}:${selection.domain.id}:${minuteBucket}`
@@ -969,7 +1103,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
     // Max concurrent SMTP connections per domain (hard safety floor).
     // Provider-aware concurrency ceiling (recipient provider).
-    const maxConcurrency = Math.max(1, Math.min(3, providerPolicy.maxDomainConcurrency))
+    const maxConcurrency = Math.max(1, Math.min(3, providerPolicy.maxDomainConcurrency, laneSignal?.maxConcurrency ?? 3))
     const concKey = `xv:${REGION}:adaptive:smtp_conc:${job.clientId}:${selection.domain.id}`
     const conc = await redis.incr(concKey)
     if (conc === 1) await redis.expire(concKey, 30)
@@ -1090,6 +1224,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         body_text: truncateText(job.text, 20_000),
         body_html: truncateText(job.html, 40_000),
         idempotency_key: idemKey,
+        provider: recipientProvider,
         adaptive: {
           throughput_current: effectiveMaxPerMinute,
           reasons: adaptive.reasons,
@@ -1183,6 +1318,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
     // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
     const isInternalThrottle =
+      msg.startsWith('retry_later:provider_lane_paused') ||
+      msg.startsWith('retry_later:adaptive_lane_bucket') ||
       msg.startsWith('retry_later:adaptive_throttle') ||
       msg.startsWith('retry_later:global_cap') ||
       msg.startsWith('retry_later:global_shaper') ||
@@ -1223,6 +1360,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           subject: job.subject,
           body_text: truncateText(job.text, 20_000),
           body_html: truncateText(job.html, 40_000),
+          provider: detectProvider(job.toEmail),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: msg,
@@ -1279,6 +1417,17 @@ async function main() {
         if (retry) {
           // Don't burn attempts on internal throttles; re-enqueue a delayed clone.
           // Avoid BullMQ lock edge cases by not moving the current job state.
+          if ((job.data as any)?.queueJobId) {
+            await db(
+              `UPDATE queue_jobs
+               SET status = 'retry',
+                   scheduled_at = CURRENT_TIMESTAMP + ($3::int * INTERVAL '1 millisecond'),
+                   last_error = $4,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE client_id = $1 AND id = $2`,
+              [(job.data as any).clientId, (job.data as any).queueJobId, retry.backoffMs, msg]
+            ).catch(() => {})
+          }
           await sendQueue.add('__internal_retry__', job.data as any, {
             delay: retry.backoffMs,
             removeOnComplete: true,
