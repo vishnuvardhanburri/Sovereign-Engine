@@ -11,7 +11,12 @@ function reqEnv(name: string) {
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
-const redis = new IORedis(reqEnv('REDIS_URL'))
+let redis: IORedis | null = null
+
+function getRedis() {
+  if (!redis) redis = new IORedis(reqEnv('REDIS_URL'), { maxRetriesPerRequest: 2 })
+  return redis
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,6 +28,7 @@ export async function GET(request: NextRequest) {
     const legacyVisibility = process.env.LEGACY_VISIBILITY_ZSET ?? 'email:queue:visibility'
 
     const sendQueueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
+    const redis = getRedis()
     const bull = new Queue(sendQueueName, { connection: { url: reqEnv('REDIS_URL') } })
 
     const [dueJobs, lastAttempt, legacyCounts, bullCounts] = await Promise.all([
@@ -87,4 +93,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'failed' }, { status: 500 })
   }
 }
-

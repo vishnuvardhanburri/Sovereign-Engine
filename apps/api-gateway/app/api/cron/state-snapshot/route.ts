@@ -10,7 +10,12 @@ function reqEnv(name: string) {
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
-const redis = new IORedis(reqEnv('REDIS_URL'))
+let redis: IORedis | null = null
+
+function getRedis() {
+  if (!redis) redis = new IORedis(reqEnv('REDIS_URL'), { maxRetriesPerRequest: 2 })
+  return redis
+}
 
 function providerFromEmail(email: string | null): 'gmail' | 'outlook' | 'yahoo' | 'other' {
   const d = String(email ?? '').toLowerCase().split('@')[1] ?? ''
@@ -36,6 +41,7 @@ export async function POST(request: NextRequest) {
     )
 
     const now = Date.now()
+    const redis = getRedis()
     let adaptiveRows = 0
     for (const d of domains.rows) {
       const stateKey = `xv:${REGION}:adaptive:state:${d.client_id}:${d.domain_id}`
@@ -142,4 +148,3 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({ ok: true, endpoint: 'state-snapshot' })
 }
-

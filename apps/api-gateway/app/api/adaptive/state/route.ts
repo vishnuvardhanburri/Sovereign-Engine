@@ -11,7 +11,12 @@ function reqEnv(name: string) {
 
 const REGION = process.env.XV_REGION ?? 'local'
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
-const redis = new IORedis(reqEnv('REDIS_URL'))
+let redis: IORedis | null = null
+
+function getRedis() {
+  if (!redis) redis = new IORedis(reqEnv('REDIS_URL'), { maxRetriesPerRequest: 2 })
+  return redis
+}
 
 const db = async (sql: string, params: any[] = []) => {
   const res = await pool.query(sql, params)
@@ -30,6 +35,7 @@ export async function GET(req: Request) {
     }
 
     const signals = await loadDomainSignals(db as any, clientId, domainId)
+    const redis = getRedis()
     const stateKey = `xv:${REGION}:adaptive:state:${clientId}:${domainId}`
     let source: 'redis' | 'snapshot' | 'cold_start' = 'redis'
     let snapshotAgeMs: number | null = null

@@ -803,7 +803,29 @@ async function lookupValidation(email: string): Promise<{ verdict: ValidationVer
 
 async function handleTracking(event: TrackingIngestEvent) {
   await ingestEvent({ db }, event)
-  await updateDomainStats({ db }, event)
+  try {
+    await updateDomainStats({ db }, event)
+  } catch (err) {
+    const code = (err as any)?.code
+    const message = (err as any)?.message ?? String(err)
+    if (code === '40P01' || code === '40001' || /deadlock detected/i.test(message)) {
+      await sleep(jitterMs(150, 0.5))
+      try {
+        await updateDomainStats({ db }, event)
+        return
+      } catch (retryErr) {
+        console.warn('[sender-worker] reputation counter update skipped after retry', {
+          code: (retryErr as any)?.code ?? null,
+          err: sanitizeLogValue((retryErr as any)?.message ?? String(retryErr)),
+        })
+        return
+      }
+    }
+    console.warn('[sender-worker] reputation counter update skipped', {
+      code: code ?? null,
+      err: sanitizeLogValue(message),
+    })
+  }
 }
 
 async function recordMetric(clientId: number, name: string, value: number, metadata?: Record<string, unknown>) {

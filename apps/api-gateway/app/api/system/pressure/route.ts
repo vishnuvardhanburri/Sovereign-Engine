@@ -10,11 +10,17 @@ function reqEnv(name: string) {
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
-const redis = new IORedis(reqEnv('REDIS_URL'))
+let redis: IORedis | null = null
+
+function getRedis() {
+  if (!redis) redis = new IORedis(reqEnv('REDIS_URL'), { maxRetriesPerRequest: 2 })
+  return redis
+}
 
 export async function GET(request: NextRequest) {
   try {
     const clientId = await resolveClientId({ headers: request.headers })
+    const redis = getRedis()
 
     const [depth, avgWait, sendRate1m] = await Promise.all([
       query<{ ready: string; retry: string }>(

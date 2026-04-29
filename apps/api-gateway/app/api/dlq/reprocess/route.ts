@@ -11,13 +11,24 @@ function reqEnv(name: string) {
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
-const redis = new IORedis(reqEnv('REDIS_URL'))
 const sendQueueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
 const dlqName = process.env.SEND_DLQ ?? 'xv-send-dlq'
-const connection = { url: reqEnv('REDIS_URL') }
 
-const sendQueue = new Queue(sendQueueName, { connection })
-const dlq = new Queue(dlqName, { connection })
+let redis: IORedis | null = null
+let sendQueue: Queue | null = null
+let dlq: Queue | null = null
+
+function getRedis() {
+  if (!redis) redis = new IORedis(reqEnv('REDIS_URL'), { maxRetriesPerRequest: 2 })
+  return redis
+}
+
+function getQueues() {
+  const connection = { url: reqEnv('REDIS_URL') }
+  if (!sendQueue) sendQueue = new Queue(sendQueueName, { connection })
+  if (!dlq) dlq = new Queue(dlqName, { connection })
+  return { sendQueue, dlq } as { sendQueue: Queue; dlq: Queue }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +38,8 @@ export async function POST(request: NextRequest) {
 
     // Safety gates (best-effort):
     // - do not reprocess if global risk/cooldown is active
+    const redis = getRedis()
+    const { sendQueue, dlq } = getQueues()
     const globalRisk = await redis.get(`xv:${REGION}:adaptive:global_risk:${clientId}`)
     if (globalRisk) {
       return NextResponse.json({ ok: false, error: 'provider_or_global_cooldown_active' }, { status: 409 })
@@ -75,4 +88,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'failed' }, { status: 500 })
   }
 }
-
