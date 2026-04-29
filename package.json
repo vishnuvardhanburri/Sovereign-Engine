@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway dev",
     "build": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway build",
+    "typecheck": "pnpm -C apps/api-gateway exec tsc --noEmit --pretty false",
     "start": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway start",
     "lint": "pnpm -C apps/api-gateway lint",
     "db:init": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway db:init",

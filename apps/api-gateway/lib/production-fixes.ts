@@ -1,7 +1,7 @@
 // PRODUCTION READINESS FIXES - BACKEND
 // Critical backend fixes for 50K+ emails/day
 
-import { query, transaction } from '@/lib/db'
+import { query, queryOne, transaction } from '@/lib/db'
 import crypto from 'crypto'
 import type { Contact, Domain, Identity, QueueJob, SequenceStep } from '@/lib/db/types'
 import nodemailer from 'nodemailer'

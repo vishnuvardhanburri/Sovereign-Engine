@@ -1,6 +1,6 @@
 import type { DbExecutor, Lane, SendIdentitySelection } from '@xavira/types'
 // Import default to stay compatible across tsx/ESM boundaries.
-import LIMITS from '../../../configs/limits/default.ts'
+import LIMITS from '../../../configs/limits/default'
 
 export interface SendingDeps {
   db: DbExecutor

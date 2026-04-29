@@ -31,6 +31,7 @@ async function getOrCreateDomain(clientId: number, domain: string) {
   )
   if (existing) return existing
   const created = await createDomain(clientId, { domain: d })
+  if (!created) throw new Error(`Failed to create domain ${d}`)
   return { id: Number(created.id), domain: created.domain }
 }
 
@@ -45,6 +46,7 @@ async function getOrCreateIdentity(clientId: number, domainId: number, email: st
   )
   if (existing) return existing
   const created = await createIdentity(clientId, { domainId, email: e })
+  if (!created) throw new Error(`Failed to create identity ${e}`)
   return { id: Number(created.id), email: created.email }
 }
 
@@ -127,6 +129,7 @@ async function main() {
     timezoneStrategy: 'utc',
     abTestEnabled: false,
   } as any)
+  if (!campaign) throw new Error('Failed to create campaign')
 
   await updateCampaignStatus(clientId, Number(campaign.id), 'active', [Number(contact.id)])
 

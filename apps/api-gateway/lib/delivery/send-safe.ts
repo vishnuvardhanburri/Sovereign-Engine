@@ -163,7 +163,7 @@ export async function sendSafe(input: SafeSendInput): Promise<SafeSendResult> {
       queueJobId: String(context.job.id),
       contactId: String(context.contact.id),
       campaignId: String(context.campaign.id),
-      sequenceId: context.job.sequence_id ? String(context.job.sequence_id) : undefined,
+      sequenceId: context.campaign.sequence_id ? String(context.campaign.sequence_id) : undefined,
       unsubscribeUrl: message.unsubscribeUrl,
       pattern_ids: message.pattern_ids ?? [],
     },

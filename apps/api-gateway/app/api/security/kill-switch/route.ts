@@ -17,9 +17,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}))
     const clientIdRaw = body.client_id ?? body.clientId
-    const clientId = clientIdRaw == null ? null : Number(clientIdRaw)
-    if (clientIdRaw != null && (!Number.isFinite(clientId) || clientId <= 0)) {
-      return NextResponse.json({ ok: false, error: 'client_id must be a positive number' }, { status: 400 })
+    let clientId: number | null = null
+    if (clientIdRaw != null) {
+      const parsedClientId = Number(clientIdRaw)
+      if (!Number.isFinite(parsedClientId) || parsedClientId <= 0) {
+        return NextResponse.json({ ok: false, error: 'client_id must be a positive number' }, { status: 400 })
+      }
+      clientId = parsedClientId
     }
 
     const reason = String(body.reason ?? 'security_kill_switch').slice(0, 500)

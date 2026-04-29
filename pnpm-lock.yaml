@@ -127,9 +127,15 @@ importers:
       '@xavira/reputation-engine':
         specifier: workspace:*
         version: link:../../services/reputation-engine
+      '@xavira/sending-engine':
+        specifier: workspace:*
+        version: link:../../services/sending-engine
       '@xavira/simulation-engine':
         specifier: workspace:*
         version: link:../../services/simulation-engine
+      '@xavira/tracking-engine':
+        specifier: workspace:*
+        version: link:../../services/tracking-engine
       '@xavira/types':
         specifier: workspace:*
         version: link:../../libs/types

@@ -230,9 +230,14 @@ export async function buildExecutionPlan(input: {
     // Strict separation: Manual mode can ONLY operate over imported/manual-upload contacts.
     // Auto mode is free to build audiences dynamically unless the user explicitly filters source.
     if (input.mode === 'manual') {
-      input.command.filters = {
-        ...(input.command.filters ?? {}),
-        sourceIn: (input.command.filters?.sourceIn?.length ? input.command.filters.sourceIn : ['manual_upload']),
+      const audience = input.command.audience ?? {}
+      const filters = audience.filters ?? {}
+      input.command.audience = {
+        ...audience,
+        filters: {
+          ...filters,
+          sourceIn: filters.sourceIn?.length ? filters.sourceIn : ['manual_upload'],
+        },
       }
     }
 
