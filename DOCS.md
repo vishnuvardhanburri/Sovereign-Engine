@@ -179,6 +179,47 @@ The safe product direction is:
 - Keep audit trails for generated copy.
 - Reject misleading, impersonating, or detection-evasion prompts.
 
+## Local Content Mutation Middleware
+
+The sender worker can optionally use a local-only mutation service. It connects to Ollama or another internal Llama/Mistral-compatible endpoint and never sends message content to OpenAI or any external API.
+
+It is disabled by default:
+
+```bash
+CONTENT_MUTATION_ENABLED=false
+```
+
+To run the optional local model in Docker:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile content-ai up -d ollama ollama-pull
+```
+
+Then enable mutation for sender workers:
+
+```bash
+CONTENT_MUTATION_ENABLED=true \
+CONTENT_MUTATION_ENDPOINT=http://ollama:11434/api/generate \
+docker compose -f docker-compose.prod.yml up -d --scale sender-worker=2
+```
+
+How it works:
+
+- The first sends for a campaign batch trigger a Redis mutation pool fill in the background.
+- The pool target is 500 approved local variations per campaign/sequence/template.
+- Sender workers randomly pull from the pool and apply a tiny local jitter before SMTP.
+- Links, tracked URLs, and unsubscribe/preference lines are immutable and are validated before send.
+- If the local model is unavailable or alters protected content, the worker falls back to the original approved copy or a safe deterministic edit.
+
+Recommended defaults:
+
+```bash
+CONTENT_MUTATION_POOL_SIZE=500
+CONTENT_MUTATION_FILL_PER_LOCK=500
+CONTENT_MUTATION_TIMEOUT_MS=12000
+CONTENT_MUTATION_POOL_TTL_SEC=86400
+```
+
 ## Founder's Manifesto: The Five-Year AI-Deliverability War
 
 Email is becoming an adversarial trust market. Inbox providers will keep improving automated filtering. Senders will keep searching for shortcuts. Xavira Orbit's position is different: we win by becoming the most disciplined reputation operating system in the market.

@@ -18,6 +18,13 @@ x-app-environment: &app-environment
   REPUTATION_PUBLIC_API_KEY: ${REPUTATION_PUBLIC_API_KEY:-}
   INVESTOR_LEAD_VALUE_USD: ${INVESTOR_LEAD_VALUE_USD:-1}
   COST_PER_SEND: ${COST_PER_SEND:-0.002}
+  CONTENT_MUTATION_ENABLED: ${CONTENT_MUTATION_ENABLED:-false}
+  CONTENT_MUTATION_ENDPOINT: ${CONTENT_MUTATION_ENDPOINT:-http://ollama:11434/api/generate}
+  CONTENT_MUTATION_MODEL: ${CONTENT_MUTATION_MODEL:-llama3:8b}
+  CONTENT_MUTATION_POOL_SIZE: ${CONTENT_MUTATION_POOL_SIZE:-500}
+  CONTENT_MUTATION_FILL_PER_LOCK: ${CONTENT_MUTATION_FILL_PER_LOCK:-500}
+  CONTENT_MUTATION_TIMEOUT_MS: ${CONTENT_MUTATION_TIMEOUT_MS:-12000}
+  CONTENT_MUTATION_POOL_TTL_SEC: ${CONTENT_MUTATION_POOL_TTL_SEC:-86400}
   MOCK_SMTP: ${MOCK_SMTP:-true}
   SMTP_HOST: ${SMTP_HOST:-mock.local}
   SMTP_PORT: ${SMTP_PORT:-587}
@@ -125,6 +132,31 @@ services:
       redis:
         condition: service_healthy
 
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["content-ai"]
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - xavira_orbit_ollama:/root/.ollama
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["content-ai"]
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint:
+      [
+        "sh",
+        "-lc",
+        "sleep 8 && ollama pull ${CONTENT_MUTATION_MODEL:-llama3:8b}"
+      ]
+    depends_on:
+      - ollama
+
 volumes:
   xavira_orbit_pgdata:
   xavira_orbit_redisdata:
+  xavira_orbit_ollama:

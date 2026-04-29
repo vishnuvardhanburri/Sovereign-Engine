@@ -76,6 +76,15 @@ ADAPTIVE_REDIS_PEERS=
 REPUTATION_PUBLIC_API_KEY=
 INVESTOR_LEAD_VALUE_USD=1
 COST_PER_SEND=0.002
+
+# Local-only content mutation. Disabled by default.
+CONTENT_MUTATION_ENABLED=false
+CONTENT_MUTATION_ENDPOINT=http://127.0.0.1:11434/api/generate
+CONTENT_MUTATION_MODEL=llama3:8b
+CONTENT_MUTATION_POOL_SIZE=500
+CONTENT_MUTATION_FILL_PER_LOCK=500
+CONTENT_MUTATION_TIMEOUT_MS=12000
+CONTENT_MUTATION_POOL_TTL_SEC=86400
 EOF
 else
   info ".env already exists; keeping your current secrets and settings"
@@ -110,6 +119,10 @@ Workers:
 
 Production Compose:
   docker compose -f docker-compose.prod.yml up -d --build --scale sender-worker=2
+
+Optional local content AI:
+  docker compose -f docker-compose.prod.yml --profile content-ai up -d ollama ollama-pull
+  CONTENT_MUTATION_ENABLED=true CONTENT_MUTATION_ENDPOINT=http://ollama:11434/api/generate docker compose -f docker-compose.prod.yml up -d --scale sender-worker=2
 
 Scale proof without real email:
   MOCK_SMTP=true MOCK_SMTP_FASTLANE=true SENDER_WORKER_CONCURRENCY=50 pnpm worker:sender

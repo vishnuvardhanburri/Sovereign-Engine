@@ -21,6 +21,7 @@
   "license": "MIT",
   "dependencies": {
     "@xavira/adaptive-controller": "workspace:*",
+    "@xavira/content-mutation": "workspace:*",
     "@xavira/decision-engine": "workspace:*",
     "@xavira/provider-engine": "workspace:*",
     "@xavira/reputation-engine": "workspace:*",

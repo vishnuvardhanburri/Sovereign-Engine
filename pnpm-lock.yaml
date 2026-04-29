@@ -321,6 +321,15 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  libs/content-mutation:
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
   libs/queue-utils:
     dependencies:
       bullmq:
@@ -772,6 +781,9 @@ importers:
       '@xavira/adaptive-controller':
         specifier: workspace:*
         version: link:../../libs/adaptive-controller
+      '@xavira/content-mutation':
+        specifier: workspace:*
+        version: link:../../libs/content-mutation
       '@xavira/decision-engine':
         specifier: workspace:*
         version: link:../../services/decision-engine

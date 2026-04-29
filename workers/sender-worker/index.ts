@@ -9,6 +9,7 @@ import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
 import { ingestEvent } from '@xavira/tracking-engine'
 import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
 import { sendSmtp } from '@xavira/smtp-client'
+import { ContentMutationService, type ContentMutationResult } from '@xavira/content-mutation'
 import {
   computeAdaptiveThroughput,
   loadDomainSignals,
@@ -24,6 +25,7 @@ type SendJob = {
   campaignId?: number
   contactId?: number
   queueJobId?: number
+  sequenceStep?: number
   toEmail: string
   subject: string
   html?: string
@@ -102,6 +104,7 @@ let bullWorker: BullWorker<SendJob> | null = null
 
 const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
 const sendQueue = new BullQueue<SendJob>(SEND_QUEUE, { connection: { url: reqEnv('REDIS_URL') } })
+const contentMutations = new ContentMutationService({ redis, region: REGION })
 
 const SMTP_HOST = reqEnv('SMTP_HOST')
 const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587)
@@ -504,6 +507,7 @@ async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<Send
     to_email: string
     subject: string
     body: string
+    sequence_step: number
     idempotency_key: string | null
   }>(
     `SELECT
@@ -513,6 +517,7 @@ async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<Send
        c.email AS to_email,
        ss.subject AS subject,
        ss.body AS body,
+       qj.sequence_step,
        qj.idempotency_key
      FROM queue_jobs qj
      JOIN contacts c ON c.id = qj.contact_id AND c.client_id = qj.client_id
@@ -530,6 +535,7 @@ async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<Send
     campaignId: Number(row.campaign_id),
     contactId: Number(row.contact_id),
     queueJobId: Number(row.queue_job_id),
+    sequenceStep: Number(row.sequence_step ?? payload.sequence_step ?? 0),
     toEmail: row.to_email,
     subject: row.subject,
     text: row.body,
@@ -879,6 +885,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   const failedKey = `xv:${REGION}:send:failed:${job.clientId}:${idemKey}`
   let selectedDomainId: number | null = null
   let recipientProviderForRun = 'other'
+  let outboundSubject = job.subject
+  let outboundText = job.text
+  let outboundHtml = job.html
+  let mutationResult: ContentMutationResult | null = null
 
   // Back-compat: if older keys exist (pre-region), respect them so we don't re-send.
   const legacyDoneKey = `xv:send:done:${job.clientId}:${idemKey}`
@@ -1241,6 +1251,26 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       throw new Error('retry_later:domain_concurrency_cap')
     }
 
+    mutationResult = await contentMutations.mutateForSend({
+      clientId: job.clientId,
+      campaignId: job.campaignId ?? null,
+      sequenceStep: job.sequenceStep ?? 0,
+      queueJobId: job.queueJobId ?? null,
+      recipientEmail: job.toEmail,
+      subject: job.subject,
+      text: job.text,
+      html: job.html,
+    })
+    outboundSubject = mutationResult.subject
+    outboundText = mutationResult.text
+    outboundHtml = mutationResult.html
+    if (mutationResult.safetyWarnings?.length) {
+      await recordMetric(job.clientId, 'content_mutation_safety_fallback', 1, {
+        source: mutationResult.source,
+        warnings: mutationResult.safetyWarnings,
+      })
+    }
+
     let messageId = ''
     let fromAddress = ''
     let smtpAttempted = false
@@ -1281,9 +1311,9 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
                 {
                   from: account.user,
                   to: job.toEmail,
-                  subject: job.subject,
-                  html: job.html,
-                  text: job.text,
+                  subject: outboundSubject,
+                  html: outboundHtml,
+                  text: outboundText,
                   headerContext: {
                     clientId: job.clientId,
                     campaignId: job.campaignId ?? null,
@@ -1374,11 +1404,20 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         event_code: 'EMAIL_SENT',
         to_email: normalizedTo,
         from_email: fromAddress,
-        subject: job.subject,
-        body_text: truncateText(job.text, 20_000),
-        body_html: truncateText(job.html, 40_000),
+        subject: outboundSubject,
+        body_text: truncateText(outboundText, 20_000),
+        body_html: truncateText(outboundHtml, 40_000),
         idempotency_key: idemKey,
         provider: recipientProvider,
+        content_mutation: mutationResult
+          ? {
+              mutated: mutationResult.mutated,
+              source: mutationResult.source,
+              variant_hash: mutationResult.variantHash ?? null,
+              pool_key: mutationResult.poolKey ?? null,
+              safety_warnings: mutationResult.safetyWarnings ?? [],
+            }
+          : null,
         adaptive: {
           throughput_current: effectiveMaxPerMinute,
           reasons: adaptive.reasons,
@@ -1523,13 +1562,22 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           )
             .trim()
             .toLowerCase(),
-          subject: job.subject,
-          body_text: truncateText(job.text, 20_000),
-          body_html: truncateText(job.html, 40_000),
+          subject: outboundSubject,
+          body_text: truncateText(outboundText, 20_000),
+          body_html: truncateText(outboundHtml, 40_000),
           provider: detectProvider(job.toEmail),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: String(sanitizeLogValue(msg)),
+          content_mutation: mutationResult
+            ? {
+                mutated: mutationResult.mutated,
+                source: mutationResult.source,
+                variant_hash: mutationResult.variantHash ?? null,
+                pool_key: mutationResult.poolKey ?? null,
+                safety_warnings: mutationResult.safetyWarnings ?? [],
+              }
+            : null,
           adaptive_experiment: expGroup,
         },
       } as any).catch(() => {})
