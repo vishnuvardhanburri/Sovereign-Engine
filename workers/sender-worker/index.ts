@@ -59,6 +59,10 @@ const LEGACY_SCHEDULED_QUEUE = process.env.LEGACY_SCHEDULED_QUEUE ?? 'email:queu
 const LEGACY_PROCESSING_QUEUE = process.env.LEGACY_PROCESSING_QUEUE ?? 'email:queue:processing'
 const LEGACY_VISIBILITY_ZSET = process.env.LEGACY_VISIBILITY_ZSET ?? 'email:queue:visibility'
 const LEGACY_VISIBILITY_TIMEOUT_SEC = Number(process.env.LEGACY_VISIBILITY_TIMEOUT_SEC ?? 5 * 60)
+const LEGACY_LOOP_BATCH_SIZE = Math.max(
+  1,
+  Math.min(Number(process.env.LEGACY_LOOP_BATCH_SIZE ?? 10), 100)
+)
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -85,7 +89,23 @@ function stableIndex(key: string, mod: number) {
   return n % mod
 }
 
-const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+function intEnv(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const n = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(n)) return fallback
+  return clamp(n, min, max)
+}
+
+const PG_POOL_MAX = intEnv('PG_POOL_MAX', 5, 1, 50)
+const PG_POOL_IDLE_TIMEOUT_MS = intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000)
+const PG_POOL_CONNECTION_TIMEOUT_MS = intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000)
+const FASTLANE_COMPLETION_BATCH_SIZE = intEnv('FASTLANE_COMPLETION_BATCH_SIZE', 500, 25, 5_000)
+const FASTLANE_COMPLETION_FLUSH_MS = intEnv('FASTLANE_COMPLETION_FLUSH_MS', 500, 50, 5_000)
+const pool = new Pool({
+  connectionString: reqEnv('DATABASE_URL'),
+  max: PG_POOL_MAX,
+  idleTimeoutMillis: PG_POOL_IDLE_TIMEOUT_MS,
+  connectionTimeoutMillis: PG_POOL_CONNECTION_TIMEOUT_MS,
+})
 const redis = new IORedis(reqEnv('REDIS_URL'))
 const REGION = process.env.XV_REGION ?? 'local'
 const GLOBAL_SENDS_PER_MINUTE = Number(process.env.GLOBAL_SENDS_PER_MINUTE ?? 120)
@@ -99,12 +119,29 @@ const WORKER_HEARTBEAT_INTERVAL_MS = Number(process.env.WORKER_HEARTBEAT_INTERVA
 const WORKER_HEARTBEAT_TTL_SEC = Number(process.env.WORKER_HEARTBEAT_TTL_SEC ?? 60)
 const WORKER_STARTED_AT = new Date().toISOString()
 const WORKER_HEARTBEAT_KEY = `xv:${REGION}:workers:sender:${WORKER_ID}`
+const WORKER_ROTATION_SEND_LIMIT = Number(process.env.WORKER_ROTATION_SEND_LIMIT ?? 5_000)
+const WORKER_ROTATION_MAX_AGE_MS = Number(process.env.WORKER_ROTATION_MAX_AGE_MS ?? 24 * 60 * 60_000)
+const WORKER_ROTATION_DRAIN_MS = Number(process.env.WORKER_ROTATION_DRAIN_MS ?? 2_500)
+const LICENSING_CONTROL_URL = process.env.LICENSING_CONTROL_URL ?? ''
+const LICENSING_KEY = process.env.LICENSING_KEY ?? ''
+const LICENSING_HEARTBEAT_INTERVAL_MS = Number(process.env.LICENSING_HEARTBEAT_INTERVAL_MS ?? 60_000)
+const LICENSING_FAIL_CLOSED = envBool('LICENSING_FAIL_CLOSED', false)
+const LICENSING_LOCK_TTL_SEC = Number(process.env.LICENSING_LOCK_TTL_SEC ?? 120)
 let heartbeatTimer: NodeJS.Timeout | null = null
+let licenseTimer: NodeJS.Timeout | null = null
 let bullWorker: BullWorker<SendJob> | null = null
+let workerProcessedSends = 0
+let workerDraining = false
+let workerRotationReason: string | null = null
+let workerRetirementTimer: NodeJS.Timeout | null = null
+let licenseState: 'not_configured' | 'active' | 'revoked' | 'unreachable' = LICENSING_CONTROL_URL && LICENSING_KEY ? 'unreachable' : 'not_configured'
+let licenseCheckedAt: string | null = null
 
 const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
 const sendQueue = new BullQueue<SendJob>(SEND_QUEUE, { connection: { url: reqEnv('REDIS_URL') } })
 const contentMutations = new ContentMutationService({ redis, region: REGION })
+const fastlaneSelectionCache = new Map<string, { expiresAt: number; selection: Awaited<ReturnType<typeof rotateInbox>> }>()
+const fastlaneCompletionBatches = new Map<number, { ids: Set<number>; timer: NodeJS.Timeout | null; flushing: boolean }>()
 
 const SMTP_HOST = reqEnv('SMTP_HOST')
 const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587)
@@ -330,6 +367,12 @@ type LegacyQueuePayload = {
   sequence_step: number
   scheduled_at: string
   idempotency_key?: string
+  to_email?: string
+  subject?: string
+  body?: string
+  text?: string
+  html?: string
+  stress_fastlane?: boolean
 }
 
 async function backfillLegacyFromDb(limit = 25) {
@@ -432,8 +475,67 @@ async function ackLegacyPayload(raw: string) {
   await pipeline.exec()
 }
 
+async function flushFastlaneCompletionBatch(clientId: number) {
+  const batch = fastlaneCompletionBatches.get(clientId)
+  if (!batch || batch.flushing || batch.ids.size === 0) return
+  batch.flushing = true
+  if (batch.timer) {
+    clearTimeout(batch.timer)
+    batch.timer = null
+  }
+  const ids = Array.from(batch.ids)
+  batch.ids.clear()
+  try {
+    await db(
+      `UPDATE queue_jobs
+       SET status = 'completed',
+           completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = ANY($2::bigint[])`,
+      [clientId, ids]
+    )
+  } finally {
+    batch.flushing = false
+    if (batch.ids.size > 0) {
+      batch.timer = setTimeout(() => void flushFastlaneCompletionBatch(clientId), FASTLANE_COMPLETION_FLUSH_MS)
+      batch.timer.unref?.()
+    }
+  }
+}
+
+async function markLegacyCompleted(clientId: number, queueJobId: number) {
+  if (!queueJobId) return
+  if (!MOCK_SMTP_FASTLANE) {
+    await db(
+      `UPDATE queue_jobs
+       SET status = 'completed',
+           completed_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = $2`,
+      [clientId, queueJobId]
+    ).catch(() => {})
+    return
+  }
+
+  let batch = fastlaneCompletionBatches.get(clientId)
+  if (!batch) {
+    batch = { ids: new Set<number>(), timer: null, flushing: false }
+    fastlaneCompletionBatches.set(clientId, batch)
+  }
+  batch.ids.add(queueJobId)
+  if (batch.ids.size >= FASTLANE_COMPLETION_BATCH_SIZE) {
+    await flushFastlaneCompletionBatch(clientId)
+    return
+  }
+  if (!batch.timer) {
+    batch.timer = setTimeout(() => void flushFastlaneCompletionBatch(clientId), FASTLANE_COMPLETION_FLUSH_MS)
+    batch.timer.unref?.()
+  }
+}
+
 function parseRetryLater(msg: string): { backoffMs: number } | null {
   if (!msg.startsWith('retry_later:')) return null
+  if (msg.includes('db_capacity')) return { backoffMs: jitterMs(20_000, 0.75) }
   if (msg.includes('provider_lane_paused')) return { backoffMs: jitterMs(10 * 60_000, 0.15) }
   if (msg.includes('adaptive_lane_bucket')) return { backoffMs: jitterMs(60_000, 0.15) }
   if (msg.includes('adaptive_throttle')) return { backoffMs: jitterMs(25_000, 0.3) }
@@ -442,7 +544,21 @@ function parseRetryLater(msg: string): { backoffMs: number } | null {
   if (msg.includes('global_cap')) return { backoffMs: jitterMs(45_000, 0.2) }
   if (msg.includes('inflight_lock')) return { backoffMs: jitterMs(8_000, 0.6) }
   if (msg.includes('recent_failure')) return { backoffMs: jitterMs(60_000, 0.2) }
+  if (msg.includes('worker_rotation_draining')) return { backoffMs: jitterMs(30_000, 0.3) }
+  if (msg.includes('license_lockdown')) return { backoffMs: jitterMs(120_000, 0.2) }
   return { backoffMs: jitterMs(30_000, 0.3) }
+}
+
+function isDbCapacityError(msg: string) {
+  const v = String(msg || '').toLowerCase()
+  return (
+    v.includes('too many clients') ||
+    v.includes('remaining connection slots') ||
+    v.includes('connection terminated unexpectedly') ||
+    v.includes('timeout exceeded when trying to connect') ||
+    v.includes('connection terminated due to connection timeout') ||
+    v.includes('53300')
+  )
 }
 
 async function computeSmartSmtpRetry(input: {
@@ -500,6 +616,27 @@ async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<Send
   const clientId = Number(payload.client_id)
   if (!Number.isFinite(qjId) || !Number.isFinite(clientId)) return null
 
+  if (
+    MOCK_SMTP_FASTLANE &&
+    payload.stress_fastlane &&
+    payload.to_email &&
+    payload.subject &&
+    (payload.text || payload.body || payload.html)
+  ) {
+    return {
+      clientId,
+      campaignId: Number(payload.campaign_id),
+      contactId: Number(payload.contact_id),
+      queueJobId: qjId,
+      sequenceStep: Number(payload.sequence_step ?? 0),
+      toEmail: String(payload.to_email),
+      subject: String(payload.subject),
+      text: payload.text ?? payload.body,
+      html: payload.html,
+      idempotencyKey: payload.idempotency_key || undefined,
+    }
+  }
+
   const res = await db<{
     queue_job_id: number
     campaign_id: number
@@ -543,12 +680,123 @@ async function buildSendJobFromLegacy(payload: LegacyQueuePayload): Promise<Send
   }
 }
 
+async function processLegacyRaw(raw: string) {
+  let payload: LegacyQueuePayload | null = null
+  try {
+    payload = JSON.parse(raw) as LegacyQueuePayload
+  } catch {
+    await ackLegacyPayload(raw).catch(() => {})
+    return
+  }
+
+  let job: SendJob | null = null
+  try {
+    job = await buildSendJobFromLegacy(payload)
+  } catch (err) {
+    const msg = (err as any)?.message ?? String(err)
+    if (isDbCapacityError(msg)) {
+      const backoffMs = jitterMs(20_000, 0.75)
+      await ackLegacyPayload(raw).catch(() => {})
+      await requeueLegacyRaw(raw, backoffMs)
+      console.warn('[sender-worker] legacy job deferred before hydration', {
+        id: payload?.id,
+        reason: 'retry_later:db_capacity',
+        backoffMs,
+      })
+      return
+    }
+    throw err
+  }
+  if (!job) {
+    await ackLegacyPayload(raw).catch(() => {})
+    return
+  }
+
+  await redis.zadd(LEGACY_VISIBILITY_ZSET, Date.now() + LEGACY_VISIBILITY_TIMEOUT_SEC * 1000, raw)
+
+  // Best-effort DB state transition (keeps UI coherent).
+  if (!MOCK_SMTP_FASTLANE) {
+    await db(
+      `UPDATE queue_jobs
+       SET status = 'processing', reserved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = $2 AND status = 'pending'`,
+      [job.clientId, job.queueJobId ?? 0]
+    ).catch(() => {})
+  }
+
+  if (!MOCK_SMTP_FASTLANE) {
+    console.log('[sender-worker] legacy send start', {
+      queueJobId: job.queueJobId,
+      campaignId: job.campaignId,
+      to: maskEmail(job.toEmail),
+    })
+  }
+
+  try {
+    await runSend(job)
+  } catch (err) {
+    const msg = (err as any)?.message ?? String(err)
+    const retry = parseRetryLater(msg)
+    const capacityRetry = isDbCapacityError(msg)
+      ? { backoffMs: jitterMs(20_000, 0.75), reason: 'retry_later:db_capacity', laneState: null }
+      : undefined
+    const smartRetry =
+      capacityRetry ??
+      ((err as any)?.smartRetry as { backoffMs: number; reason: string; laneState: string | null } | undefined)
+    if (retry || smartRetry) {
+      const backoffMs = retry?.backoffMs ?? smartRetry!.backoffMs
+      const reason = retry ? msg : smartRetry!.reason
+      await db(
+        `UPDATE queue_jobs
+         SET status = 'retry',
+             attempts = attempts + 1,
+             last_error = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(reason))]
+      ).catch(() => {})
+
+      await ackLegacyPayload(raw).catch(() => {})
+      await requeueLegacyRaw(raw, backoffMs)
+      console.warn('[sender-worker] legacy job deferred', {
+        queueJobId: job.queueJobId,
+        reason,
+        backoffMs,
+        laneState: smartRetry?.laneState ?? null,
+      })
+      return
+    }
+
+    await db(
+      `UPDATE queue_jobs
+       SET status = 'failed',
+           attempts = attempts + 1,
+           last_error = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = $2`,
+      [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(msg))]
+    ).catch(() => {})
+
+    await ackLegacyPayload(raw).catch(() => {})
+    console.error('[sender-worker] legacy job failed', { queueJobId: job.queueJobId, err: sanitizeLogValue(msg) })
+    return
+  }
+
+  await markLegacyCompleted(job.clientId, job.queueJobId ?? 0)
+
+  await ackLegacyPayload(raw).catch(() => {})
+  if (!MOCK_SMTP_FASTLANE) {
+    console.log('[sender-worker] legacy send completed', { queueJobId: job.queueJobId })
+  }
+}
+
 async function runLegacyQueueLoop() {
   console.log('[sender-worker] legacy queue bridge enabled', {
     ready: LEGACY_READY_QUEUE,
     scheduled: LEGACY_SCHEDULED_QUEUE,
     processing: LEGACY_PROCESSING_QUEUE,
     visibility: LEGACY_VISIBILITY_ZSET,
+    batchSize: LEGACY_LOOP_BATCH_SIZE,
   })
 
   // eslint-disable-next-line no-constant-condition
@@ -569,92 +817,15 @@ async function runLegacyQueueLoop() {
         }
       }
 
-      const raw = (await redis.lmove(LEGACY_READY_QUEUE, LEGACY_PROCESSING_QUEUE, 'LEFT', 'RIGHT')) as string | null
-      if (!raw) continue
-
-      let payload: LegacyQueuePayload | null = null
-      try {
-        payload = JSON.parse(raw) as LegacyQueuePayload
-      } catch {
-        payload = null
+      const raws: string[] = []
+      for (let i = 0; i < LEGACY_LOOP_BATCH_SIZE; i += 1) {
+        const raw = (await redis.lmove(LEGACY_READY_QUEUE, LEGACY_PROCESSING_QUEUE, 'LEFT', 'RIGHT')) as string | null
+        if (!raw) break
+        raws.push(raw)
       }
-      if (!payload) continue
+      if (!raws.length) continue
 
-      await redis.zadd(LEGACY_VISIBILITY_ZSET, Date.now() + LEGACY_VISIBILITY_TIMEOUT_SEC * 1000, raw)
-
-      const job = await buildSendJobFromLegacy(payload)
-      if (!job) continue
-
-      // Best-effort DB state transition (keeps UI coherent).
-      await db(
-        `UPDATE queue_jobs
-         SET status = 'processing', reserved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-         WHERE client_id = $1 AND id = $2 AND status = 'pending'`,
-        [job.clientId, job.queueJobId ?? 0]
-      ).catch(() => {})
-
-      console.log('[sender-worker] legacy send start', {
-        queueJobId: job.queueJobId,
-        campaignId: job.campaignId,
-        to: maskEmail(job.toEmail),
-      })
-
-      try {
-        await runSend(job)
-      } catch (err) {
-        const msg = (err as any)?.message ?? String(err)
-        const retry = parseRetryLater(msg)
-        const smartRetry = (err as any)?.smartRetry as { backoffMs: number; reason: string; laneState: string | null } | undefined
-        if (retry || smartRetry) {
-          const backoffMs = retry?.backoffMs ?? smartRetry!.backoffMs
-          const reason = retry ? msg : smartRetry!.reason
-          await db(
-            `UPDATE queue_jobs
-             SET status = 'retry',
-                 attempts = attempts + 1,
-                 last_error = $3,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE client_id = $1 AND id = $2`,
-            [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(reason))]
-          ).catch(() => {})
-
-          await ackLegacyPayload(raw).catch(() => {})
-          await requeueLegacyRaw(raw, backoffMs)
-          console.warn('[sender-worker] legacy job deferred', {
-            queueJobId: job.queueJobId,
-            reason,
-            backoffMs,
-            laneState: smartRetry?.laneState ?? null,
-          })
-          continue
-        }
-
-        await db(
-          `UPDATE queue_jobs
-           SET status = 'failed',
-               attempts = attempts + 1,
-               last_error = $3,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE client_id = $1 AND id = $2`,
-          [job.clientId, job.queueJobId ?? 0, String(sanitizeLogValue(msg))]
-        ).catch(() => {})
-
-        await ackLegacyPayload(raw).catch(() => {})
-        console.error('[sender-worker] legacy job failed', { queueJobId: job.queueJobId, err: sanitizeLogValue(msg) })
-        continue
-      }
-
-      await db(
-        `UPDATE queue_jobs
-         SET status = 'completed',
-             completed_at = CURRENT_TIMESTAMP,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE client_id = $1 AND id = $2`,
-        [job.clientId, job.queueJobId ?? 0]
-      ).catch(() => {})
-
-      await ackLegacyPayload(raw).catch(() => {})
-      console.log('[sender-worker] legacy send completed', { queueJobId: job.queueJobId })
+      await Promise.allSettled(raws.map((raw) => processLegacyRaw(raw)))
     } catch (err) {
       console.error('[sender-worker] legacy queue loop error', err)
       await sleep(1000)
@@ -665,6 +836,18 @@ async function runLegacyQueueLoop() {
 function jitterMs(base: number, pct = 0.15) {
   const j = base * pct
   return Math.max(0, Math.floor(base + (Math.random() * 2 - 1) * j))
+}
+
+async function rotateInboxForSend(clientId: number, lane: Lane) {
+  if (!MOCK_SMTP_FASTLANE) return rotateInbox({ db }, clientId, lane)
+  const key = `${clientId}:${lane}`
+  const cached = fastlaneSelectionCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.selection
+  const selection = await rotateInbox({ db }, clientId, lane)
+  if (selection) {
+    fastlaneSelectionCache.set(key, { selection, expiresAt: Date.now() + 30_000 })
+  }
+  return selection
 }
 
 async function getBestHours(clientId: number, domainId: number): Promise<number[] | null> {
@@ -803,6 +986,7 @@ async function lookupValidation(email: string): Promise<{ verdict: ValidationVer
 
 async function handleTracking(event: TrackingIngestEvent) {
   await ingestEvent({ db }, event)
+  if (MOCK_SMTP_FASTLANE) return
   try {
     await updateDomainStats({ db }, event)
   } catch (err) {
@@ -842,6 +1026,7 @@ async function recordMetric(clientId: number, name: string, value: number, metad
 }
 
 async function writeWorkerHeartbeat() {
+  const uptimeMs = Math.max(0, Date.now() - new Date(WORKER_STARTED_AT).getTime())
   await redis
     .set(
       WORKER_HEARTBEAT_KEY,
@@ -853,7 +1038,22 @@ async function writeWorkerHeartbeat() {
         host: os.hostname(),
         pid: process.pid,
         concurrency: WORKER_CONCURRENCY,
+        legacyLoopBatchSize: LEGACY_LOOP_BATCH_SIZE,
+        pgPoolMax: PG_POOL_MAX,
         mockSmtp: MOCK_SMTP,
+        desiredState: workerDraining ? 'draining' : 'active',
+        processedSends: workerProcessedSends,
+        uptimeMs,
+        rotation: {
+          sendLimit: WORKER_ROTATION_SEND_LIMIT,
+          maxAgeMs: WORKER_ROTATION_MAX_AGE_MS,
+          reason: workerRotationReason,
+        },
+        license: {
+          state: licenseState,
+          checkedAt: licenseCheckedAt,
+          failClosed: LICENSING_FAIL_CLOSED,
+        },
         startedAt: WORKER_STARTED_AT,
         lastSeenAt: new Date().toISOString(),
       }),
@@ -865,9 +1065,136 @@ async function writeWorkerHeartbeat() {
     })
 }
 
+async function scheduleWorkerRetirement(reason: string) {
+  if (workerDraining) return
+  workerDraining = true
+  workerRotationReason = reason
+  await redis
+    .set(
+      `xv:${REGION}:workers:sender_retire:${WORKER_ID}`,
+      JSON.stringify({
+        workerId: WORKER_ID,
+        reason,
+        processedSends: workerProcessedSends,
+        startedAt: WORKER_STARTED_AT,
+        retiringAt: new Date().toISOString(),
+      }),
+      'EX',
+      Math.max(60, Math.ceil(WORKER_ROTATION_DRAIN_MS / 1000) + 60)
+    )
+    .catch(() => {})
+  await writeWorkerHeartbeat()
+  await bullWorker?.pause(true).catch(() => {})
+  console.warn('[sender-worker] entering graceful rotation drain', {
+    workerId: WORKER_ID,
+    reason,
+    processedSends: workerProcessedSends,
+    drainMs: WORKER_ROTATION_DRAIN_MS,
+  })
+  workerRetirementTimer = setTimeout(() => void shutdown(`ROTATE_${reason}`), WORKER_ROTATION_DRAIN_MS)
+  workerRetirementTimer.unref?.()
+}
+
+function checkWorkerRotation() {
+  if (workerDraining) return
+  if (WORKER_ROTATION_SEND_LIMIT > 0 && workerProcessedSends >= WORKER_ROTATION_SEND_LIMIT) {
+    void scheduleWorkerRetirement('send_limit_reached')
+    return
+  }
+  if (WORKER_ROTATION_MAX_AGE_MS > 0 && Date.now() - new Date(WORKER_STARTED_AT).getTime() >= WORKER_ROTATION_MAX_AGE_MS) {
+    void scheduleWorkerRetirement('max_age_reached')
+  }
+}
+
+async function setLicenseLockdown(reason: string) {
+  await redis
+    .set(
+      `xv:${REGION}:license:lockdown`,
+      JSON.stringify({
+        workerId: WORKER_ID,
+        reason,
+        state: licenseState,
+        checkedAt: licenseCheckedAt ?? new Date().toISOString(),
+      }),
+      'EX',
+      LICENSING_LOCK_TTL_SEC
+    )
+    .catch(() => {})
+}
+
+async function checkLicenseHeartbeat() {
+  if (!LICENSING_CONTROL_URL || !LICENSING_KEY) return
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5_000)
+  try {
+    const res = await fetch(LICENSING_CONTROL_URL, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${LICENSING_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        workerId: WORKER_ID,
+        role: 'sender',
+        region: REGION,
+        processedSends: workerProcessedSends,
+        startedAt: WORKER_STARTED_AT,
+        checkedAt: new Date().toISOString(),
+      }),
+      signal: controller.signal,
+    })
+    licenseCheckedAt = new Date().toISOString()
+    if (!res.ok) {
+      licenseState = res.status === 401 || res.status === 403 ? 'revoked' : 'unreachable'
+    } else {
+      const payload = (await res.json().catch(() => ({}))) as { status?: string; active?: boolean; revoked?: boolean }
+      licenseState = payload.revoked || payload.active === false || payload.status === 'revoked' ? 'revoked' : 'active'
+    }
+  } catch {
+    licenseCheckedAt = new Date().toISOString()
+    licenseState = 'unreachable'
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  if (licenseState === 'revoked' || (licenseState === 'unreachable' && LICENSING_FAIL_CLOSED)) {
+    await setLicenseLockdown(licenseState === 'revoked' ? 'license_revoked' : 'license_unreachable_fail_closed')
+  }
+  await writeWorkerHeartbeat()
+}
+
+function startLicenseHeartbeat() {
+  if (!LICENSING_CONTROL_URL || !LICENSING_KEY) return
+  void checkLicenseHeartbeat()
+  licenseTimer = setInterval(() => void checkLicenseHeartbeat(), LICENSING_HEARTBEAT_INTERVAL_MS)
+  licenseTimer.unref?.()
+}
+
+async function stopLicenseHeartbeat() {
+  if (licenseTimer) {
+    clearInterval(licenseTimer)
+    licenseTimer = null
+  }
+}
+
+async function assertWorkerCanAccept(job: SendJob) {
+  if (workerDraining) {
+    await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: 'worker_rotation_draining' })
+    throw new Error('retry_later:worker_rotation_draining')
+  }
+  const lockdown = await redis.get(`xv:${REGION}:license:lockdown`)
+  if (lockdown) {
+    await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: 'license_lockdown' })
+    throw new Error('retry_later:license_lockdown')
+  }
+}
+
 function startWorkerHeartbeat() {
   void writeWorkerHeartbeat()
-  heartbeatTimer = setInterval(() => void writeWorkerHeartbeat(), WORKER_HEARTBEAT_INTERVAL_MS)
+  heartbeatTimer = setInterval(() => {
+    checkWorkerRotation()
+    void writeWorkerHeartbeat()
+  }, WORKER_HEARTBEAT_INTERVAL_MS)
   heartbeatTimer.unref?.()
 }
 
@@ -923,6 +1250,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     return
   }
 
+  await assertWorkerCanAccept(job)
+
   const recentlyFailed = await redis.get(failedKey)
   if (recentlyFailed) {
     await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: 'recent_failure' })
@@ -942,13 +1271,15 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   let expGroup: 'adaptive' | 'baseline' | null = null
 
   try {
-    console.log('[sender-worker] send attempt start', {
-      bullJobId,
-      queueJobId: job.queueJobId,
-      campaignId: job.campaignId,
-      to: maskEmail(job.toEmail),
-      idemKey,
-    })
+    if (!MOCK_SMTP_FASTLANE) {
+      console.log('[sender-worker] send attempt start', {
+        bullJobId,
+        queueJobId: job.queueJobId,
+        campaignId: job.campaignId,
+        to: maskEmail(job.toEmail),
+        idemKey,
+      })
+    }
 
     const useCanary = ADAPTIVE_CANARY ? sampleCanary(idemKey) : true
     expGroup = ADAPTIVE_EXPERIMENT ? experimentGroup(idemKey) : null
@@ -983,7 +1314,9 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       }
     }
 
-    const validation = await lookupValidation(job.toEmail)
+    const validation = MOCK_SMTP_FASTLANE
+      ? { verdict: 'valid' as const, score: 0.99, catchAll: false }
+      : await lookupValidation(job.toEmail)
     // Local/demo safety: if validator has not run yet, don't stall sending forever.
     // Treat unknown as risky and route to a conservative lane.
     const effectiveValidation =
@@ -992,15 +1325,18 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         : validation
 
   // Best-effort: domain score is used to route valid traffic if domain is unhealthy.
-  const domainIdRes = await db<{ id: number }>(
-    `SELECT id
-     FROM domains
-     WHERE client_id = $1 AND domain = split_part($2,'@',2)
-     LIMIT 1`,
-    [job.clientId, job.toEmail]
-  )
-  const domainId = domainIdRes.rows[0]?.id
-  const domainScore = domainId ? (await getDomainScore({ db }, job.clientId, domainId))?.score : undefined
+  let domainScore: number | undefined
+  if (!MOCK_SMTP_FASTLANE) {
+    const domainIdRes = await db<{ id: number }>(
+      `SELECT id
+       FROM domains
+       WHERE client_id = $1 AND domain = split_part($2,'@',2)
+       LIMIT 1`,
+      [job.clientId, job.toEmail]
+    )
+    const domainId = domainIdRes.rows[0]?.id
+    domainScore = domainId ? (await getDomainScore({ db }, job.clientId, domainId))?.score : undefined
+  }
 
 	  const decision = decide({
 	    email: job.toEmail,
@@ -1010,15 +1346,17 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 	    catchAll: effectiveValidation.catchAll,
 	  })
 
-    console.log('[sender-worker] decision', {
-      bullJobId,
-      queueJobId: job.queueJobId,
-      action: (decision as any).action,
-      lane: (decision as any).lane,
-      reason: (decision as any).reason,
-      verdict: effectiveValidation.verdict,
-      score: effectiveValidation.score,
-    })
+    if (!MOCK_SMTP_FASTLANE) {
+      console.log('[sender-worker] decision', {
+        bullJobId,
+        queueJobId: job.queueJobId,
+        action: (decision as any).action,
+        lane: (decision as any).lane,
+        reason: (decision as any).reason,
+        verdict: effectiveValidation.verdict,
+        score: effectiveValidation.score,
+      })
+    }
 
   if (decision.action === 'drop') {
     await handleTracking({
@@ -1037,7 +1375,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   }
 
     let lane: Lane = decision.lane
-    let selection = await rotateInbox({ db }, job.clientId, lane)
+    let selection = await rotateInboxForSend(job.clientId, lane)
 
     // Production behavior: if the preferred lane is too strict for the currently configured domains
     // (common when SPF/DKIM/DMARC aren't populated yet), gracefully fall back to normal lane
@@ -1051,7 +1389,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       })
       await recordMetric(job.clientId, 'lane_fallback_to_normal', 1, { from: lane })
       lane = 'normal'
-      selection = await rotateInbox({ db }, job.clientId, lane)
+      selection = await rotateInboxForSend(job.clientId, lane)
     }
 
     if (!selection) throw new Error('no_sender_identity_available')
@@ -1073,6 +1411,16 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     const timeWindowOk = bestHours ? bestHours.includes(nowHour) : true
     const providerSignals: ProviderSignals = { provider: recipientProvider, timeWindowHour: nowHour }
     const laneSignal = await loadLaneSignal(job.clientId, selection.domain.id, recipientProvider)
+    const providerPause = await redis.get(`xv:${REGION}:adaptive:provider_pause:${job.clientId}:${recipientProvider}`)
+
+    if (providerPause) {
+      await recordMetric(job.clientId, 'adaptive_lane_paused', 1, {
+        domainId: selection.domain.id,
+        provider: recipientProvider,
+        reason: 'global_provider_pause',
+      })
+      throw new Error('retry_later:provider_lane_paused')
+    }
 
     if (laneSignal?.state === 'paused' || laneSignal?.action === 'pause' || laneSignal?.maxPerHour === 0) {
       await recordMetric(job.clientId, 'adaptive_lane_paused', 1, {
@@ -1302,12 +1650,14 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       const sent = MOCK_SMTP
         ? await (async () => {
             fromAddress = String(selection.identity.email ?? `mock@${selection.domain.domain}`).toLowerCase()
-            console.log('[sender-worker] mock smtp send start', {
-              from: maskEmail(fromAddress),
-              to: maskEmail(job.toEmail),
-              queueJobId: job.queueJobId,
-            })
-            await sleep(jitterMs(5, 0.5))
+            if (!MOCK_SMTP_FASTLANE) {
+              console.log('[sender-worker] mock smtp send start', {
+                from: maskEmail(fromAddress),
+                to: maskEmail(job.toEmail),
+                queueJobId: job.queueJobId,
+              })
+            }
+            if (!MOCK_SMTP_FASTLANE) await sleep(jitterMs(5, 0.5))
             return {
               messageId: `<mock-${idemKey}-${Date.now()}@${selection.domain.domain}>`,
             }
@@ -1358,59 +1708,65 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             ])
           })()
       messageId = sent.messageId
-      console.log('[sender-worker] smtp send completed', { messageId, to: maskEmail(job.toEmail) })
+      if (!MOCK_SMTP_FASTLANE) {
+        console.log('[sender-worker] smtp send completed', { messageId, to: maskEmail(job.toEmail) })
+      }
     } finally {
       // Best-effort release: if process crashes, TTL expires.
       if (!MOCK_SMTP_FASTLANE) await redis.decr(concKey).catch(() => {})
     }
 
-  await db(
-    `UPDATE identities
-     SET sent_today = sent_today + 1,
-         sent_count = sent_count + 1,
-         last_sent_at = CURRENT_TIMESTAMP,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE client_id = $1 AND id = $2`,
-    [job.clientId, selection.identity.id]
-  )
-  await db(
-    `UPDATE domains
-     SET sent_today = sent_today + 1,
-         sent_count = sent_count + 1,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE client_id = $1 AND id = $2`,
-    [job.clientId, selection.domain.id]
-  )
+    if (!MOCK_SMTP_FASTLANE) {
+      await db(
+        `UPDATE identities
+         SET sent_today = sent_today + 1,
+             sent_count = sent_count + 1,
+             last_sent_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, selection.identity.id]
+      )
+      await db(
+        `UPDATE domains
+         SET sent_today = sent_today + 1,
+             sent_count = sent_count + 1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1 AND id = $2`,
+        [job.clientId, selection.domain.id]
+      )
+    }
 
     const normalizedTo = String(job.toEmail || '').trim().toLowerCase()
 
     // Duplicate anomaly fallback: if we somehow already sent to the same email recently,
     // suppress sending to protect domains. This should be extremely rare due to idempotency.
-    const dupRes = await db<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM events
-       WHERE client_id = $1
-         AND event_type = 'sent'
-         AND COALESCE(metadata->>'to_email','') = $2
-         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '1 hour')`,
-      [job.clientId, normalizedTo]
-    )
-    if (Number(dupRes.rows[0]?.count ?? 0) > 0) {
-      await recordMetric(job.clientId, 'duplicate_send_prevented', 1, { scope: 'worker', reason: 'recent_window' })
-      console.warn('[sender-worker] duplicate anomaly suppressed (recent window)', { bullJobId, idemKey, to: maskEmail(normalizedTo) })
-      await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
-      await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
-      await redis.del(inflightKey)
-      await redis.del(failedKey)
-      await handleTracking({
-        type: 'FAILED',
-        clientId: job.clientId,
-        campaignId: job.campaignId ?? null,
-        contactId: job.contactId ?? null,
-        queueJobId: job.queueJobId ?? null,
-        metadata: { event_code: 'EMAIL_FAILED', reason: 'duplicate_recent_window', to_email: normalizedTo, idempotency_key: idemKey },
-      })
-      return
+    if (!MOCK_SMTP_FASTLANE) {
+      const dupRes = await db<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM events
+         WHERE client_id = $1
+           AND event_type = 'sent'
+           AND COALESCE(metadata->>'to_email','') = $2
+           AND created_at > (CURRENT_TIMESTAMP - INTERVAL '1 hour')`,
+        [job.clientId, normalizedTo]
+      )
+      if (Number(dupRes.rows[0]?.count ?? 0) > 0) {
+        await recordMetric(job.clientId, 'duplicate_send_prevented', 1, { scope: 'worker', reason: 'recent_window' })
+        console.warn('[sender-worker] duplicate anomaly suppressed (recent window)', { bullJobId, idemKey, to: maskEmail(normalizedTo) })
+        await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
+        await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
+        await redis.del(inflightKey)
+        await redis.del(failedKey)
+        await handleTracking({
+          type: 'FAILED',
+          clientId: job.clientId,
+          campaignId: job.campaignId ?? null,
+          contactId: job.contactId ?? null,
+          queueJobId: job.queueJobId ?? null,
+          metadata: { event_code: 'EMAIL_FAILED', reason: 'duplicate_recent_window', to_email: normalizedTo, idempotency_key: idemKey },
+        })
+        return
+      }
     }
 
     await handleTracking({
@@ -1479,8 +1835,12 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
     await redis.del(inflightKey)
     await redis.del(failedKey)
-    await recordMetric(job.clientId, 'send_success_rate', 1, { scope: 'worker' })
-    await recordMetric(job.clientId, 'duplicate_send_prevented', 0, { scope: 'worker' })
+    workerProcessedSends += 1
+    checkWorkerRotation()
+    if (!MOCK_SMTP_FASTLANE) {
+      await recordMetric(job.clientId, 'send_success_rate', 1, { scope: 'worker' })
+      await recordMetric(job.clientId, 'duplicate_send_prevented', 0, { scope: 'worker' })
+    }
   } catch (err) {
     console.error('[sender-worker] send attempt error', {
       bullJobId,
@@ -1488,6 +1848,17 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       idemKey,
       err: sanitizeLogValue((err as any)?.message ?? String(err)),
     })
+    const rawErrorMessage = (err as any)?.message ?? String(err)
+    if (isDbCapacityError(rawErrorMessage)) {
+      ;(err as any).smartRetry = {
+        backoffMs: jitterMs(20_000, 0.75),
+        reason: 'retry_later:db_capacity',
+        laneState: null,
+      }
+      await redis.del(inflightKey)
+      await recordMetric(job.clientId, 'retry_count', 1, { scope: 'worker', reason: 'db_capacity' }).catch(() => {})
+      throw err
+    }
     // DLQ handling: after N attempts, stop retrying and move to DLQ with reason.
     const attemptsMade = bull?.attemptsMade ?? 0
     if (attemptsMade >= MAX_SEND_ATTEMPTS) {
@@ -1531,9 +1902,19 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     }
 
     const msg = (err as any)?.message ?? String(err)
+    const isCapacityPressure = isDbCapacityError(msg)
+    if (isCapacityPressure) {
+      ;(err as any).smartRetry = {
+        backoffMs: jitterMs(20_000, 0.75),
+        reason: 'retry_later:db_capacity',
+        laneState: null,
+      }
+    }
 
     // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
     const isInternalThrottle =
+      isCapacityPressure ||
+      msg.startsWith('retry_later:db_capacity') ||
       msg.startsWith('retry_later:provider_lane_paused') ||
       msg.startsWith('retry_later:adaptive_lane_bucket') ||
       msg.startsWith('retry_later:adaptive_throttle') ||
@@ -1542,6 +1923,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       msg.startsWith('retry_later:domain_concurrency_cap') ||
       msg.startsWith('retry_later:inflight_lock') ||
       msg.startsWith('retry_later:recent_failure') ||
+      msg.startsWith('retry_later:worker_rotation_draining') ||
+      msg.startsWith('retry_later:license_lockdown') ||
       msg.startsWith('retry_later:validator_unknown')
 
     if (!isInternalThrottle) {
@@ -1633,12 +2016,23 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
 async function main() {
   console.log('[sender-worker] starting', { queue: SEND_QUEUE, workerId: WORKER_ID })
-  console.log('[sender-worker] config', { SEND_ALLOW_UNKNOWN_VALIDATION, MOCK_SMTP, MOCK_SMTP_FASTLANE, WORKER_CONCURRENCY })
+  console.log('[sender-worker] config', {
+    SEND_ALLOW_UNKNOWN_VALIDATION,
+    MOCK_SMTP,
+    MOCK_SMTP_FASTLANE,
+    WORKER_CONCURRENCY,
+    LEGACY_LOOP_BATCH_SIZE,
+    PG_POOL_MAX,
+    WORKER_ROTATION_SEND_LIMIT,
+    WORKER_ROTATION_MAX_AGE_MS,
+    licensing: LICENSING_CONTROL_URL ? 'enabled' : 'not_configured',
+  })
 
   // Auto-safe deploy: after restart, be conservative for 10 minutes to avoid burst-on-deploy.
   await redis.set(`xv:${REGION}:deploy:conservative`, '0.7', 'EX', 10 * 60)
 
   await bootstrapFromSnapshots()
+  startLicenseHeartbeat()
   startWorkerHeartbeat()
 
   void runLegacyQueueLoop()
@@ -1703,6 +2097,9 @@ async function main() {
 
 async function shutdown(signal: string) {
   console.log('[sender-worker] shutting down', { signal })
+  if (workerRetirementTimer) clearTimeout(workerRetirementTimer)
+  await Promise.allSettled(Array.from(fastlaneCompletionBatches.keys()).map((clientId) => flushFastlaneCompletionBatch(clientId)))
+  await stopLicenseHeartbeat()
   await stopWorkerHeartbeat()
   await Promise.allSettled([bullWorker?.close(), sendQueue.close(), dlq.close(), redis.quit(), pool.end()])
   process.exit(0)

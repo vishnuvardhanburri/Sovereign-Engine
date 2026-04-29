@@ -123,7 +123,12 @@ type ReputationMonitorResponse = {
   investor?: {
     leadValueUsd: number
     costPerSendUsd: number
+    infraDailyUsd: number
+    proxyDailyUsd: number
+    domainDailyUsd: number
     sentToday: number
+    deliveredToday: number
+    clickedToday: number
     repliesToday: number
     bouncesToday: number
     complaintsToday: number
@@ -134,8 +139,15 @@ type ReputationMonitorResponse = {
     avgInboxPlacementRate: number
     valueGeneratedUsd: number
     sendingCostsUsd: number
+    variableDeliveryCostUsd: number
+    fixedDeliveryCostUsd: number
     grossMarginUsd: number
+    netProfitUsd: number
     roiMultiple: number | null
+    successRate: number
+    clickRate: number
+    replyRate: number
+    confidence: 'low' | 'medium' | 'high'
   }
 }
 
@@ -388,10 +400,10 @@ export default function ReputationDashboardPage() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Revenue generated</p>
-              <p className="mt-1 text-3xl font-bold text-emerald-600">{moneyFmt(data.investor.valueGeneratedUsd)}</p>
+              <p className="text-xs text-muted-foreground">Net profit generated</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-600">{moneyFmt(data.investor.netProfitUsd)}</p>
               <p className="text-xs text-muted-foreground">
-                {numberFmt(data.investor.estimatedInboxedToday)} x {moneyFmt(data.investor.leadValueUsd)}
+                {moneyFmt(data.investor.valueGeneratedUsd)} value - {moneyFmt(data.investor.sendingCostsUsd)} cost
               </p>
             </div>
             <div>
@@ -443,16 +455,16 @@ export default function ReputationDashboardPage() {
               </div>
               <div className="rounded-xl border bg-background/80 p-4">
                 <p className="text-xs text-muted-foreground">Gross margin proof</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.grossMarginUsd)}</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{moneyFmt(data.investor.netProfitUsd)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   ROI {data.investor.roiMultiple ? `${data.investor.roiMultiple.toFixed(1)}x` : 'N/A'}
                 </p>
               </div>
               <div className="rounded-xl border bg-background/80 p-4">
-                <p className="text-xs text-muted-foreground">Projected daily capacity</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight">{numberFmt(data.investor.projectedDailyCapacity)}</p>
+                <p className="text-xs text-muted-foreground">Signal quality</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">{pct(data.investor.successRate)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {numberFmt(data.investor.activeCapacityPerHour)}/hr across active lanes
+                  Click {pct(data.investor.clickRate)} · Confidence {data.investor.confidence}
                 </p>
               </div>
             </div>

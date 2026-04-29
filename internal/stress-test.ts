@@ -225,7 +225,7 @@ async function createQueueJobs(input: {
   contacts: Array<{ id: number; email: string }>
   runId: string
 }) {
-  const out: Array<{ id: number; contactId: number; idempotencyKey: string }> = []
+  const out: Array<{ id: number; contactId: number; email: string; idempotencyKey: string }> = []
 
   for (const batch of chunks(input.contacts, 500)) {
     const values: string[] = []
@@ -263,10 +263,12 @@ async function createQueueJobs(input: {
        RETURNING id, contact_id, idempotency_key`,
       params
     )
+    const emailByContactId = new Map(batch.map((contact) => [contact.id, contact.email]))
     out.push(
       ...res.rows.map((row) => ({
         id: Number(row.id),
         contactId: Number(row.contact_id),
+        email: emailByContactId.get(Number(row.contact_id)) ?? '',
         idempotencyKey: row.idempotency_key,
       }))
     )
@@ -278,10 +280,12 @@ async function createQueueJobs(input: {
 async function enqueueLegacyJobs(input: {
   clientId: number
   campaignId: number
-  queueJobs: Array<{ id: number; contactId: number; idempotencyKey: string }>
+  queueJobs: Array<{ id: number; contactId: number; email: string; idempotencyKey: string }>
 }) {
   const readyQueue = process.env.LEGACY_READY_QUEUE ?? 'email:queue'
   const scheduledAt = new Date().toISOString()
+  const subject = `Xavira Orbit scale proof ${input.campaignId}`
+  const body = `This is an internal mock delivery used to prove Xavira Orbit queue throughput. Campaign ${input.campaignId}.`
 
   for (const batch of chunks(input.queueJobs, 1000)) {
     const payloads = batch.map((job) =>
@@ -293,6 +297,10 @@ async function enqueueLegacyJobs(input: {
         sequence_step: 0,
         scheduled_at: scheduledAt,
         idempotency_key: job.idempotencyKey,
+        to_email: job.email,
+        subject,
+        body,
+        stress_fastlane: true,
       })
     )
     await redis.rpush(readyQueue, ...payloads)

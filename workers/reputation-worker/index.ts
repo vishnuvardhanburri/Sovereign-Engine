@@ -2,12 +2,18 @@ import 'dotenv/config'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
 import { resolve4 } from 'dns/promises'
-import { AdaptiveControlEngine, type ProviderLane } from '@xavira/adaptive-controller'
+import { AdaptiveControlEngine, type GlobalCooldownInput, type ProviderLane } from '@xavira/adaptive-controller'
 
 function reqEnv(name: string) {
   const v = process.env[name]
   if (!v) throw new Error(`Missing required env var: ${name}`)
   return v
+}
+
+function intEnv(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const n = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(max, Math.max(min, n))
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
@@ -26,7 +32,13 @@ const SENDING_IPS = String(process.env.SENDING_IPS ?? '')
   .split(',')
   .map((ip) => ip.trim())
   .filter(Boolean)
-const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+const PG_POOL_MAX = intEnv('PG_POOL_MAX', 5, 1, 50)
+const pool = new Pool({
+  connectionString: reqEnv('DATABASE_URL'),
+  max: PG_POOL_MAX,
+  idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+  connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+})
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
 function parseRedisPeers(raw: string | undefined) {
@@ -57,6 +69,15 @@ const db: DbExecutor = async (text, params = []) => {
 }
 const REDIS_PEERS = parseRedisPeers(process.env.ADAPTIVE_REDIS_PEERS)
 const controlEngine = new AdaptiveControlEngine({ db: db as any, redis, region: REGION, redisPeers: REDIS_PEERS })
+
+async function broadcastCooldownOnce(key: string, input: GlobalCooldownInput, ttlSec: number) {
+  const lockKey = `xv:${REGION}:adaptive:cooldown-broadcast:${key}`
+  const locked = await redis.set(lockKey, '1', 'EX', ttlSec, 'NX')
+  if (!locked) return
+  await controlEngine.broadcastGlobalCooldown({ ...input, sourceRegion: REGION }).catch((err) => {
+    console.error('[reputation-worker] global cooldown broadcast failed', { key, err })
+  })
+}
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
@@ -214,6 +235,24 @@ async function runBlacklistCheck() {
   if (!locked) return
 
   const ipHits = await checkIpBlacklists()
+  if (ipHits.length) {
+    const clients = await db<{ id: number }>(`SELECT id FROM clients ORDER BY id ASC`)
+    for (const client of clients.rows) {
+      await broadcastCooldownOnce(
+        `client:${client.id}:ip-blacklist`,
+        {
+          clientId: Number(client.id),
+          provider: 'all',
+          reason: 'sending_ip_blacklist_flagged',
+          cooldownMs: 24 * 60 * 60_000,
+          severity: 'critical',
+          metadata: { ipHits },
+        },
+        24 * 60 * 60
+      )
+    }
+  }
+
   const domains = await db<{ client_id: number; id: number; domain: string }>(
     `SELECT client_id, id, domain
      FROM domains
@@ -303,6 +342,21 @@ async function tickOnce() {
         const providerKey = `xv:${REGION}:adaptive:provider_risk:${clientId}:${p}`
         // Store 0..0.5 to match sender-worker clamp.
         await redis.set(providerKey, String(clamp(risk, 0, 0.5)), 'EX', 60 * 10)
+
+        if (attempts >= 5 && blockRate > 0.05) {
+          await broadcastCooldownOnce(
+            `client:${clientId}:provider:${p}:block-rate`,
+            {
+              clientId,
+              provider: p,
+              reason: 'provider_block_rate_1h_gt_5_percent',
+              cooldownMs: 60 * 60_000,
+              severity: 'critical',
+              metadata: { domainId, attempts, deferralRate, blockRate, successRate },
+            },
+            60 * 60
+          )
+        }
 
         // Snapshot for audit/visibility.
         const throttleFactor = clamp(1 - clamp(risk, 0, 0.5), 0.5, 1)

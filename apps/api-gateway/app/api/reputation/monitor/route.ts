@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { resolveClientId } from '@/lib/client-context'
+import { calculateRoiOracle } from '@/lib/roi-oracle'
 
 type Provider = 'gmail' | 'outlook' | 'yahoo' | 'other'
 type LaneStatus = 'HEALTHY' | 'THROTTLED' | 'PAUSED'
@@ -69,6 +70,8 @@ type RampRow = {
 
 type InvestorRow = {
   sent_today: string
+  delivered_today: string
+  clicked_today: string
   replies_today: string
   bounces_today: string
   complaints_today: string
@@ -295,6 +298,8 @@ export async function GET(request: NextRequest) {
       query<InvestorRow>(
         `SELECT
            COUNT(*) FILTER (WHERE e.event_type = 'sent' AND e.created_at >= CURRENT_DATE)::text AS sent_today,
+           COUNT(*) FILTER (WHERE e.event_type = 'delivered' AND e.created_at >= CURRENT_DATE)::text AS delivered_today,
+           COUNT(*) FILTER (WHERE e.event_type = 'clicked' AND e.created_at >= CURRENT_DATE)::text AS clicked_today,
            COUNT(*) FILTER (WHERE e.event_type = 'reply' AND e.created_at >= CURRENT_DATE)::text AS replies_today,
            COUNT(*) FILTER (WHERE e.event_type = 'bounce' AND e.created_at >= CURRENT_DATE)::text AS bounces_today,
            COUNT(*) FILTER (WHERE e.event_type = 'complaint' AND e.created_at >= CURRENT_DATE)::text AS complaints_today,
@@ -351,16 +356,24 @@ export async function GET(request: NextRequest) {
       metricsSnapshot: row.metrics_snapshot,
     }))
     const investor = investorResult.rows[0]
-    const leadValueUsd = toNumber(process.env.INVESTOR_LEAD_VALUE_USD, 0.5)
-    const costPerSendUsd = toNumber(process.env.COST_PER_SEND, 0.002)
-    const sentToday = toNumber(investor?.sent_today)
-    const sendingCostsUsd = sentToday * costPerSendUsd
     const avgInboxPlacementRate = states.length
       ? states.reduce((sum, row) => sum + row.seedPlacementInboxRate, 0) / states.length
       : 1
-    const estimatedInboxedToday = Math.floor(sentToday * Math.max(0, Math.min(1, avgInboxPlacementRate)))
-    const valueGeneratedUsd = estimatedInboxedToday * leadValueUsd
     const projectedDailyCapacity = toNumber(investor?.active_capacity_per_hour) * 10
+    const roi = calculateRoiOracle({
+      sent: toNumber(investor?.sent_today),
+      delivered: toNumber(investor?.delivered_today),
+      clicked: toNumber(investor?.clicked_today),
+      replies: toNumber(investor?.replies_today),
+      bounces: toNumber(investor?.bounces_today),
+      complaints: toNumber(investor?.complaints_today),
+      inboxPlacementRate: avgInboxPlacementRate,
+      leadValueUsd: toNumber(process.env.ROI_INBOX_LEAD_VALUE_USD ?? process.env.INVESTOR_LEAD_VALUE_USD, 0.75),
+      costPerSendUsd: toNumber(process.env.ROI_COST_PER_SEND_USD ?? process.env.COST_PER_SEND, 0.002),
+      infraDailyUsd: toNumber(process.env.ROI_INFRA_DAILY_USD, 0),
+      proxyDailyUsd: toNumber(process.env.ROI_PROXY_DAILY_USD, 0),
+      domainDailyUsd: toNumber(process.env.ROI_DOMAIN_DAILY_USD, 0),
+    })
 
     return NextResponse.json({
       ok: true,
@@ -398,21 +411,33 @@ export async function GET(request: NextRequest) {
         maxPerHour: toNumber(row.max_per_hour),
       })),
       investor: {
-        leadValueUsd,
-        costPerSendUsd,
-        sentToday,
-        repliesToday: toNumber(investor?.replies_today),
-        bouncesToday: toNumber(investor?.bounces_today),
-        complaintsToday: toNumber(investor?.complaints_today),
+        leadValueUsd: roi.leadValueUsd,
+        costPerSendUsd: roi.costPerSendUsd,
+        infraDailyUsd: roi.infraDailyUsd,
+        proxyDailyUsd: roi.proxyDailyUsd,
+        domainDailyUsd: roi.domainDailyUsd,
+        sentToday: roi.sent,
+        deliveredToday: roi.delivered,
+        clickedToday: roi.clicked,
+        repliesToday: roi.replies,
+        bouncesToday: roi.bounces,
+        complaintsToday: roi.complaints,
         activeDomains: toNumber(investor?.domains_active),
         activeCapacityPerHour: toNumber(investor?.active_capacity_per_hour),
         projectedDailyCapacity,
-        estimatedInboxedToday,
-        avgInboxPlacementRate,
-        valueGeneratedUsd,
-        sendingCostsUsd,
-        grossMarginUsd: valueGeneratedUsd - sendingCostsUsd,
-        roiMultiple: sendingCostsUsd > 0 ? valueGeneratedUsd / sendingCostsUsd : null,
+        estimatedInboxedToday: roi.estimatedInboxed,
+        avgInboxPlacementRate: roi.inboxPlacementRate,
+        valueGeneratedUsd: roi.estimatedValueUsd,
+        sendingCostsUsd: roi.totalDeliveryCostUsd,
+        variableDeliveryCostUsd: roi.variableDeliveryCostUsd,
+        fixedDeliveryCostUsd: roi.fixedDeliveryCostUsd,
+        grossMarginUsd: roi.netProfitUsd,
+        netProfitUsd: roi.netProfitUsd,
+        roiMultiple: roi.roiMultiple,
+        successRate: roi.successRate,
+        clickRate: roi.clickRate,
+        replyRate: roi.replyRate,
+        confidence: roi.confidence,
       },
     })
   } catch (error) {

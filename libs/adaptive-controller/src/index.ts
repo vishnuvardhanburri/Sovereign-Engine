@@ -406,6 +406,16 @@ export type AdaptiveControlSignal = {
   }
 }
 
+export type GlobalCooldownInput = {
+  clientId: number
+  provider?: ProviderLane | 'all' | null
+  reason: string
+  cooldownMs?: number
+  severity?: 'info' | 'warning' | 'critical'
+  sourceRegion?: string
+  metadata?: Record<string, unknown>
+}
+
 export type AdaptiveControlEngineDeps = {
   db: DbExecutor
   redis: {
@@ -485,6 +495,68 @@ export class AdaptiveControlEngine {
     const signal = this.evaluate(input)
     await this.persistAndPublish(input.previous, signal)
     return signal
+  }
+
+  async broadcastGlobalCooldown(input: GlobalCooldownInput): Promise<void> {
+    const cooldownMs = input.cooldownMs ?? 60 * 60_000
+    const expiresAt = new Date(this.now() + cooldownMs).toISOString()
+    const providers: ProviderLane[] =
+      input.provider && input.provider !== 'all' ? [input.provider] : ['gmail', 'outlook', 'yahoo', 'other']
+    const payload = {
+      clientId: input.clientId,
+      provider: input.provider ?? 'all',
+      action: 'cooldown',
+      reason: input.reason,
+      severity: input.severity ?? 'warning',
+      sourceRegion: input.sourceRegion ?? this.region,
+      emittedAt: new Date(this.now()).toISOString(),
+      expiresAt,
+      metadata: input.metadata ?? {},
+    }
+    const ttlSec = Math.max(60, Math.ceil(cooldownMs / 1000))
+    const peers = [{ region: this.region, redis: this.redis }, ...this.redisPeers]
+
+    await Promise.allSettled(
+      peers.flatMap((peer) => {
+        const writes: Promise<any>[] = [
+          peer.redis.set(`xv:${peer.region}:adaptive:global_risk:${input.clientId}`, JSON.stringify(payload), 'EX', ttlSec),
+          peer.redis.set(`xv:${peer.region}:adaptive:global_cooldown:${input.clientId}`, JSON.stringify(payload), 'EX', ttlSec),
+        ]
+
+        for (const provider of providers) {
+          writes.push(
+            peer.redis.set(`xv:${peer.region}:adaptive:provider_risk:${input.clientId}:${provider}`, '0.5', 'EX', ttlSec),
+            peer.redis.set(
+              `xv:${peer.region}:adaptive:provider_pause:${input.clientId}:${provider}`,
+              JSON.stringify({ ...payload, provider }),
+              'EX',
+              ttlSec
+            )
+          )
+        }
+
+        return writes
+      })
+    )
+
+    await this.db(
+      `INSERT INTO reputation_events (client_id, domain_id, provider, event_type, severity, message, next_state, metrics_snapshot)
+       VALUES ($1,NULL,$2,'cooldown',$3,$4,$5::jsonb,$6::jsonb)`,
+      [
+        input.clientId,
+        input.provider && input.provider !== 'all' ? input.provider : null,
+        input.severity ?? 'warning',
+        this.describeGlobalCooldown(payload),
+        JSON.stringify({
+          state: 'cooldown',
+          max_per_hour: 0,
+          reasons: [input.reason],
+          expires_at: expiresAt,
+          providers,
+        }),
+        JSON.stringify(payload),
+      ]
+    ).catch(() => {})
   }
 
   private async loadInputs(clientId: number, domainId: number, provider: ProviderLane) {
@@ -809,5 +881,18 @@ export class AdaptiveControlEngine {
       return `Resumed ${provider} lane for client ${signal.clientId} domain ${signal.domainId} at slow-start pace.`
     }
     return `Measured ${provider} lane for client ${signal.clientId} domain ${signal.domainId}; holding ${signal.maxPerHour}/hr.`
+  }
+
+  private describeGlobalCooldown(payload: {
+    clientId: number
+    provider: ProviderLane | 'all' | null
+    reason: string
+    sourceRegion: string
+    expiresAt: string
+  }) {
+    const provider = payload.provider && payload.provider !== 'all'
+      ? `${payload.provider[0].toUpperCase()}${payload.provider.slice(1)}`
+      : 'all provider'
+    return `Global cooldown broadcast for ${provider} lanes on client ${payload.clientId} from ${payload.sourceRegion}: ${payload.reason}. Expires ${payload.expiresAt}.`
   }
 }
