@@ -10,6 +10,7 @@
     "db:init": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway db:init",
     "env:check": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway env:check",
     "user:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway user:create",
+    "public-api-key:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway public-api-key:create",
     "demo:outbound": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/demo-outbound.ts",
     "send:test": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/send-test.ts",
     "stress:test": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C internal stress:test",

@@ -27,7 +27,7 @@ const IDEMPOTENCY_EMAIL_PREFIX = 'email:idem:email:'
 let redisClient: any
 let connectPromise: Promise<any> | undefined
 
-async function getRedisClient(): Promise<any> {
+export async function getRedisClient(): Promise<any> {
   if (redisClient?.isOpen) {
     return redisClient
   }

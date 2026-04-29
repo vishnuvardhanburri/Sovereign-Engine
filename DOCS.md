@@ -126,6 +126,62 @@ curl -H "x-api-key: $REPUTATION_PUBLIC_API_KEY" \
 
 The API returns a domain score, provider lane health, observed ramp limits, and recommendations. This turns the internal Adaptive Controller into a standalone deliverability intelligence product.
 
+## Reputation-as-a-Service API
+
+The production public endpoint is:
+
+```text
+POST /api/v1/reputation/score
+```
+
+Request:
+
+```json
+{
+  "domain": "example.com",
+  "ip": "1.2.3.4"
+}
+```
+
+Create a database-backed API key:
+
+```bash
+pnpm public-api-key:create -- --name "Partner Demo" --tier free
+```
+
+Call the API:
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/reputation/score" \
+  -H "x-api-key: $XAVIRA_REPUTATION_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{"domain":"example.com","ip":"1.2.3.4"}'
+```
+
+The response is a Health Certificate containing:
+
+- `reputation_score`: 0-100 score from internal reputation state or shadow light scan.
+- `provider_status`: Gmail, Outlook, and Yahoo lane health with cache/source attribution.
+- `blacklist_status`: Spamhaus DBL/ZEN and URIBL DNSBL check results.
+- `recommendation`: autonomous advice such as safe ramp, cautious proceed, or cooldown.
+- `billing`: tier, daily usage, billable units, and reset time.
+
+Tier defaults:
+
+```bash
+PUBLIC_REPUTATION_FREE_DAILY_LIMIT=10
+PUBLIC_REPUTATION_PRO_DAILY_LIMIT=1000
+PUBLIC_REPUTATION_ENTERPRISE_DAILY_LIMIT=100000
+PUBLIC_REPUTATION_BLACKLIST_CACHE_SEC=21600
+```
+
+Developer docs:
+
+```text
+/api/v1/reputation/docs
+/api/v1/reputation/openapi.json
+```
+
 ## Multi-Region Reputation Sync
 
 The central source of truth is still Postgres. Redis is the real-time lane signal bus for sender workers.

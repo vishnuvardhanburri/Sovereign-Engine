@@ -16,7 +16,8 @@
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "db:init": "tsx scripts/init-db.ts",
     "env:check": "tsx scripts/env-check.ts",
-    "user:create": "tsx scripts/create-user.ts"
+    "user:create": "tsx scripts/create-user.ts",
+    "public-api-key:create": "tsx scripts/create-public-api-key.ts"
   },
   "dependencies": {
     "@xavira/adaptive-controller": "workspace:*",

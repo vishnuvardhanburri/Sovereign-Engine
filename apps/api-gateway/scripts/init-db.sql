@@ -406,6 +406,54 @@ CREATE INDEX IF NOT EXISTS idx_reputation_events_client_created
 CREATE INDEX IF NOT EXISTS idx_reputation_events_domain_provider_created
   ON reputation_events (domain_id, provider, created_at DESC);
 
+-- Public Reputation-as-a-Service API keys.
+-- Store only SHA-256 hashes of raw API keys; never persist plaintext keys.
+CREATE TABLE IF NOT EXISTS public_api_keys (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  tier TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'revoked')),
+  daily_limit INT,
+  permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_api_keys_hash_active
+  ON public_api_keys (key_hash)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_public_api_keys_client
+  ON public_api_keys (client_id, created_at DESC);
+
+-- Billable Reputation API usage ledger.
+CREATE TABLE IF NOT EXISTS reputation_api_logs (
+  id BIGSERIAL PRIMARY KEY,
+  api_key_id BIGINT REFERENCES public_api_keys(id) ON DELETE SET NULL,
+  client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
+  domain TEXT,
+  ip TEXT,
+  request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  response_status INT NOT NULL,
+  reputation_score INT,
+  tier TEXT NOT NULL DEFAULT 'free',
+  billable_units INT NOT NULL DEFAULT 1,
+  cache_hit BOOLEAN NOT NULL DEFAULT false,
+  latency_ms INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reputation_api_logs_key_created
+  ON reputation_api_logs (api_key_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_reputation_api_logs_domain_created
+  ON reputation_api_logs (domain, created_at DESC);
+
 -- Sensitive data guardrails for audit/reputation logs.
 -- Keep operational logs useful while preventing recipient emails, tokens, and SMTP secrets from being persisted.
 CREATE OR REPLACE FUNCTION xavira_mask_text(input TEXT) RETURNS TEXT AS $$
