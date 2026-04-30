@@ -11,6 +11,8 @@ function reqEnv(name: string) {
   return value
 }
 
+const WORKER_HEALTH_FRESH_MS = Number(process.env.WORKER_HEALTH_FRESH_MS ?? 45_000)
+
 async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; latencyMs: number }> {
   const started = performance.now()
   const value = await fn()
@@ -132,7 +134,14 @@ export async function GET(request: NextRequest) {
     const dbRow = dbState.value.rows[0]
     const queueRow = queueRows.value.rows[0]
     const latencyRow = deliveryLatency.value.rows[0]
-    const senderNodes = workerHeartbeats.value as Array<Record<string, any>>
+    const nowMs = Date.now()
+    const allSenderNodes = workerHeartbeats.value as Array<Record<string, any>>
+    const senderNodes = allSenderNodes.filter((node) => {
+      if (node.parseError) return false
+      const lastSeenMs = Date.parse(String(node.lastSeenAt ?? ''))
+      return Number.isFinite(lastSeenMs) && nowMs - lastSeenMs <= WORKER_HEALTH_FRESH_MS
+    })
+    const staleSenderNodes = allSenderNodes.length - senderNodes.length
     const totalProcessedSends = senderNodes.reduce((sum, node) => sum + Number(node.processedSends ?? 0), 0)
     const totalConcurrency = senderNodes.reduce((sum, node) => sum + Number(node.concurrency ?? 0), 0)
     const resourceNodes = senderNodes.map((node) => node.resources ?? {})
@@ -182,10 +191,12 @@ export async function GET(request: NextRequest) {
       },
       workers: {
         sender: {
-          active: workerHeartbeats.value.length,
+          active: senderNodes.length,
+          stale: staleSenderNodes,
+          heartbeatFreshMs: WORKER_HEALTH_FRESH_MS,
           totalConcurrency,
           totalProcessedSends,
-          nodes: workerHeartbeats.value,
+          nodes: senderNodes,
         },
       },
       delivery_latency: {

@@ -121,7 +121,7 @@ const WORKER_STARTED_AT = new Date().toISOString()
 const WORKER_HEARTBEAT_KEY = `xv:${REGION}:workers:sender:${WORKER_ID}`
 const WORKER_ROTATION_SEND_LIMIT = Number(process.env.WORKER_ROTATION_SEND_LIMIT ?? 5_000)
 const WORKER_ROTATION_MAX_AGE_MS = Number(process.env.WORKER_ROTATION_MAX_AGE_MS ?? 24 * 60 * 60_000)
-const WORKER_ROTATION_DRAIN_MS = Number(process.env.WORKER_ROTATION_DRAIN_MS ?? 2_500)
+const WORKER_ROTATION_DRAIN_MS = Number(process.env.WORKER_ROTATION_DRAIN_MS ?? 15_000)
 const LICENSING_CONTROL_URL = process.env.LICENSING_CONTROL_URL ?? ''
 const LICENSING_KEY = process.env.LICENSING_KEY ?? ''
 const LICENSING_HEARTBEAT_INTERVAL_MS = Number(process.env.LICENSING_HEARTBEAT_INTERVAL_MS ?? 60_000)
@@ -134,6 +134,7 @@ let workerProcessedSends = 0
 let workerDraining = false
 let workerRotationReason: string | null = null
 let workerRetirementTimer: NodeJS.Timeout | null = null
+let activeLegacyBatches = 0
 let licenseState: 'not_configured' | 'active' | 'revoked' | 'unreachable' = LICENSING_CONTROL_URL && LICENSING_KEY ? 'unreachable' : 'not_configured'
 let licenseCheckedAt: string | null = null
 let lastCpuUsage = process.cpuUsage()
@@ -804,6 +805,11 @@ async function runLegacyQueueLoop() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
+      if (workerDraining) {
+        await sleep(250)
+        continue
+      }
+
       const promoted = await promoteLegacyDue(25)
       if (promoted > 0) {
         console.log('[sender-worker] promoted legacy scheduled items', { promoted })
@@ -827,7 +833,12 @@ async function runLegacyQueueLoop() {
       }
       if (!raws.length) continue
 
-      await Promise.allSettled(raws.map((raw) => processLegacyRaw(raw)))
+      activeLegacyBatches += 1
+      try {
+        await Promise.allSettled(raws.map((raw) => processLegacyRaw(raw)))
+      } finally {
+        activeLegacyBatches = Math.max(0, activeLegacyBatches - 1)
+      }
     } catch (err) {
       console.error('[sender-worker] legacy queue loop error', err)
       await sleep(1000)
@@ -1113,7 +1124,14 @@ async function scheduleWorkerRetirement(reason: string) {
     processedSends: workerProcessedSends,
     drainMs: WORKER_ROTATION_DRAIN_MS,
   })
-  workerRetirementTimer = setTimeout(() => void shutdown(`ROTATE_${reason}`), WORKER_ROTATION_DRAIN_MS)
+  const drainDeadline = Date.now() + WORKER_ROTATION_DRAIN_MS
+  const drainAndShutdown = async () => {
+    while (activeLegacyBatches > 0 && Date.now() < drainDeadline) {
+      await sleep(250)
+    }
+    await shutdown(`ROTATE_${reason}`)
+  }
+  workerRetirementTimer = setTimeout(() => void drainAndShutdown(), 250)
   workerRetirementTimer.unref?.()
 }
 

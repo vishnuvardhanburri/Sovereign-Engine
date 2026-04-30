@@ -10,19 +10,25 @@ const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' })
 
 export const metadata: Metadata = {
   title: 'Xavira Orbit',
-  description: 'Outbound Infrastructure for Scalable Lead Generation',
+  description: 'Deliverability Operating System for compliant outbound infrastructure.',
+  applicationName: 'Xavira Orbit',
+  metadataBase: new URL('https://xavira-orbit.local'),
   icons: {
-    // Browsers will default-request /favicon.ico; we intentionally do not ship it
-    // so the tab icon always uses our XO mark.
-    shortcut: '/icon.svg',
+    shortcut: '/favicon.ico',
     icon: [
+      {
+        url: '/favicon.ico',
+        sizes: '32x32',
+      },
       {
         url: '/icon-light-32x32.png',
         media: '(prefers-color-scheme: light)',
+        sizes: '32x32',
       },
       {
         url: '/icon-dark-32x32.png',
         media: '(prefers-color-scheme: dark)',
+        sizes: '32x32',
       },
       {
         url: '/icon.svg',
