@@ -13,6 +13,8 @@
     "audit:anchor": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway audit:anchor",
     "secret:rotate": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway secret:rotate",
     "env:check": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway env:check",
+    "prod:check": "node scripts/final-production-check.mjs",
+    "prod:check:real": "node scripts/final-production-check.mjs --real-send",
     "user:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway user:create",
     "public-api-key:create": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway public-api-key:create",
     "demo:outbound": "node scripts/sync-env.mjs && pnpm --dir apps/api-gateway exec tsx scripts/demo-outbound.ts",

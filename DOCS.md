@@ -29,6 +29,32 @@ docker compose -f docker-compose.prod.yml up -d --scale sender-worker=6
 
 Sender workers are stateless. Any worker can process any eligible send job because the source of truth lives in Postgres and Redis. This means workers can run on one EC2 instance, many EC2 instances, or any container platform that can reach the same Postgres and Redis.
 
+## Final Production Handoff
+
+The system is intended to be 99% ready from the repository. The remaining 1% must come from the client because it involves accounts, domains, and legal/compliance ownership:
+
+- VPS/cloud host or managed container runtime.
+- Production dashboard domain and HTTPS.
+- Sending domains, inboxes, and DNS access.
+- SMTP/ESP credentials and provider verification.
+- Validation provider key.
+- Consent-aware contact source, suppression list, unsubscribe policy, and mailing address where required.
+
+Use this template for production:
+
+```bash
+cp configs/env/.env.production.example .env
+```
+
+Then run:
+
+```bash
+pnpm prod:check
+pnpm prod:check:real
+```
+
+`prod:check` validates mock-safe deployment readiness. `prod:check:real` blocks real sending until live credentials, non-local URLs, strong secrets, and production safety settings are present.
+
 ## Five-Minute Local Setup
 
 Fresh machine setup:
@@ -89,6 +115,8 @@ STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:test
 ```
 
 The stress test creates mock contacts, marks them as validator-approved, creates queue jobs, pushes them through Redis, lets sender workers process them, and verifies `sent` events were ingested into Postgres.
+
+On a laptop or small Docker VM, Postgres write speed can be the limiting factor. For submission, record the proof on the same VPS/cloud profile being sold or deployed. The acceptance rule is zero failed sends, clean queue drain, correct worker heartbeats, and healthy `/api/health/stats`; the under-60-second target is a capacity benchmark for properly provisioned infrastructure.
 
 This is intentionally a mock-delivery proof. Real delivery should always use conservative ramping, DNS authentication, bounce suppression, opt-out controls, and provider-aware throttling.
 
@@ -231,6 +259,17 @@ Business continuity plan:
 - Keep encrypted Postgres backups in a separate account or region.
 - Use `/api/health/stats` to verify DB latency, Redis latency, queue depth, worker heartbeat, P99 delivery latency, resource usage, and TLS posture after restore.
 - Use the kill switch if credentials are suspected compromised, then rotate API keys, SMTP credentials, and master keys before resuming sends.
+- Run `pnpm audit:anchor` after major deployments and export anchors to external WORM storage if the client needs formal evidence.
+
+## Submission Checklist
+
+See the buyer-facing handoff checklist:
+
+```text
+docs/PRODUCTION_SUBMISSION_CHECKLIST.md
+```
+
+That document is the final handoff script: client inputs, server go-live sequence, DNS gate, production acceptance tests, and real sending rules.
 
 ## Buyer Summary
 

@@ -124,13 +124,19 @@ Workers:
 Production Compose:
   docker compose -f docker-compose.prod.yml up -d --build --scale sender-worker=2
 
+Final production handoff:
+  cp configs/env/.env.production.example .env
+  pnpm prod:check
+  pnpm prod:check:real
+
 Optional local content AI:
   docker compose -f docker-compose.prod.yml --profile content-ai up -d ollama ollama-pull
   CONTENT_MUTATION_ENABLED=true CONTENT_MUTATION_ENDPOINT=http://ollama:11434/api/generate docker compose -f docker-compose.prod.yml up -d --scale sender-worker=2
 
 Scale proof without real email:
   MOCK_SMTP=true MOCK_SMTP_FASTLANE=true SENDER_WORKER_CONCURRENCY=50 pnpm worker:sender
-  STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:test
+  STRESS_COUNT=500 STRESS_TIMEOUT_MS=60000 pnpm stress:test
+  # Run STRESS_COUNT=10000 on the final VPS/cloud box as the buyer-facing capacity proof.
 
 Login:
   ${SETUP_USER_EMAIL}

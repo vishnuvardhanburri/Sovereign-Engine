@@ -1,7 +1,7 @@
 # Xavira Orbit
 
 ![Node](https://img.shields.io/badge/node-22.x-brightgreen)
-![Next.js](https://img.shields.io/badge/next-16.2-black)
+![API](https://img.shields.io/badge/api-gateway-black)
 ![Postgres](https://img.shields.io/badge/postgres-16-blue)
 ![Redis](https://img.shields.io/badge/redis-7-red)
 ![Status](https://img.shields.io/badge/status-production--grade-success)
@@ -19,6 +19,20 @@ Validate -> Decide -> Queue -> Shape -> Send -> Measure -> Learn -> Protect
 ```
 
 Xavira Orbit is designed to make sending decisions like an infrastructure brain, not a blast tool.
+
+## Final Client Inputs
+
+Xavira Orbit ships the platform. The client only needs to supply the external assets that must legally and operationally belong to them:
+
+- VPS/cloud host or container platform.
+- Dashboard domain with HTTPS, for example `orbit.client.com`.
+- Sending domains, inboxes, and DNS access.
+- SPF, DKIM, DMARC, MX/provider verification, and tracking-domain records where used.
+- SMTP or ESP credentials such as SES, Brevo, Resend, Mailgun, SendGrid, or a managed MTA.
+- Email validation key such as `ZEROBOUNCE_API_KEY`.
+- Consent-aware contact data, suppression list, unsubscribe policy, and physical mailing address where required.
+
+Everything else is handled by this repo: database schema, Redis queues, adaptive controller, workers, dashboards, health checks, audit chain, mock stress proof, and Docker production orchestration.
 
 ## Why Buyers Care
 
@@ -104,7 +118,7 @@ The stress test simulates the full internal flow:
 Validator-approved contacts -> Queue jobs -> Redis queue -> Sender worker -> Event ingest -> Postgres
 ```
 
-This is the proof path for showing 10,000 controlled mock sends through the engine in under 60 seconds.
+This is the proof path for showing controlled mock sends through the engine before real delivery is enabled. The 10,000-send target depends on the host, Postgres disk speed, worker count, and DB pool sizing; use it as a production capacity proof on the final VPS/cloud box, not as a promise from a laptop Docker runtime.
 
 Real sending should always follow DNS authentication, consent, suppression, provider policy, and safe ramp limits.
 
@@ -159,6 +173,16 @@ Start workers:
 pnpm worker:reputation
 pnpm worker:sender
 ```
+
+Final production check:
+
+```bash
+cp configs/env/.env.production.example .env
+pnpm prod:check
+pnpm prod:check:real
+```
+
+Use `pnpm prod:check` while staying in mock mode. Use `pnpm prod:check:real` only after live SMTP/ESP credentials, DNS, validation, HTTPS, and secrets are filled.
 
 ## Reputation-as-a-Service API
 
@@ -266,12 +290,12 @@ Sender workers are stateless, which means capacity can be added by starting more
 2. Open `/dashboard`.
 3. Open `/reputation`.
 4. Start reputation and sender workers.
-5. Run the 10k mock stress test.
+5. Run `pnpm prod:check`.
 6. Open `/api/health/stats?client_id=1`.
 7. Open `/reputation?investor=1`.
 8. Show `reputation_events` updating after manual Pause/Resume.
 9. Show worker heartbeat count increasing when sender workers are scaled.
-10. Show Docker Compose scaling with `--scale sender-worker=N`.
+10. Run mock stress proof, then show Docker Compose scaling with `--scale sender-worker=N`.
 
 ## Founder Note
 
