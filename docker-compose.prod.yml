@@ -213,21 +213,35 @@ services:
     profiles: ["ops"]
     restart: unless-stopped
     working_dir: /workspace
+    depends_on:
+      api-gateway:
+        condition: service_healthy
     environment:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-xavira-orbit}
       COMPOSE_FILE: /workspace/docker-compose.prod.yml
       AUTOSCALE_SERVICE: sender-worker
+      AUTOSCALE_HEALTH_URL: ${AUTOSCALE_HEALTH_URL:-http://api-gateway:3000/api/health/stats?client_id=1}
       SENDER_MIN_REPLICAS: ${SENDER_MIN_REPLICAS:-2}
       SENDER_MAX_REPLICAS: ${SENDER_MAX_REPLICAS:-24}
       AUTOSCALE_CPU_HIGH: ${AUTOSCALE_CPU_HIGH:-70}
       AUTOSCALE_CPU_LOW: ${AUTOSCALE_CPU_LOW:-25}
       AUTOSCALE_MEM_HIGH: ${AUTOSCALE_MEM_HIGH:-80}
+      AUTOSCALE_TARGET_WAITING_PER_REPLICA: ${AUTOSCALE_TARGET_WAITING_PER_REPLICA:-500}
+      AUTOSCALE_QUEUE_HIGH: ${AUTOSCALE_QUEUE_HIGH:-1000}
+      AUTOSCALE_QUEUE_LOW: ${AUTOSCALE_QUEUE_LOW:-25}
+      AUTOSCALE_SCALE_DOWN_IDLE_WINDOWS: ${AUTOSCALE_SCALE_DOWN_IDLE_WINDOWS:-4}
       AUTOSCALE_INTERVAL_SECONDS: ${AUTOSCALE_INTERVAL_SECONDS:-30}
       AUTOSCALE_COOLDOWN_SECONDS: ${AUTOSCALE_COOLDOWN_SECONDS:-120}
+      AUTOSCALE_DRY_RUN: ${AUTOSCALE_DRY_RUN:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/workspace:ro
-    command: ["sh", "/workspace/scripts/compose-autoscale.sh"]
+    entrypoint:
+      [
+        "sh",
+        "-lc",
+        "apk add --no-cache curl jq >/dev/null && /workspace/scripts/compose-autoscale.sh"
+      ]
     logging: *json-logging
 
   ollama:

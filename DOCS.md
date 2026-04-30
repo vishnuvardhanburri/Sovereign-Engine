@@ -115,7 +115,15 @@ Privileged actions are appended to `audit_logs`:
 - Bulk campaign send triggers.
 - Emergency kill-switch session revocation.
 
-Each audit entry includes actor, action, resource, UTC timestamp, IP address, user agent, request id, and a SHA-256 hash chain pointer to the previous entry. Updates and deletes are rejected at the database trigger layer, so corrections must be appended as new events.
+Each audit entry includes actor, action, resource, UTC timestamp, IP address, user agent, request id, and a SHA-256 hash chain pointer to the previous entry. New entries also persist the canonical hash payload used to compute the row hash, so `/api/audit/logs` can verify both the link order and the exact entry hash. Updates and deletes are rejected at the database trigger layer, so corrections must be appended as new events.
+
+Create a checkpoint anchor after deploys, incident response, or monthly access reviews:
+
+```bash
+pnpm audit:anchor
+```
+
+Anchors are append-only rows in `audit_chain_anchors`; they capture the current audit head hash, log count, previous anchor hash, and an anchor hash. For true WORM evidence, export anchors to S3 Object Lock or another external evidence vault.
 
 Audit endpoint:
 
@@ -185,10 +193,24 @@ Compose deployments can scale manually:
 docker compose -f docker-compose.prod.yml up -d --scale sender-worker=8
 ```
 
-The optional ops profile includes a sender autoscaler that watches Docker CPU and memory stats and adjusts sender-worker replicas between `SENDER_MIN_REPLICAS` and `SENDER_MAX_REPLICAS`:
+The optional ops profile includes a sender autoscaler that watches `/api/health/stats`, BullMQ backlog, database queue depth, live worker heartbeats, Docker CPU, and Docker memory. It scales up quickly on backlog pressure and only scales down after several idle windows, which avoids flapping during bursty campaigns:
 
 ```bash
 docker compose -f docker-compose.prod.yml --profile ops up -d sender-autoscaler
+```
+
+Useful knobs:
+
+```text
+SENDER_MIN_REPLICAS=2
+SENDER_MAX_REPLICAS=24
+AUTOSCALE_TARGET_WAITING_PER_REPLICA=500
+AUTOSCALE_QUEUE_HIGH=1000
+AUTOSCALE_QUEUE_LOW=25
+AUTOSCALE_SCALE_DOWN_IDLE_WINDOWS=4
+AUTOSCALE_CPU_HIGH=70
+AUTOSCALE_MEM_HIGH=80
+AUTOSCALE_DRY_RUN=false
 ```
 
 For Kubernetes or ECS, use the same stateless worker model and map the thresholds to HPA/Service Auto Scaling.

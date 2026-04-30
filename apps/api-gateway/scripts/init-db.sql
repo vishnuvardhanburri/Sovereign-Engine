@@ -881,6 +881,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   timestamp_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
   previous_hash TEXT,
   entry_hash TEXT UNIQUE,
+  hash_version TEXT NOT NULL DEFAULT 'legacy-v1',
+  chain_hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+  canonical_payload JSONB,
   request_id TEXT,
   service_name TEXT NOT NULL DEFAULT 'api-gateway'
 );
@@ -894,8 +897,14 @@ ALTER TABLE audit_logs
   ADD COLUMN IF NOT EXISTS timestamp_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS previous_hash TEXT,
   ADD COLUMN IF NOT EXISTS entry_hash TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS hash_version TEXT NOT NULL DEFAULT 'legacy-v1',
+  ADD COLUMN IF NOT EXISTS chain_hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+  ADD COLUMN IF NOT EXISTS canonical_payload JSONB,
   ADD COLUMN IF NOT EXISTS request_id TEXT,
   ADD COLUMN IF NOT EXISTS service_name TEXT NOT NULL DEFAULT 'api-gateway';
+
+DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_update ON audit_logs;
+DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_delete ON audit_logs;
 
 UPDATE audit_logs
 SET
@@ -945,6 +954,39 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_client_timestamp_utc
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entry_hash
   ON audit_logs(entry_hash)
   WHERE entry_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS audit_chain_anchors (
+  id BIGSERIAL PRIMARY KEY,
+  scope TEXT NOT NULL DEFAULT 'global',
+  head_hash TEXT NOT NULL,
+  head_log_id TEXT,
+  log_count BIGINT NOT NULL,
+  previous_anchor_hash TEXT,
+  anchor_hash TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  service_name TEXT NOT NULL DEFAULT 'api-gateway'
+);
+
+CREATE OR REPLACE FUNCTION xavira_reject_audit_anchor_mutation() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_chain_anchors are immutable; append a new anchor instead';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_xavira_audit_chain_anchors_immutable_update ON audit_chain_anchors;
+CREATE TRIGGER trg_xavira_audit_chain_anchors_immutable_update
+BEFORE UPDATE ON audit_chain_anchors
+FOR EACH ROW
+EXECUTE FUNCTION xavira_reject_audit_anchor_mutation();
+
+DROP TRIGGER IF EXISTS trg_xavira_audit_chain_anchors_immutable_delete ON audit_chain_anchors;
+CREATE TRIGGER trg_xavira_audit_chain_anchors_immutable_delete
+BEFORE DELETE ON audit_chain_anchors
+FOR EACH ROW
+EXECUTE FUNCTION xavira_reject_audit_anchor_mutation();
+
+CREATE INDEX IF NOT EXISTS idx_audit_chain_anchors_scope_created
+  ON audit_chain_anchors(scope, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS session_revocations (
   id BIGSERIAL PRIMARY KEY,

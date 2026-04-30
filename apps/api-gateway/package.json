@@ -16,6 +16,7 @@
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "db:init": "tsx scripts/init-db.ts",
     "tenant:rls": "tsx scripts/apply-tenant-rls.ts",
+    "audit:anchor": "tsx scripts/create-audit-anchor.ts",
     "secret:rotate": "tsx scripts/rotate-master-key.ts",
     "env:check": "tsx scripts/env-check.ts",
     "user:create": "tsx scripts/create-user.ts",
