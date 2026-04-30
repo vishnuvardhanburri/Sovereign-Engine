@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revokeSessions } from '@/lib/auth/revocation'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 function requireKillSwitchToken(request: NextRequest): boolean {
   const configured = process.env.SECURITY_KILL_SWITCH_TOKEN
@@ -31,6 +32,17 @@ export async function POST(request: NextRequest) {
       clientId,
       reason,
       createdBy: 'api_kill_switch',
+    })
+
+    await recordAuditLog({
+      request,
+      actorId: 'kill-switch',
+      actorType: 'system',
+      clientId,
+      actionType: 'security.kill_switch.revoke_sessions',
+      resourceType: clientId ? 'client' : 'global',
+      resourceId: clientId ?? 'all',
+      details: { reason, scope: clientId ? 'client' : 'global' },
     })
 
     return NextResponse.json({

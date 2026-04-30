@@ -3,6 +3,7 @@ import { query } from '@/lib/db'
 import { appEnv } from '@/lib/env'
 import { createSessionToken, getSessionCookieName } from '@/lib/auth/session'
 import { verifyPassword } from '@/lib/auth/password'
+import { hashActorHint, recordAuditLog } from '@/lib/security/audit-log'
 
 type LoginBody = {
   email?: string
@@ -24,6 +25,15 @@ export async function POST(request: NextRequest) {
     )
     const row = user.rows[0]
     if (!row?.password_hash || !verifyPassword(password, row.password_hash)) {
+      await recordAuditLog({
+        request,
+        actorId: `email:${hashActorHint(email)}`,
+        actorType: 'anonymous',
+        actionType: 'auth.login.failure',
+        resourceType: 'session',
+        resourceId: 'login',
+        details: { email_hash: hashActorHint(email), reason: 'invalid_credentials' },
+      })
       return NextResponse.json({ error: 'invalid credentials' }, { status: 401 })
     }
 
@@ -37,10 +47,19 @@ export async function POST(request: NextRequest) {
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
     })
+    await recordAuditLog({
+      request,
+      actorId: row.id,
+      actorType: 'user',
+      clientId,
+      actionType: 'auth.login.success',
+      resourceType: 'session',
+      resourceId: row.id,
+      details: { user_id: row.id, client_id: clientId },
+    })
     return res
   } catch (error) {
     console.error('[API] login failed', error)
     return NextResponse.json({ error: 'login failed' }, { status: 500 })
   }
 }
-

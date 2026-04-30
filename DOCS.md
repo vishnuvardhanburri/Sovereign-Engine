@@ -100,6 +100,116 @@ The kill switch endpoint can revoke active client sessions when a breach respons
 
 The production Compose file expects real secrets in `.env` or the host environment. Do not commit real SMTP credentials, API tokens, or database passwords.
 
+## SOC2-Style Security Manifest
+
+Xavira Orbit now includes an enterprise hardening layer designed to support SOC2 Type II due diligence. Certification still requires company policies, evidence collection, vendor reviews, access reviews, and auditor validation, but the platform now has the technical controls buyers expect to see.
+
+### Immutable Audit Trail
+
+Privileged actions are appended to `audit_logs`:
+
+- Login success and failure.
+- Public API key creation.
+- Domain create, pause, resume, and delete.
+- Manual reputation overrides.
+- Bulk campaign send triggers.
+- Emergency kill-switch session revocation.
+
+Each audit entry includes actor, action, resource, UTC timestamp, IP address, user agent, request id, and a SHA-256 hash chain pointer to the previous entry. Updates and deletes are rejected at the database trigger layer, so corrections must be appended as new events.
+
+Audit endpoint:
+
+```bash
+curl http://localhost:3000/api/audit/logs?client_id=1
+```
+
+### Secret Vault And Key Rotation
+
+The secret vault stores retrievable secrets with AES-256-GCM when `SECRET_MASTER_KEY` or `SECRET_MASTER_KEYS` is configured. Public API keys remain hash-verifiable for authentication and can also be stored encrypted for controlled recovery workflows.
+
+Generate a master key:
+
+```bash
+openssl rand -base64 32
+```
+
+Rotate encrypted material after changing `SECRET_MASTER_KEY_ID` and adding both old and new keys to `SECRET_MASTER_KEYS`:
+
+```bash
+pnpm secret:rotate
+```
+
+### Tenant Isolation Pool Model
+
+Tenant-owned tables include `client_id` and can be protected with Postgres Row-Level Security policies:
+
+```bash
+pnpm db:rls
+```
+
+Application sessions should set:
+
+```sql
+SELECT xavira_set_client_id(1);
+```
+
+For the strictest deployment, run the app with a non-owner database role and enable `FORCE ROW LEVEL SECURITY` after validating all queries set tenant context.
+
+### TLS Policy
+
+Set `REQUIRE_INTERNAL_TLS=true` in environments where managed Postgres/Redis and SMTP endpoints support TLS. `/api/health/stats` reports whether Postgres, Redis, public app URL, and SMTP transport satisfy the configured TLS policy. The target minimum version is `TLSv1.3`.
+
+### Log Rotation And Cold Archive
+
+`docker-compose.prod.yml` uses Docker JSON log rotation by default:
+
+```text
+LOG_MAX_SIZE=50m
+LOG_MAX_FILE=10
+```
+
+For cold storage, enable the ops profile with an S3 destination:
+
+```bash
+LOG_ARCHIVE_S3_URI=s3://your-bucket/xavira-orbit/prod \
+docker compose -f docker-compose.prod.yml --profile ops up -d log-archive
+```
+
+The archive worker compresses Docker JSON logs older than `LOG_ARCHIVE_AFTER_DAYS=30` and uploads them with `DEEP_ARCHIVE` storage class by default.
+
+### Production Autoscaling
+
+Compose deployments can scale manually:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --scale sender-worker=8
+```
+
+The optional ops profile includes a sender autoscaler that watches Docker CPU and memory stats and adjusts sender-worker replicas between `SENDER_MIN_REPLICAS` and `SENDER_MAX_REPLICAS`:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile ops up -d sender-autoscaler
+```
+
+For Kubernetes or ECS, use the same stateless worker model and map the thresholds to HPA/Service Auto Scaling.
+
+### Disaster Recovery And Business Continuity
+
+Recovery point objective: Postgres should be backed up continuously or at least every 15 minutes for production. Redis is a live queue/cache layer; Postgres remains the durable source of truth.
+
+Recovery time objective: A warm standby host can restore from Postgres backup, attach Redis, pull the repository, and run:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Business continuity plan:
+
+- Keep DNS, SMTP provider credentials, and `SECRET_MASTER_KEYS` in a managed vault outside the host.
+- Keep encrypted Postgres backups in a separate account or region.
+- Use `/api/health/stats` to verify DB latency, Redis latency, queue depth, worker heartbeat, P99 delivery latency, resource usage, and TLS posture after restore.
+- Use the kill switch if credentials are suspected compromised, then rotate API keys, SMTP credentials, and master keys before resuming sends.
+
 ## Buyer Summary
 
 Xavira Orbit is built to be infrastructure agnostic. It can run on AWS EC2, Docker Compose, a VPS, or a container platform. The core scaling model is simple:

@@ -3,6 +3,7 @@ import IORedis from 'ioredis'
 import { Queue } from 'bullmq'
 import { query } from '@/lib/db'
 import { resolveClientId } from '@/lib/client-context'
+import { evaluateTlsPolicy } from '@/lib/security/tls-policy'
 
 function reqEnv(name: string) {
   const value = process.env[name]
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     queue = new Queue(queueName, { connection: { url: redisUrl } })
 
     const redisKey = `xv:health:${clientId}:${Date.now()}`
-    const [redisSet, redisGet, dbState, bullCounts, queueRows, workerHeartbeats] = await Promise.all([
+    const [redisSet, redisGet, dbState, bullCounts, queueRows, workerHeartbeats, deliveryLatency] = await Promise.all([
       timed(async () => redis!.set(redisKey, '1', 'EX', 30)),
       timed(async () => {
         await redis!.set(redisKey, '1', 'EX', 30)
@@ -86,10 +87,63 @@ export async function GET(request: NextRequest) {
         )
       ),
       timed(async () => scanSenderHeartbeats(redis!, region)),
+      timed(async () =>
+        query<{
+          sample: string
+          p50_ms: string | number | null
+          p95_ms: string | number | null
+          p99_ms: string | number | null
+        }>(
+          `WITH sent AS (
+             SELECT queue_job_id, MIN(created_at) AS sent_at
+             FROM events
+             WHERE client_id = $1
+               AND event_type = 'sent'
+               AND queue_job_id IS NOT NULL
+               AND created_at >= now() - INTERVAL '24 hours'
+             GROUP BY queue_job_id
+           ),
+           delivered AS (
+             SELECT queue_job_id, MIN(COALESCE(delivered_at, created_at)) AS delivered_at
+             FROM events
+             WHERE client_id = $1
+               AND event_type = 'delivered'
+               AND queue_job_id IS NOT NULL
+               AND created_at >= now() - INTERVAL '24 hours'
+             GROUP BY queue_job_id
+           ),
+           latencies AS (
+             SELECT EXTRACT(EPOCH FROM (d.delivered_at - s.sent_at)) * 1000 AS latency_ms
+             FROM sent s
+             JOIN delivered d ON d.queue_job_id = s.queue_job_id
+             WHERE d.delivered_at >= s.sent_at
+           )
+           SELECT
+             COUNT(*)::text AS sample,
+             percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms) AS p50_ms,
+             percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95_ms,
+             percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99_ms
+           FROM latencies`,
+          [clientId]
+        )
+      ),
     ])
 
     const dbRow = dbState.value.rows[0]
     const queueRow = queueRows.value.rows[0]
+    const latencyRow = deliveryLatency.value.rows[0]
+    const senderNodes = workerHeartbeats.value as Array<Record<string, any>>
+    const totalProcessedSends = senderNodes.reduce((sum, node) => sum + Number(node.processedSends ?? 0), 0)
+    const totalConcurrency = senderNodes.reduce((sum, node) => sum + Number(node.concurrency ?? 0), 0)
+    const resourceNodes = senderNodes.map((node) => node.resources ?? {})
+    const avgCpuPercent =
+      resourceNodes.length > 0
+        ? resourceNodes.reduce((sum, node) => sum + Number(node.cpuPercent ?? 0), 0) / resourceNodes.length
+        : 0
+    const totalRssMb = resourceNodes.reduce((sum, node) => sum + Number(node.rssMb ?? 0), 0)
+    const maxRssMb = resourceNodes.reduce((max, node) => Math.max(max, Number(node.rssMb ?? 0)), 0)
+    const sendsPer10kDivisor = Math.max(totalProcessedSends / 10_000, 1)
+    const tlsPolicy = evaluateTlsPolicy()
 
     return NextResponse.json({
       ok: true,
@@ -102,6 +156,7 @@ export async function GET(request: NextRequest) {
         bullmq_counts_ms: bullCounts.latencyMs,
         db_queue_counts_ms: queueRows.latencyMs,
         worker_heartbeat_scan_ms: workerHeartbeats.latencyMs,
+        delivery_latency_query_ms: deliveryLatency.latencyMs,
       },
       redis: {
         set_ok: redisSet.value === 'OK',
@@ -128,8 +183,27 @@ export async function GET(request: NextRequest) {
       workers: {
         sender: {
           active: workerHeartbeats.value.length,
+          totalConcurrency,
+          totalProcessedSends,
           nodes: workerHeartbeats.value,
         },
+      },
+      delivery_latency: {
+        window: '24h',
+        sample: Number(latencyRow?.sample ?? 0),
+        p50_ms: latencyRow?.p50_ms == null ? null : Number(latencyRow.p50_ms),
+        p95_ms: latencyRow?.p95_ms == null ? null : Number(latencyRow.p95_ms),
+        p99_ms: latencyRow?.p99_ms == null ? null : Number(latencyRow.p99_ms),
+      },
+      resource_usage: {
+        window: 'heartbeat',
+        avg_cpu_percent: Math.round(avgCpuPercent * 100) / 100,
+        total_rss_mb: Math.round(totalRssMb * 100) / 100,
+        max_worker_rss_mb: Math.round(maxRssMb * 100) / 100,
+        memory_mb_per_10k_sends: Math.round((totalRssMb / sendsPer10kDivisor) * 100) / 100,
+      },
+      security: {
+        tls_policy: tlsPolicy,
       },
     })
   } catch (error) {

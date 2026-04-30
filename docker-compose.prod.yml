@@ -1,7 +1,18 @@
 name: xavira-orbit
 
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-50m}
+    max-file: ${LOG_MAX_FILE:-10}
+    compress: "true"
+
 x-app-environment: &app-environment
   NODE_ENV: production
+  NODE_OPTIONS: ${NODE_OPTIONS:---require=/app/scripts/structured-console.cjs}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  TLS_MIN_VERSION: ${TLS_MIN_VERSION:-TLSv1.3}
+  REQUIRE_INTERNAL_TLS: ${REQUIRE_INTERNAL_TLS:-false}
   APP_DOMAIN: ${APP_DOMAIN:-localhost:3000}
   APP_PROTOCOL: ${APP_PROTOCOL:-http}
   DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/xavira_orbit?sslmode=disable}
@@ -61,6 +72,9 @@ x-app-environment: &app-environment
   CRON_SECRET: ${CRON_SECRET:-change-me}
   AUTH_SECRET: ${AUTH_SECRET:-change-me}
   SECURITY_KILL_SWITCH_TOKEN: ${SECURITY_KILL_SWITCH_TOKEN:-change-me}
+  SECRET_MASTER_KEY_ID: ${SECRET_MASTER_KEY_ID:-v1}
+  SECRET_MASTER_KEY: ${SECRET_MASTER_KEY:-}
+  SECRET_MASTER_KEYS: ${SECRET_MASTER_KEYS:-}
 
 x-app-service: &app-service
   build:
@@ -72,6 +86,17 @@ x-app-service: &app-service
       condition: service_healthy
     redis:
       condition: service_healthy
+  logging: *json-logging
+  deploy:
+    restart_policy:
+      condition: any
+    resources:
+      limits:
+        cpus: ${APP_CPU_LIMIT:-1.0}
+        memory: ${APP_MEMORY_LIMIT:-768M}
+      reservations:
+        cpus: ${APP_CPU_RESERVATION:-0.25}
+        memory: ${APP_MEMORY_RESERVATION:-256M}
 
 services:
   postgres:
@@ -85,6 +110,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - xavira_orbit_pgdata:/var/lib/postgresql/data
+    logging: *json-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-xavira_orbit}"]
       interval: 5s
@@ -99,6 +125,7 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - xavira_orbit_redisdata:/data
+    logging: *json-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -107,6 +134,9 @@ services:
 
   migrate:
     <<: *app-service
+    environment:
+      <<: *app-environment
+      SERVICE_NAME: migrate
     restart: "no"
     command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm db:init"]
     depends_on:
@@ -117,6 +147,9 @@ services:
 
   api-gateway:
     <<: *app-service
+    environment:
+      <<: *app-environment
+      SERVICE_NAME: api-gateway
     restart: unless-stopped
     command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C apps/api-gateway start -p 3000"]
     ports:
@@ -139,6 +172,9 @@ services:
 
   reputation-worker:
     <<: *app-service
+    environment:
+      <<: *app-environment
+      SERVICE_NAME: reputation-worker
     restart: unless-stopped
     command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C workers/reputation-worker start"]
     depends_on:
@@ -149,6 +185,9 @@ services:
 
   sender-worker:
     <<: *app-service
+    environment:
+      <<: *app-environment
+      SERVICE_NAME: sender-worker
     restart: unless-stopped
     command: ["sh", "-lc", "node scripts/sync-env.mjs && pnpm -C workers/sender-worker start"]
     depends_on:
@@ -156,6 +195,40 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    deploy:
+      mode: replicated
+      replicas: ${SENDER_REPLICAS:-2}
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          cpus: ${SENDER_CPU_LIMIT:-1.0}
+          memory: ${SENDER_MEMORY_LIMIT:-768M}
+        reservations:
+          cpus: ${SENDER_CPU_RESERVATION:-0.25}
+          memory: ${SENDER_MEMORY_RESERVATION:-256M}
+
+  sender-autoscaler:
+    image: docker:29-cli
+    profiles: ["ops"]
+    restart: unless-stopped
+    working_dir: /workspace
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-xavira-orbit}
+      COMPOSE_FILE: /workspace/docker-compose.prod.yml
+      AUTOSCALE_SERVICE: sender-worker
+      SENDER_MIN_REPLICAS: ${SENDER_MIN_REPLICAS:-2}
+      SENDER_MAX_REPLICAS: ${SENDER_MAX_REPLICAS:-24}
+      AUTOSCALE_CPU_HIGH: ${AUTOSCALE_CPU_HIGH:-70}
+      AUTOSCALE_CPU_LOW: ${AUTOSCALE_CPU_LOW:-25}
+      AUTOSCALE_MEM_HIGH: ${AUTOSCALE_MEM_HIGH:-80}
+      AUTOSCALE_INTERVAL_SECONDS: ${AUTOSCALE_INTERVAL_SECONDS:-30}
+      AUTOSCALE_COOLDOWN_SECONDS: ${AUTOSCALE_COOLDOWN_SECONDS:-120}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/workspace:ro
+    command: ["sh", "/workspace/scripts/compose-autoscale.sh"]
+    logging: *json-logging
 
   ollama:
     image: ollama/ollama:latest
@@ -165,6 +238,7 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - xavira_orbit_ollama:/root/.ollama
+    logging: *json-logging
 
   ollama-pull:
     image: ollama/ollama:latest
@@ -180,6 +254,28 @@ services:
       ]
     depends_on:
       - ollama
+    logging: *json-logging
+
+  log-archive:
+    image: alpine:3.20
+    profiles: ["ops"]
+    restart: unless-stopped
+    environment:
+      LOG_ARCHIVE_S3_URI: ${LOG_ARCHIVE_S3_URI:-}
+      LOG_ARCHIVE_AFTER_DAYS: ${LOG_ARCHIVE_AFTER_DAYS:-30}
+      LOG_ARCHIVE_INTERVAL_SECONDS: ${LOG_ARCHIVE_INTERVAL_SECONDS:-86400}
+      LOG_ARCHIVE_STORAGE_CLASS: ${LOG_ARCHIVE_STORAGE_CLASS:-DEEP_ARCHIVE}
+      AWS_REGION: ${AWS_REGION:-eu-north-1}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./scripts:/workspace/scripts:ro
+    entrypoint:
+      [
+        "sh",
+        "-lc",
+        "apk add --no-cache aws-cli gzip findutils >/dev/null && /workspace/scripts/archive-docker-logs.sh"
+      ]
+    logging: *json-logging
 
 volumes:
   xavira_orbit_pgdata:

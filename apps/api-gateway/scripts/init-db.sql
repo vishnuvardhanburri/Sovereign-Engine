@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS clients (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -431,6 +433,33 @@ CREATE INDEX IF NOT EXISTS idx_public_api_keys_hash_active
 CREATE INDEX IF NOT EXISTS idx_public_api_keys_client
   ON public_api_keys (client_id, created_at DESC);
 
+-- AES-256-GCM encrypted secret vault.
+-- Stores retrievable secrets only when SECRET_MASTER_KEY/SECRET_MASTER_KEYS is configured.
+CREATE TABLE IF NOT EXISTS encrypted_secrets (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT REFERENCES clients(id) ON DELETE CASCADE,
+  secret_type TEXT NOT NULL CHECK (
+    secret_type IN ('smtp_credential', 'api_key', 'webhook_secret', 'integration_token')
+  ),
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  key_version TEXT NOT NULL,
+  algorithm TEXT NOT NULL DEFAULT 'aes-256-gcm',
+  iv TEXT NOT NULL,
+  auth_tag TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'rotated', 'revoked')),
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  rotated_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  UNIQUE (client_id, secret_type, resource_type, resource_id, status)
+);
+
+CREATE INDEX IF NOT EXISTS idx_encrypted_secrets_lookup
+  ON encrypted_secrets (client_id, secret_type, resource_type, resource_id, created_at DESC)
+  WHERE status = 'active';
+
 -- Billable Reputation API usage ledger.
 CREATE TABLE IF NOT EXISTS reputation_api_logs (
   id BIGSERIAL PRIMARY KEY,
@@ -837,28 +866,85 @@ CREATE TABLE IF NOT EXISTS access_control (
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
-  user_id BIGINT NOT NULL,
+  user_id BIGINT,
+  client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
+  actor_id TEXT,
+  actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN ('user', 'system', 'api_key', 'anonymous')),
   action TEXT NOT NULL,
+  action_type TEXT,
   resource_type TEXT NOT NULL,
   resource_id TEXT NOT NULL,
   details JSONB NOT NULL DEFAULT '{}'::jsonb,
   ip_address TEXT,
   user_agent TEXT,
-  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  timestamp_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+  previous_hash TEXT,
+  entry_hash TEXT UNIQUE,
+  request_id TEXT,
+  service_name TEXT NOT NULL DEFAULT 'api-gateway'
 );
+
+ALTER TABLE audit_logs
+  ALTER COLUMN user_id DROP NOT NULL,
+  ADD COLUMN IF NOT EXISTS client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS actor_id TEXT,
+  ADD COLUMN IF NOT EXISTS actor_type TEXT NOT NULL DEFAULT 'user',
+  ADD COLUMN IF NOT EXISTS action_type TEXT,
+  ADD COLUMN IF NOT EXISTS timestamp_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS previous_hash TEXT,
+  ADD COLUMN IF NOT EXISTS entry_hash TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS request_id TEXT,
+  ADD COLUMN IF NOT EXISTS service_name TEXT NOT NULL DEFAULT 'api-gateway';
+
+UPDATE audit_logs
+SET
+  actor_id = COALESCE(actor_id, user_id::TEXT, 'system'),
+  action_type = COALESCE(action_type, action),
+  timestamp_utc = COALESCE(timestamp_utc, timestamp::timestamptz)
+WHERE actor_id IS NULL
+   OR action_type IS NULL;
 
 CREATE OR REPLACE FUNCTION xavira_mask_audit_log() RETURNS TRIGGER AS $$
 BEGIN
   NEW.details := COALESCE(xavira_mask_jsonb(NEW.details), '{}'::jsonb);
+  NEW.actor_id := COALESCE(NEW.actor_id, NEW.user_id::TEXT, 'system');
+  NEW.action_type := COALESCE(NEW.action_type, NEW.action);
+  NEW.timestamp_utc := COALESCE(NEW.timestamp_utc, now());
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_xavira_mask_audit_log ON audit_logs;
 CREATE TRIGGER trg_xavira_mask_audit_log
-BEFORE INSERT OR UPDATE ON audit_logs
+BEFORE INSERT ON audit_logs
 FOR EACH ROW
 EXECUTE FUNCTION xavira_mask_audit_log();
+
+CREATE OR REPLACE FUNCTION xavira_reject_audit_log_mutation() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_logs are immutable; append a new audit event instead';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_update ON audit_logs;
+CREATE TRIGGER trg_xavira_audit_logs_immutable_update
+BEFORE UPDATE ON audit_logs
+FOR EACH ROW
+EXECUTE FUNCTION xavira_reject_audit_log_mutation();
+
+DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_delete ON audit_logs;
+CREATE TRIGGER trg_xavira_audit_logs_immutable_delete
+BEFORE DELETE ON audit_logs
+FOR EACH ROW
+EXECUTE FUNCTION xavira_reject_audit_log_mutation();
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_client_timestamp_utc
+  ON audit_logs(client_id, timestamp_utc DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entry_hash
+  ON audit_logs(entry_hash)
+  WHERE entry_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS session_revocations (
   id BIGSERIAL PRIMARY KEY,

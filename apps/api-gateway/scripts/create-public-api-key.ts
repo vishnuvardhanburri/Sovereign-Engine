@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import crypto from 'crypto'
 import { query } from '../lib/db'
+import { recordAuditLog } from '../lib/security/audit-log'
+import { isSecretVaultConfigured, storeEncryptedSecret } from '../lib/security/secret-vault'
 
 function arg(name: string) {
   const idx = process.argv.indexOf(`--${name}`)
@@ -38,9 +40,38 @@ async function main() {
       dailyLimit ? Number(dailyLimit) : null,
     ]
   )
+  const id = result.rows[0]?.id
+
+  if (id && isSecretVaultConfigured()) {
+    await storeEncryptedSecret({
+      clientId: clientId ? Number(clientId) : null,
+      secretType: 'api_key',
+      resourceType: 'public_api_key',
+      resourceId: id,
+      plaintext: rawKey,
+      createdBy: 'public-api-key:create',
+    })
+  }
+
+  await recordAuditLog({
+    actorId: 'public-api-key:create',
+    actorType: 'system',
+    clientId: clientId ? Number(clientId) : null,
+    actionType: 'api_key.create',
+    resourceType: 'public_api_key',
+    resourceId: id ?? keyPrefix,
+    serviceName: 'api-gateway-script',
+    details: {
+      name,
+      tier,
+      key_prefix: keyPrefix,
+      encrypted_at_rest: Boolean(id && isSecretVaultConfigured()),
+      daily_limit: dailyLimit ? Number(dailyLimit) : null,
+    },
+  })
 
   console.log('Created public Reputation API key. Store this once; it will not be shown again.')
-  console.log(JSON.stringify({ id: result.rows[0]?.id, name, tier, clientId: clientId ?? null, key: rawKey }, null, 2))
+  console.log(JSON.stringify({ id, name, tier, clientId: clientId ?? null, key: rawKey }, null, 2))
 }
 
 main().catch((error) => {

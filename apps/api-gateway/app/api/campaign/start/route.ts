@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { enqueueCampaignJobs, getCampaign } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 import { query } from '@/lib/db'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,6 +70,19 @@ export async function POST(request: NextRequest) {
         ? body.contact_ids.map((value: unknown) => Number(value)).filter(Boolean)
         : undefined
     )
+
+    await recordAuditLog({
+      request,
+      clientId,
+      actionType: 'campaign.bulk_send.trigger',
+      resourceType: 'campaign',
+      resourceId: campaignId,
+      details: {
+        queued_jobs: result.jobs.length,
+        contact_count: result.contactCount,
+        explicit_contact_count: Array.isArray(body.contact_ids) ? body.contact_ids.length : null,
+      },
+    })
 
     return NextResponse.json({
       campaign_id: campaignId,

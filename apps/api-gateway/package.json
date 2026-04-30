@@ -15,6 +15,8 @@
     "test:next-level": "tsx scripts/test-next-level-features.ts",
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "db:init": "tsx scripts/init-db.ts",
+    "tenant:rls": "tsx scripts/apply-tenant-rls.ts",
+    "secret:rotate": "tsx scripts/rotate-master-key.ts",
     "env:check": "tsx scripts/env-check.ts",
     "user:create": "tsx scripts/create-user.ts",
     "public-api-key:create": "tsx scripts/create-public-api-key.ts"

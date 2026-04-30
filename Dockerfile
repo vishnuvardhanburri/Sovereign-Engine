@@ -4,6 +4,7 @@ WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
   PUPPETEER_SKIP_DOWNLOAD=true \
+  LOG_FORMAT=json \
   PNPM_HOME=/pnpm \
   PATH=/pnpm:$PATH
 
@@ -70,6 +71,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
   NEXT_TELEMETRY_DISABLED=1 \
   PUPPETEER_SKIP_DOWNLOAD=true \
+  LOG_FORMAT=json \
   PNPM_HOME=/pnpm \
   PATH=/pnpm:$PATH
 

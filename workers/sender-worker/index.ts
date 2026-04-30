@@ -136,6 +136,8 @@ let workerRotationReason: string | null = null
 let workerRetirementTimer: NodeJS.Timeout | null = null
 let licenseState: 'not_configured' | 'active' | 'revoked' | 'unreachable' = LICENSING_CONTROL_URL && LICENSING_KEY ? 'unreachable' : 'not_configured'
 let licenseCheckedAt: string | null = null
+let lastCpuUsage = process.cpuUsage()
+let lastCpuSampleAt = Date.now()
 
 const dlq = new BullQueue<SendJob>(SEND_DLQ, { connection: { url: reqEnv('REDIS_URL') } })
 const sendQueue = new BullQueue<SendJob>(SEND_QUEUE, { connection: { url: reqEnv('REDIS_URL') } })
@@ -1027,6 +1029,16 @@ async function recordMetric(clientId: number, name: string, value: number, metad
 
 async function writeWorkerHeartbeat() {
   const uptimeMs = Math.max(0, Date.now() - new Date(WORKER_STARTED_AT).getTime())
+  const memory = process.memoryUsage()
+  const now = Date.now()
+  const cpuDelta = process.cpuUsage(lastCpuUsage)
+  const elapsedMs = Math.max(1, now - lastCpuSampleAt)
+  const cpuPercent = Math.max(0, ((cpuDelta.user + cpuDelta.system) / 1000 / elapsedMs) * 100)
+  lastCpuUsage = process.cpuUsage()
+  lastCpuSampleAt = now
+  const rssMb = Math.round((memory.rss / 1024 / 1024) * 100) / 100
+  const heapUsedMb = Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100
+  const externalMb = Math.round((memory.external / 1024 / 1024) * 100) / 100
   await redis
     .set(
       WORKER_HEARTBEAT_KEY,
@@ -1044,6 +1056,16 @@ async function writeWorkerHeartbeat() {
         desiredState: workerDraining ? 'draining' : 'active',
         processedSends: workerProcessedSends,
         uptimeMs,
+        resources: {
+          rssMb,
+          heapUsedMb,
+          externalMb,
+          cpuPercent: Math.round(cpuPercent * 100) / 100,
+          memoryMbPer10kSends:
+            workerProcessedSends > 0
+              ? Math.round((rssMb / Math.max(workerProcessedSends / 10_000, 1)) * 100) / 100
+              : null,
+        },
         rotation: {
           sendLimit: WORKER_ROTATION_SEND_LIMIT,
           maxAgeMs: WORKER_ROTATION_MAX_AGE_MS,

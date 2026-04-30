@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveClientId } from '@/lib/client-context'
 import { updateDomainStatus } from '@/lib/backend'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 export async function POST(
   request: NextRequest,
@@ -22,6 +23,15 @@ export async function POST(
     if (!domain) {
       return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
     }
+
+    await recordAuditLog({
+      request,
+      clientId,
+      actionType: 'domain.pause',
+      resourceType: 'domain',
+      resourceId: domainId,
+      details: { status: 'paused' },
+    })
 
     return NextResponse.json(domain)
   } catch (error) {

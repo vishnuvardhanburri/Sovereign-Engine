@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteDomain } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -25,10 +26,18 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Domain not found' }, { status: 404 })
     }
 
+    await recordAuditLog({
+      request,
+      clientId,
+      actionType: 'domain.delete',
+      resourceType: 'domain',
+      resourceId: domainId,
+      details: { confirm },
+    })
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('[API] Failed to delete domain', error)
     return NextResponse.json({ error: 'Failed to delete domain' }, { status: 500 })
   }
 }
-

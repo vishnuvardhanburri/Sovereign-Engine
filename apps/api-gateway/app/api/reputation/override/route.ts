@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import IORedis from 'ioredis'
 import { resolveClientId } from '@/lib/client-context'
 import { transaction } from '@/lib/db'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 type Provider = 'gmail' | 'outlook' | 'yahoo' | 'other'
 type OverrideAction = 'pause' | 'resume'
@@ -301,6 +302,23 @@ export async function POST(request: NextRequest) {
         await redisClient.del(pauseKey)
       }
     }
+
+    await recordAuditLog({
+      request,
+      clientId,
+      actionType: `reputation.${action}`,
+      resourceType: 'reputation_lane',
+      resourceId: domainId ?? 'all',
+      details: {
+        provider: provider ?? 'all',
+        affected_lanes: result.lanes.length,
+        lanes: result.lanes.map((lane) => ({
+          domain_id: lane.domainId,
+          domain: lane.domain,
+          provider: lane.provider,
+        })),
+      },
+    })
 
     return NextResponse.json({
       ok: true,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createDomain, listDomains } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
+import { recordAuditLog } from '@/lib/security/audit-log'
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,6 +33,18 @@ export async function POST(request: NextRequest) {
     const created = await createDomain(clientId, {
       domain: String(body.domain),
       dailyLimit: body.daily_limit ? Number(body.daily_limit) : undefined,
+    })
+
+    await recordAuditLog({
+      request,
+      clientId,
+      actionType: 'domain.create',
+      resourceType: 'domain',
+      resourceId: (created as any).id ?? String(body.domain),
+      details: {
+        domain: String(body.domain).toLowerCase(),
+        daily_limit: body.daily_limit ? Number(body.daily_limit) : null,
+      },
     })
 
     return NextResponse.json(created, { status: 201 })
