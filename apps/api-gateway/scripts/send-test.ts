@@ -80,8 +80,8 @@ async function main() {
   const q = new Queue(sendQueue, { connection: { url: appEnv.redisUrl() } })
 
   const idem = `send_test_${Date.now()}_${Math.random().toString(16).slice(2)}`
-  const subject = `[Xavira Orbit Test] SMTP check for ${company}`
-  const text = `Hi ${name},\n\nThis is a Xavira Orbit test email for ${company}.\n\nIf you see this, SMTP is working and events should record it.\n`
+  const subject = `[Sovereign Engine Test] SMTP check for ${company}`
+  const text = `Hi ${name},\n\nThis is a Sovereign Engine test email for ${company}.\n\nIf you see this, SMTP is working and events should record it.\n`
 
   const id = await q.add(
     'send_test',

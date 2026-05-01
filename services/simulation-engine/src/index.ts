@@ -1,4 +1,4 @@
-import type { DbExecutor, Lane } from '@xavira/types'
+import type { DbExecutor, Lane } from '@sovereign/types'
 
 export interface SimulationDeps {
   db: DbExecutor

@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/reputation-worker",
+  "name": "@sovereign/reputation-worker",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,9 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
-    "@xavira/adaptive-controller": "workspace:*",
-    "@xavira/provider-engine": "workspace:*",
-    "@xavira/types": "workspace:*",
+    "@sovereign/adaptive-controller": "workspace:*",
+    "@sovereign/provider-engine": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "dotenv": "^16.6.1",
     "ioredis": "^5.10.1",
     "pg": "^8.11.3"

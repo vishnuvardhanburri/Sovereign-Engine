@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-: "${LOG_ARCHIVE_S3_URI:?Set LOG_ARCHIVE_S3_URI, for example s3://xavira-orbit-logs/prod}"
+: "${LOG_ARCHIVE_S3_URI:?Set LOG_ARCHIVE_S3_URI, for example s3://sovereign-engine-logs/prod}"
 
 SOURCE_DIR="${LOG_SOURCE_DIR:-/var/lib/docker/containers}"
 RETENTION_DAYS="${LOG_ARCHIVE_AFTER_DAYS:-30}"

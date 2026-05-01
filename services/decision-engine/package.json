@@ -1,12 +1,12 @@
 {
-  "name": "@xavira/decision-engine",
+  "name": "@sovereign/decision-engine",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@xavira/queue-utils": "workspace:*",
-    "@xavira/simulation-engine": "workspace:*",
-    "@xavira/types": "workspace:*",
+    "@sovereign/queue-utils": "workspace:*",
+    "@sovereign/simulation-engine": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "dotenv": "^16.6.1",
     "zod": "^3.25.76"
   },

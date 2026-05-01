@@ -22,7 +22,7 @@ interface Message {
   suggestedCommands?: string[]
 }
 
-interface XaviraAIResponse {
+interface SovereignAIResponse {
   response: string
   actions: Array<{
     type: string
@@ -40,7 +40,7 @@ interface XaviraAIResponse {
   }
 }
 
-export function XaviraAIChat() {
+export function SovereignAIChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
     const welcomeMessage: Message = {
       id: 'welcome',
@@ -94,7 +94,7 @@ export function XaviraAIChat() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/xavira-ai', {
+      const response = await fetch('/api/sovereign-ai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,7 +114,7 @@ export function XaviraAIChat() {
       }
 
       const data = await response.json()
-      const aiResponse: XaviraAIResponse = data.data
+      const aiResponse: SovereignAIResponse = data.data
 
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
@@ -161,7 +161,7 @@ export function XaviraAIChat() {
 
   const clearHistory = async () => {
     try {
-      await fetch('/api/xavira-ai?userId=anonymous', {
+      await fetch('/api/sovereign-ai?userId=anonymous', {
         method: 'DELETE',
       })
       setMessages([{
@@ -197,7 +197,7 @@ export function XaviraAIChat() {
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-blue-500" />
-          Xavira AI Assistant
+          Sovereign AI Assistant
         </CardTitle>
         <Button
           variant="outline"

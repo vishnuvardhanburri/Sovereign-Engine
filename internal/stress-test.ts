@@ -146,8 +146,8 @@ async function ensureStressFixtures(clientId: number, runId: string, count: numb
      VALUES ($1,0,$2,$3,'stress-proof','primary')`,
     [
       sequenceId,
-      `Xavira Orbit scale proof ${runId}`,
-      `This is an internal mock delivery used to prove Xavira Orbit queue throughput. Run ${runId}.`,
+      `Sovereign Engine scale proof ${runId}`,
+      `This is an internal mock delivery used to prove Sovereign Engine queue throughput. Run ${runId}.`,
     ]
   )
 
@@ -284,8 +284,8 @@ async function enqueueLegacyJobs(input: {
 }) {
   const readyQueue = process.env.LEGACY_READY_QUEUE ?? 'email:queue'
   const scheduledAt = new Date().toISOString()
-  const subject = `Xavira Orbit scale proof ${input.campaignId}`
-  const body = `This is an internal mock delivery used to prove Xavira Orbit queue throughput. Campaign ${input.campaignId}.`
+  const subject = `Sovereign Engine scale proof ${input.campaignId}`
+  const body = `This is an internal mock delivery used to prove Sovereign Engine queue throughput. Campaign ${input.campaignId}.`
 
   for (const batch of chunks(input.queueJobs, 1000)) {
     const payloads = batch.map((job) =>
@@ -361,7 +361,7 @@ async function main() {
     throw new Error('Refusing stress test because at least one sender-worker heartbeat reports mockSmtp=false.')
   }
 
-  console.log('[stress] starting Xavira Orbit scale proof', {
+  console.log('[stress] starting Sovereign Engine scale proof', {
     clientId,
     count,
     runId,

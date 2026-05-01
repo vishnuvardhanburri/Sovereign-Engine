@@ -7,7 +7,7 @@ import {
   analyzeCompetitiveLandscape,
   provideAICoaching,
   predictLeadConversion
-} from '@/lib/xavira-ai-pro'
+} from '@/lib/sovereign-ai-pro'
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         )
     }
   } catch (error) {
-    console.error('Xavira AI Pro API error:', error)
+    console.error('Sovereign AI Pro API error:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

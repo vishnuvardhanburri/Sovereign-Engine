@@ -100,6 +100,36 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: 1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@sovereign/adaptive-controller':
+        specifier: workspace:*
+        version: link:../../libs/adaptive-controller
+      '@sovereign/decision-engine':
+        specifier: workspace:*
+        version: link:../../services/decision-engine
+      '@sovereign/intelligence-engine':
+        specifier: workspace:*
+        version: link:../../services/intelligence-engine
+      '@sovereign/optimizer-engine':
+        specifier: workspace:*
+        version: link:../../services/optimizer-engine
+      '@sovereign/outcome-engine':
+        specifier: workspace:*
+        version: link:../../services/outcome-engine
+      '@sovereign/reputation-engine':
+        specifier: workspace:*
+        version: link:../../services/reputation-engine
+      '@sovereign/sending-engine':
+        specifier: workspace:*
+        version: link:../../services/sending-engine
+      '@sovereign/simulation-engine':
+        specifier: workspace:*
+        version: link:../../services/simulation-engine
+      '@sovereign/tracking-engine':
+        specifier: workspace:*
+        version: link:../../services/tracking-engine
+      '@sovereign/types':
+        specifier: workspace:*
+        version: link:../../libs/types
       '@tanstack/react-query':
         specifier: ^5.36.0
         version: 5.99.0(react@19.2.4)
@@ -109,36 +139,6 @@ importers:
       '@vercel/analytics':
         specifier: 1.6.1
         version: 1.6.1(next@16.2.0(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
-      '@xavira/adaptive-controller':
-        specifier: workspace:*
-        version: link:../../libs/adaptive-controller
-      '@xavira/decision-engine':
-        specifier: workspace:*
-        version: link:../../services/decision-engine
-      '@xavira/intelligence-engine':
-        specifier: workspace:*
-        version: link:../../services/intelligence-engine
-      '@xavira/optimizer-engine':
-        specifier: workspace:*
-        version: link:../../services/optimizer-engine
-      '@xavira/outcome-engine':
-        specifier: workspace:*
-        version: link:../../services/outcome-engine
-      '@xavira/reputation-engine':
-        specifier: workspace:*
-        version: link:../../services/reputation-engine
-      '@xavira/sending-engine':
-        specifier: workspace:*
-        version: link:../../services/sending-engine
-      '@xavira/simulation-engine':
-        specifier: workspace:*
-        version: link:../../services/simulation-engine
-      '@xavira/tracking-engine':
-        specifier: workspace:*
-        version: link:../../services/tracking-engine
-      '@xavira/types':
-        specifier: workspace:*
-        version: link:../../libs/types
       autoprefixer:
         specifier: ^10.4.20
         version: 10.4.24(postcss@8.5.6)
@@ -303,7 +303,7 @@ importers:
 
   libs/adaptive-controller:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -389,13 +389,13 @@ importers:
 
   services/decision-engine:
     dependencies:
-      '@xavira/queue-utils':
+      '@sovereign/queue-utils':
         specifier: workspace:*
         version: link:../../libs/queue-utils
-      '@xavira/simulation-engine':
+      '@sovereign/simulation-engine':
         specifier: workspace:*
         version: link:../simulation-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       dotenv:
@@ -426,10 +426,10 @@ importers:
 
   services/intelligence-engine:
     dependencies:
-      '@xavira/provider-engine':
+      '@sovereign/provider-engine':
         specifier: workspace:*
         version: link:../provider-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       zod:
@@ -445,7 +445,7 @@ importers:
 
   services/lead-intel:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -458,7 +458,7 @@ importers:
 
   services/memory-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       ioredis:
@@ -474,7 +474,7 @@ importers:
 
   services/optimizer-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       ioredis:
@@ -493,7 +493,7 @@ importers:
 
   services/outcome-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       zod:
@@ -518,7 +518,7 @@ importers:
 
   services/provider-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -531,7 +531,7 @@ importers:
 
   services/reply-handler:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -544,7 +544,7 @@ importers:
 
   services/reputation-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -557,7 +557,7 @@ importers:
 
   services/sending-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -570,7 +570,7 @@ importers:
 
   services/simulation-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -586,25 +586,25 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.3.0
         version: 10.3.0
-      '@xavira/decision-engine':
+      '@sovereign/decision-engine':
         specifier: workspace:*
         version: link:../decision-engine
-      '@xavira/intelligence-engine':
+      '@sovereign/intelligence-engine':
         specifier: workspace:*
         version: link:../intelligence-engine
-      '@xavira/provider-engine':
+      '@sovereign/provider-engine':
         specifier: workspace:*
         version: link:../provider-engine
-      '@xavira/reputation-engine':
+      '@sovereign/reputation-engine':
         specifier: workspace:*
         version: link:../reputation-engine
-      '@xavira/simulation-engine':
+      '@sovereign/simulation-engine':
         specifier: workspace:*
         version: link:../simulation-engine
-      '@xavira/tracking-engine':
+      '@sovereign/tracking-engine':
         specifier: workspace:*
         version: link:../tracking-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       bullmq:
@@ -638,7 +638,7 @@ importers:
 
   services/tracking-engine:
     dependencies:
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
     devDependencies:
@@ -688,10 +688,10 @@ importers:
 
   workers/inbound-worker:
     dependencies:
-      '@xavira/tracking-engine':
+      '@sovereign/tracking-engine':
         specifier: workspace:*
         version: link:../../services/tracking-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       dotenv:
@@ -725,7 +725,7 @@ importers:
 
   workers/optimizer-worker:
     dependencies:
-      '@xavira/optimizer-engine':
+      '@sovereign/optimizer-engine':
         specifier: workspace:*
         version: link:../../services/optimizer-engine
       dotenv:
@@ -753,13 +753,13 @@ importers:
 
   workers/reputation-worker:
     dependencies:
-      '@xavira/adaptive-controller':
+      '@sovereign/adaptive-controller':
         specifier: workspace:*
         version: link:../../libs/adaptive-controller
-      '@xavira/provider-engine':
+      '@sovereign/provider-engine':
         specifier: workspace:*
         version: link:../../services/provider-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       dotenv:
@@ -784,31 +784,31 @@ importers:
 
   workers/sender-worker:
     dependencies:
-      '@xavira/adaptive-controller':
+      '@sovereign/adaptive-controller':
         specifier: workspace:*
         version: link:../../libs/adaptive-controller
-      '@xavira/content-mutation':
+      '@sovereign/content-mutation':
         specifier: workspace:*
         version: link:../../libs/content-mutation
-      '@xavira/decision-engine':
+      '@sovereign/decision-engine':
         specifier: workspace:*
         version: link:../../services/decision-engine
-      '@xavira/provider-engine':
+      '@sovereign/provider-engine':
         specifier: workspace:*
         version: link:../../services/provider-engine
-      '@xavira/reputation-engine':
+      '@sovereign/reputation-engine':
         specifier: workspace:*
         version: link:../../services/reputation-engine
-      '@xavira/sending-engine':
+      '@sovereign/sending-engine':
         specifier: workspace:*
         version: link:../../services/sending-engine
-      '@xavira/smtp-client':
+      '@sovereign/smtp-client':
         specifier: workspace:*
         version: link:../../libs/smtp-client
-      '@xavira/tracking-engine':
+      '@sovereign/tracking-engine':
         specifier: workspace:*
         version: link:../../services/tracking-engine
-      '@xavira/types':
+      '@sovereign/types':
         specifier: workspace:*
         version: link:../../libs/types
       bullmq:

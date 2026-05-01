@@ -14,7 +14,7 @@ export async function GET(
     }
 
     return new NextResponse(
-      'You have been unsubscribed from future outreach from Xavira Orbit.',
+      'You have been unsubscribed from future outreach from Sovereign Engine.',
       {
         status: 200,
         headers: {

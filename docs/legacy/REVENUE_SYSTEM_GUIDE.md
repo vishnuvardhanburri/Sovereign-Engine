@@ -1,4 +1,4 @@
-# Xavira Orbit: $100K Outbound Revenue System
+# Sovereign Engine: $100K Outbound Revenue System
 
 **Version 2.0** — Production-Grade Email Automation & Pipeline Generation
 
@@ -6,7 +6,7 @@
 
 ## What This System Does
 
-Xavira Orbit **replaces the SDR workflow** with a fully automated outbound revenue engine.
+Sovereign Engine **replaces the SDR workflow** with a fully automated outbound revenue engine.
 
 ```
 Leads → Personalized Email → Warmup → Domain Safety → Reply Detection → 
@@ -573,4 +573,4 @@ app/
 
 ---
 
-**Built with Xavira Orbit — The Revenue Machine.**
+**Built with Sovereign Engine — The Revenue Machine.**

@@ -85,7 +85,7 @@ function protectBody(input: string): ProtectedBody {
   const segments: ProtectedSegment[] = []
 
   const addSegment = (value: string) => {
-    const token = `[[XAVIRA_IMMUTABLE_${segments.length}]]`
+    const token = `[[SOVEREIGN_IMMUTABLE_${segments.length}]]`
     segments.push({ token, value })
     text = text.split(value).join(token)
   }
@@ -140,7 +140,7 @@ function promptForVariation(input: {
     'You rewrite compliant B2B outreach copy for clarity and relevance.',
     'Rules:',
     '- Use only the local text below. Do not invent customer names, numbers, guarantees, or claims.',
-    '- Preserve every [[XAVIRA_IMMUTABLE_N]] placeholder exactly.',
+    '- Preserve every [[SOVEREIGN_IMMUTABLE_N]] placeholder exactly.',
     '- Preserve all links and unsubscribe/preference text by leaving placeholders untouched.',
     '- Keep the same CTA and same offer.',
     '- Vary sentence structure, greeting style, and wording naturally.',

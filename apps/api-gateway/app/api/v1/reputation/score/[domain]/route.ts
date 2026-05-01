@@ -91,7 +91,7 @@ function scoreLane(row: LaneRow) {
 function recommendations(input: { domain: DomainRow | null; lanes: Array<{ status: string; score: number; reasons: string[] }> }) {
   const output: string[] = []
   if (!input.domain) {
-    output.push('Domain is not yet observed by Xavira Orbit. Add DNS authentication checks and send seed traffic before scaling.')
+    output.push('Domain is not yet observed by Sovereign Engine. Add DNS authentication checks and send seed traffic before scaling.')
     return output
   }
   if (input.domain.status !== 'active') output.push('Domain is not active. Resume only after fixing the pause reason.')

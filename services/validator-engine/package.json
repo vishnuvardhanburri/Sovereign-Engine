@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/validator-engine",
+  "name": "@sovereign/validator-engine",
   "private": true,
   "type": "module",
   "scripts": {

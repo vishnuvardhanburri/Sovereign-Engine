@@ -1,8 +1,8 @@
-# Xavira AI Assistant
+# Sovereign AI Assistant
 
 ## Overview
 
-Xavira AI is your intelligent conversational assistant for cold email campaign management. Powered by OpenRouter's AI models, it provides natural language interaction for managing campaigns, analyzing contacts, generating content, and optimizing your cold outreach strategy.
+Sovereign AI is your intelligent conversational assistant for cold email campaign management. Powered by OpenRouter's AI models, it provides natural language interaction for managing campaigns, analyzing contacts, generating content, and optimizing your cold outreach strategy.
 
 ## Features
 
@@ -56,10 +56,10 @@ Xavira AI is your intelligent conversational assistant for cold email campaign m
 
 ### Installation
 
-The Xavira AI assistant is included in the Xavira Orbit platform. Access it through:
+The Sovereign AI assistant is included in the Sovereign Engine platform. Access it through:
 - **Web Interface**: Navigate to `/ai-assistant` in your dashboard
-- **API**: Use the REST API at `/api/xavira-ai`
-- **Programmatic**: Import and use the `XaviraAIAssistant` class
+- **API**: Use the REST API at `/api/sovereign-ai`
+- **Programmatic**: Import and use the `SovereignAIAssistant` class
 
 ## Usage
 
@@ -78,10 +78,10 @@ The Xavira AI assistant is included in the Xavira Orbit platform. Access it thro
 ### API Usage
 
 ```typescript
-import { processXaviraAIRequest } from '@/lib/xavira-ai'
+import { processSovereignAIRequest } from '@/lib/sovereign-ai'
 
 // Basic request
-const response = await processXaviraAIRequest({
+const response = await processSovereignAIRequest({
   message: "Help me create a campaign",
   userId: "user123",
   context: {
@@ -99,9 +99,9 @@ console.log(response.suggestedCommands) // Follow-up suggestions
 ### Programmatic Usage
 
 ```typescript
-import { XaviraAIAssistant } from '@/lib/xavira-ai'
+import { SovereignAIAssistant } from '@/lib/sovereign-ai'
 
-const ai = new XaviraAIAssistant()
+const ai = new SovereignAIAssistant()
 
 // Process a request
 const response = await ai.processRequest({
@@ -152,7 +152,7 @@ ai.clearHistory("user123")
 ## AI Models & Cost Optimization
 
 ### Model Selection
-Xavira AI automatically selects the most cost-effective model for each task:
+Sovereign AI automatically selects the most cost-effective model for each task:
 
 - **GPT-3.5-turbo**: Fast, cheap tasks (spam detection, basic analysis)
 - **GPT-4**: Complex tasks (content generation, detailed analysis)
@@ -201,7 +201,7 @@ console.log(`Average Cost/Request: $${metrics.averageCostPerRequest}`)
 ### Campaign Creation Workflow
 ```typescript
 // User: "Create a campaign for fintech startups"
-const response = await processXaviraAIRequest({
+const response = await processSovereignAIRequest({
   message: "Create a campaign for fintech startups",
   task: "campaign_management"
 })
@@ -216,7 +216,7 @@ const response = await processXaviraAIRequest({
 ### Contact Enrichment
 ```typescript
 // User: "Enrich my contacts with LinkedIn data"
-const response = await processXaviraAIRequest({
+const response = await processSovereignAIRequest({
   message: "Enrich my contacts with LinkedIn data",
   context: { currentContacts: ["contact1", "contact2"] }
 })
@@ -227,7 +227,7 @@ const response = await processXaviraAIRequest({
 ### Content Optimization
 ```typescript
 // User: "Optimize this subject line for better open rates"
-const response = await processXaviraAIRequest({
+const response = await processSovereignAIRequest({
   message: "Optimize this subject line for better open rates",
   context: { subjectLine: "Check out our new product" }
 })
@@ -262,14 +262,14 @@ const response = await processXaviraAIRequest({
 ### Debug Mode
 ```typescript
 // Enable detailed logging
-process.env.DEBUG = 'xavira-ai:*'
+process.env.DEBUG = 'sovereign-ai:*'
 ```
 
 ### Health Checks
 ```typescript
-import { getXaviraAI } from '@/lib/xavira-ai'
+import { getSovereignAI } from '@/lib/sovereign-ai'
 
-const ai = getXaviraAI()
+const ai = getSovereignAI()
 // Check if AI is responsive
 const health = await ai.processRequest({ message: "ping" })
 ```
@@ -284,9 +284,9 @@ const health = await ai.processRequest({ message: "ping" })
 
 ## API Reference
 
-### XaviraAIRequest
+### SovereignAIRequest
 ```typescript
-interface XaviraAIRequest {
+interface SovereignAIRequest {
   message: string                    // User's natural language message
   userId?: string                    // Optional user identifier
   context?: {                        // Optional context information
@@ -299,11 +299,11 @@ interface XaviraAIRequest {
 }
 ```
 
-### XaviraAIResponse
+### SovereignAIResponse
 ```typescript
-interface XaviraAIResponse {
+interface SovereignAIResponse {
   response: string                   // AI's natural language response
-  actions: XaviraAIAction[]          // Suggested actions to take
+  actions: SovereignAIAction[]          // Suggested actions to take
   confidence: number                 // Confidence score (0-1)
   suggestedCommands?: string[]       // Follow-up command suggestions
   metadata: {                        // Response metadata
@@ -325,4 +325,4 @@ interface XaviraAIResponse {
 
 ## License
 
-Part of the Xavira Orbit cold email platform. See main project license for details.
+Part of the Sovereign Engine cold email platform. See main project license for details.

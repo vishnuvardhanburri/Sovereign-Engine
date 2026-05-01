@@ -275,18 +275,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS type TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP;
 
 -- Keep events.type aligned to events.event_type so older analytics queries keep working.
-CREATE OR REPLACE FUNCTION xavira_sync_event_type() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION sovereign_sync_event_type() RETURNS TRIGGER AS $$
 BEGIN
   NEW.type := NEW.event_type;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_xavira_sync_event_type ON events;
-CREATE TRIGGER trg_xavira_sync_event_type
+DROP TRIGGER IF EXISTS trg_sovereign_sync_event_type ON events;
+CREATE TRIGGER trg_sovereign_sync_event_type
 BEFORE INSERT OR UPDATE OF event_type ON events
 FOR EACH ROW
-EXECUTE FUNCTION xavira_sync_event_type();
+EXECUTE FUNCTION sovereign_sync_event_type();
 
 UPDATE events SET type = event_type WHERE type IS NULL;
 
@@ -485,7 +485,7 @@ CREATE INDEX IF NOT EXISTS idx_reputation_api_logs_domain_created
 
 -- Sensitive data guardrails for audit/reputation logs.
 -- Keep operational logs useful while preventing recipient emails, tokens, and SMTP secrets from being persisted.
-CREATE OR REPLACE FUNCTION xavira_mask_text(input TEXT) RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION sovereign_mask_text(input TEXT) RETURNS TEXT AS $$
 BEGIN
   IF input IS NULL THEN
     RETURN NULL;
@@ -499,7 +499,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION xavira_mask_jsonb(input JSONB) RETURNS JSONB AS $$
+CREATE OR REPLACE FUNCTION sovereign_mask_jsonb(input JSONB) RETURNS JSONB AS $$
 DECLARE
   output JSONB;
 BEGIN
@@ -513,7 +513,7 @@ BEGIN
       CASE
         WHEN lower(key) ~ '(password|pass|secret|token|smtp|authorization|cookie|api[_-]?key)' THEN to_jsonb('[redacted]'::text)
         WHEN lower(key) ~ '(^email$|_email$|email_|recipient|to$|from$)' THEN to_jsonb('[email-redacted]'::text)
-        ELSE xavira_mask_jsonb(value)
+        ELSE sovereign_mask_jsonb(value)
       END
     )
     INTO output
@@ -522,35 +522,35 @@ BEGIN
   END IF;
 
   IF jsonb_typeof(input) = 'array' THEN
-    SELECT jsonb_agg(xavira_mask_jsonb(value))
+    SELECT jsonb_agg(sovereign_mask_jsonb(value))
     INTO output
     FROM jsonb_array_elements(input);
     RETURN COALESCE(output, '[]'::jsonb);
   END IF;
 
   IF jsonb_typeof(input) = 'string' THEN
-    RETURN to_jsonb(xavira_mask_text(input #>> '{}'));
+    RETURN to_jsonb(sovereign_mask_text(input #>> '{}'));
   END IF;
 
   RETURN input;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION xavira_mask_reputation_event() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION sovereign_mask_reputation_event() RETURNS TRIGGER AS $$
 BEGIN
-  NEW.message := xavira_mask_text(NEW.message);
-  NEW.previous_state := xavira_mask_jsonb(NEW.previous_state);
-  NEW.next_state := COALESCE(xavira_mask_jsonb(NEW.next_state), '{}'::jsonb);
-  NEW.metrics_snapshot := COALESCE(xavira_mask_jsonb(NEW.metrics_snapshot), '{}'::jsonb);
+  NEW.message := sovereign_mask_text(NEW.message);
+  NEW.previous_state := sovereign_mask_jsonb(NEW.previous_state);
+  NEW.next_state := COALESCE(sovereign_mask_jsonb(NEW.next_state), '{}'::jsonb);
+  NEW.metrics_snapshot := COALESCE(sovereign_mask_jsonb(NEW.metrics_snapshot), '{}'::jsonb);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_xavira_mask_reputation_event ON reputation_events;
-CREATE TRIGGER trg_xavira_mask_reputation_event
+DROP TRIGGER IF EXISTS trg_sovereign_mask_reputation_event ON reputation_events;
+CREATE TRIGGER trg_sovereign_mask_reputation_event
 BEFORE INSERT OR UPDATE ON reputation_events
 FOR EACH ROW
-EXECUTE FUNCTION xavira_mask_reputation_event();
+EXECUTE FUNCTION sovereign_mask_reputation_event();
 
 -- Autonomous Copilot memory + approval ledger.
 CREATE TABLE IF NOT EXISTS copilot_memory (
@@ -903,8 +903,8 @@ ALTER TABLE audit_logs
   ADD COLUMN IF NOT EXISTS request_id TEXT,
   ADD COLUMN IF NOT EXISTS service_name TEXT NOT NULL DEFAULT 'api-gateway';
 
-DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_update ON audit_logs;
-DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_delete ON audit_logs;
+DROP TRIGGER IF EXISTS trg_sovereign_audit_logs_immutable_update ON audit_logs;
+DROP TRIGGER IF EXISTS trg_sovereign_audit_logs_immutable_delete ON audit_logs;
 
 UPDATE audit_logs
 SET
@@ -914,9 +914,9 @@ SET
 WHERE actor_id IS NULL
    OR action_type IS NULL;
 
-CREATE OR REPLACE FUNCTION xavira_mask_audit_log() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION sovereign_mask_audit_log() RETURNS TRIGGER AS $$
 BEGIN
-  NEW.details := COALESCE(xavira_mask_jsonb(NEW.details), '{}'::jsonb);
+  NEW.details := COALESCE(sovereign_mask_jsonb(NEW.details), '{}'::jsonb);
   NEW.actor_id := COALESCE(NEW.actor_id, NEW.user_id::TEXT, 'system');
   NEW.action_type := COALESCE(NEW.action_type, NEW.action);
   NEW.timestamp_utc := COALESCE(NEW.timestamp_utc, now());
@@ -924,29 +924,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_xavira_mask_audit_log ON audit_logs;
-CREATE TRIGGER trg_xavira_mask_audit_log
+DROP TRIGGER IF EXISTS trg_sovereign_mask_audit_log ON audit_logs;
+CREATE TRIGGER trg_sovereign_mask_audit_log
 BEFORE INSERT ON audit_logs
 FOR EACH ROW
-EXECUTE FUNCTION xavira_mask_audit_log();
+EXECUTE FUNCTION sovereign_mask_audit_log();
 
-CREATE OR REPLACE FUNCTION xavira_reject_audit_log_mutation() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION sovereign_reject_audit_log_mutation() RETURNS TRIGGER AS $$
 BEGIN
   RAISE EXCEPTION 'audit_logs are immutable; append a new audit event instead';
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_update ON audit_logs;
-CREATE TRIGGER trg_xavira_audit_logs_immutable_update
+DROP TRIGGER IF EXISTS trg_sovereign_audit_logs_immutable_update ON audit_logs;
+CREATE TRIGGER trg_sovereign_audit_logs_immutable_update
 BEFORE UPDATE ON audit_logs
 FOR EACH ROW
-EXECUTE FUNCTION xavira_reject_audit_log_mutation();
+EXECUTE FUNCTION sovereign_reject_audit_log_mutation();
 
-DROP TRIGGER IF EXISTS trg_xavira_audit_logs_immutable_delete ON audit_logs;
-CREATE TRIGGER trg_xavira_audit_logs_immutable_delete
+DROP TRIGGER IF EXISTS trg_sovereign_audit_logs_immutable_delete ON audit_logs;
+CREATE TRIGGER trg_sovereign_audit_logs_immutable_delete
 BEFORE DELETE ON audit_logs
 FOR EACH ROW
-EXECUTE FUNCTION xavira_reject_audit_log_mutation();
+EXECUTE FUNCTION sovereign_reject_audit_log_mutation();
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_client_timestamp_utc
   ON audit_logs(client_id, timestamp_utc DESC);
@@ -967,23 +967,23 @@ CREATE TABLE IF NOT EXISTS audit_chain_anchors (
   service_name TEXT NOT NULL DEFAULT 'api-gateway'
 );
 
-CREATE OR REPLACE FUNCTION xavira_reject_audit_anchor_mutation() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION sovereign_reject_audit_anchor_mutation() RETURNS TRIGGER AS $$
 BEGIN
   RAISE EXCEPTION 'audit_chain_anchors are immutable; append a new anchor instead';
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_xavira_audit_chain_anchors_immutable_update ON audit_chain_anchors;
-CREATE TRIGGER trg_xavira_audit_chain_anchors_immutable_update
+DROP TRIGGER IF EXISTS trg_sovereign_audit_chain_anchors_immutable_update ON audit_chain_anchors;
+CREATE TRIGGER trg_sovereign_audit_chain_anchors_immutable_update
 BEFORE UPDATE ON audit_chain_anchors
 FOR EACH ROW
-EXECUTE FUNCTION xavira_reject_audit_anchor_mutation();
+EXECUTE FUNCTION sovereign_reject_audit_anchor_mutation();
 
-DROP TRIGGER IF EXISTS trg_xavira_audit_chain_anchors_immutable_delete ON audit_chain_anchors;
-CREATE TRIGGER trg_xavira_audit_chain_anchors_immutable_delete
+DROP TRIGGER IF EXISTS trg_sovereign_audit_chain_anchors_immutable_delete ON audit_chain_anchors;
+CREATE TRIGGER trg_sovereign_audit_chain_anchors_immutable_delete
 BEFORE DELETE ON audit_chain_anchors
 FOR EACH ROW
-EXECUTE FUNCTION xavira_reject_audit_anchor_mutation();
+EXECUTE FUNCTION sovereign_reject_audit_anchor_mutation();
 
 CREATE INDEX IF NOT EXISTS idx_audit_chain_anchors_scope_created
   ON audit_chain_anchors(scope, created_at DESC);

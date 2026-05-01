@@ -1,4 +1,4 @@
-# Xavira Validator Engine
+# Sovereign Validator Engine
 
 Production-grade hybrid email validation service (open-source logic re-implemented cleanly):
 

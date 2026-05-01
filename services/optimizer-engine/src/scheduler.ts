@@ -1,4 +1,4 @@
-import type { DbExecutor } from '@xavira/types'
+import type { DbExecutor } from '@sovereign/types'
 import type { Redis } from 'ioredis'
 import { runOptimizerOnce, type OptimizerMode } from './optimizer'
 

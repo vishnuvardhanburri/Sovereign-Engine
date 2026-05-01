@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/inbound-worker",
+  "name": "@sovereign/inbound-worker",
   "version": "1.0.0",
   "description": "IMAP inbound worker that ingests replies into tracking/events",
   "main": "index.ts",
@@ -13,8 +13,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@xavira/tracking-engine": "workspace:*",
-    "@xavira/types": "workspace:*",
+    "@sovereign/tracking-engine": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "dotenv": "^16.6.1",
     "imapflow": "^1.0.187",
     "ioredis": "^5.10.1",

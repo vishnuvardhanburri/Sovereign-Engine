@@ -1,4 +1,4 @@
-# Xavira Sovereign Engine
+# Sovereign Engine
 
 ![Node](https://img.shields.io/badge/node-22.x-brightgreen)
 ![API](https://img.shields.io/badge/api-gateway-black)
@@ -8,7 +8,7 @@
 
 ## Deliverability Operating System for Serious Outbound Teams
 
-Xavira Orbit is not a cold-email script.
+Sovereign Engine is not a cold-email script.
 
 It is a full-stack deliverability control system built for founders, agencies, and operators who need outbound infrastructure that can scale without burning domains, losing auditability, or turning into manual chaos.
 
@@ -18,11 +18,11 @@ The core idea is simple:
 Validate -> Decide -> Queue -> Shape -> Send -> Measure -> Learn -> Protect
 ```
 
-Xavira Orbit is designed to make sending decisions like an infrastructure brain, not a blast tool.
+Sovereign Engine is designed to make sending decisions like an infrastructure brain, not a blast tool.
 
 ## Final Client Inputs
 
-Xavira Orbit ships the platform. The client only needs to supply the external assets that must legally and operationally belong to them:
+Sovereign Engine ships the platform. The client only needs to supply the external assets that must legally and operationally belong to them:
 
 - VPS/cloud host or container platform.
 - Dashboard domain with HTTPS, for example `orbit.client.com`.
@@ -46,7 +46,7 @@ Common failure modes:
 - Teams cannot prove what happened when a campaign fails.
 - Scaling requires manual babysitting in terminals.
 
-Xavira Orbit solves this by combining provider-aware reputation control, safe ramping, idempotent queueing, worker heartbeats, and a visual command center.
+Sovereign Engine solves this by combining provider-aware reputation control, safe ramping, idempotent queueing, worker heartbeats, and a visual command center.
 
 ## What Makes It Different
 
@@ -87,7 +87,7 @@ Investor mode shows value generated, sending cost, gross margin, ROI multiple, a
 
 ## Production Proof
 
-Xavira Orbit includes production-grade proof surfaces for technical buyers:
+Sovereign Engine includes production-grade proof surfaces for technical buyers:
 
 ```text
 /api/health/stats
@@ -105,7 +105,7 @@ This makes the system inspectable during demos, due diligence, and production op
 
 ## Scale Proof
 
-Xavira Orbit includes an internal mock stress test to prove pipeline throughput without sending real email:
+Sovereign Engine includes an internal mock stress test to prove pipeline throughput without sending real email:
 
 ```bash
 MOCK_SMTP=true MOCK_SMTP_FASTLANE=true SENDER_WORKER_CONCURRENCY=50 pnpm worker:sender
@@ -186,7 +186,7 @@ Use `pnpm prod:check` while staying in mock mode. Use `pnpm prod:check:real` onl
 
 ## Reputation-as-a-Service API
 
-Xavira Orbit productizes its internal intelligence as a public API.
+Sovereign Engine productizes its internal intelligence as a public API.
 
 Endpoint:
 
@@ -198,7 +198,7 @@ Example:
 
 ```bash
 curl -X POST "http://localhost:3000/api/v1/reputation/score" \
-  -H "x-api-key: $XAVIRA_REPUTATION_API_KEY" \
+  -H "x-api-key: $SOVEREIGN_REPUTATION_API_KEY" \
   -H "content-type: application/json" \
   -d '{"domain":"example.com","ip":"1.2.3.4"}'
 ```
@@ -220,7 +220,7 @@ Developer docs:
 
 ## Commercial Positioning
 
-Xavira Orbit can be sold or licensed as:
+Sovereign Engine can be sold or licensed as:
 
 - Deliverability Operating System for B2B outbound.
 - Agency control plane for multi-client sending.
@@ -238,7 +238,7 @@ We built the control layer that protects outbound revenue.
 
 ## Safety and Compliance
 
-Xavira Orbit is built for sustainable deliverability, not deception.
+Sovereign Engine is built for sustainable deliverability, not deception.
 
 The system is designed around:
 
@@ -299,7 +299,7 @@ Sender workers are stateless, which means capacity can be added by starting more
 
 ## Founder Note
 
-Xavira Orbit exists because outbound is becoming an infrastructure problem.
+Sovereign Engine exists because outbound is becoming an infrastructure problem.
 
 The winners will not be the teams that send the most.
 

@@ -1,6 +1,6 @@
-# Xavira Orbit Production Submission Checklist
+# Sovereign Engine Production Submission Checklist
 
-This is the final buyer/client handoff checklist. Xavira Orbit should handle the platform, queueing, dashboards, safety controls, worker scaling, audit logs, health checks, and mock proof runs. The client only needs to supply the external infrastructure and sending credentials that no software can safely invent.
+This is the final buyer/client handoff checklist. Sovereign Engine should handle the platform, queueing, dashboards, safety controls, worker scaling, audit logs, health checks, and mock proof runs. The client only needs to supply the external infrastructure and sending credentials that no software can safely invent.
 
 ## Client Inputs Required
 
@@ -14,7 +14,7 @@ These are the only mandatory outside pieces for a real production send:
 - Email validation key, currently `ZEROBOUNCE_API_KEY`.
 - Lawful contact source, suppression list, unsubscribe policy, and physical mailing address where required.
 
-## What Xavira Orbit Handles
+## What Sovereign Engine Handles
 
 - Postgres schema, migrations, queue tables, audit tables, reputation tables, and public API key tables.
 - Redis queueing, provider lane state, worker heartbeats, idempotency locks, and adaptive pause signals.
@@ -94,7 +94,7 @@ Run these before submission or client handoff:
 ```bash
 pnpm typecheck
 pnpm -C workers/sender-worker build
-docker compose -f docker-compose.prod.yml config >/tmp/xavira-compose.yml
+docker compose -f docker-compose.prod.yml config >/tmp/sovereign-compose.yml
 pnpm prod:check
 curl -sS "$APP_PROTOCOL://$APP_DOMAIN/api/health/stats?client_id=1"
 ```
@@ -121,6 +121,6 @@ Expected:
 The final submission story is:
 
 ```text
-Xavira Orbit is deployable with one Docker Compose stack, inspectable through health endpoints, provable through mock stress tests, and ready for real sending once the client supplies domains, DNS, SMTP/ESP credentials, validation keys, and compliant contact data.
+Sovereign Engine is deployable with one Docker Compose stack, inspectable through health endpoints, provable through mock stress tests, and ready for real sending once the client supplies domains, DNS, SMTP/ESP credentials, validation keys, and compliant contact data.
 ```
 

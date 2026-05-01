@@ -74,10 +74,10 @@ export function buildCompliantSmtpHeaders(req: SendEmailRequest): BuiltSmtpHeade
   ].join('.')
 
   const baseHeaders: Record<string, string> = {
-    'X-Mailer': 'Xavira Orbit Enterprise Mailer',
+    'X-Mailer': 'Sovereign Engine Enterprise Mailer',
     'X-Entity-Ref-ID': traceId,
-    'X-Xavira-Trace': traceId,
-    'X-Xavira-Provider-Lane': cleanHeaderValue(ctx.provider ?? 'unknown'),
+    'X-Sovereign Engine-Trace': traceId,
+    'X-Sovereign Engine-Provider-Lane': cleanHeaderValue(ctx.provider ?? 'unknown'),
     'MIME-Version': '1.0',
   }
 

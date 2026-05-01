@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-PROJECT="${COMPOSE_PROJECT_NAME:-xavira-orbit}"
+PROJECT="${COMPOSE_PROJECT_NAME:-sovereign-engine}"
 COMPOSE_FILE="${COMPOSE_FILE:-/workspace/docker-compose.prod.yml}"
 SERVICE="${AUTOSCALE_SERVICE:-sender-worker}"
 MIN_REPLICAS="${SENDER_MIN_REPLICAS:-2}"

@@ -1,4 +1,4 @@
-import type { DbExecutor, TrackingIngestEvent } from '@xavira/types'
+import type { DbExecutor, TrackingIngestEvent } from '@sovereign/types'
 import crypto from 'crypto'
 
 export interface TrackingDeps {

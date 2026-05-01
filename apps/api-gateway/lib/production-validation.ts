@@ -1,6 +1,6 @@
 /**
  * PRODUCTION VALIDATION SUITE
- * Validates all 15 production requirements for Xavira Orbit
+ * Validates all 15 production requirements for Sovereign Engine
  * Run before production deployment
  */
 
@@ -592,7 +592,7 @@ export function runProductionValidation() {
   const failed = results.filter(r => r.status === 'FAIL').length
   
   console.log('\n' + '='.repeat(70))
-  console.log('XAVIRA ORBIT - PRODUCTION VALIDATION REPORT')
+  console.log('SOVEREIGN ENGINE - PRODUCTION VALIDATION REPORT')
   console.log('='.repeat(70))
   console.log(`\n✅ PASS: ${passed}`)
   console.log(`⚠️  WARN: ${warned}`)

@@ -1,10 +1,10 @@
 {
-  "name": "@xavira/memory-engine",
+  "name": "@sovereign/memory-engine",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@xavira/types": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "ioredis": "^5.10.1"
   },
   "devDependencies": {

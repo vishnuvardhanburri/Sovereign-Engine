@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/tool-api",
+  "name": "@sovereign/tool-api",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,13 +7,13 @@
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
-    "@xavira/decision-engine": "workspace:*",
-    "@xavira/intelligence-engine": "workspace:*",
-    "@xavira/provider-engine": "workspace:*",
-    "@xavira/reputation-engine": "workspace:*",
-    "@xavira/simulation-engine": "workspace:*",
-    "@xavira/tracking-engine": "workspace:*",
-    "@xavira/types": "workspace:*",
+    "@sovereign/decision-engine": "workspace:*",
+    "@sovereign/intelligence-engine": "workspace:*",
+    "@sovereign/provider-engine": "workspace:*",
+    "@sovereign/reputation-engine": "workspace:*",
+    "@sovereign/simulation-engine": "workspace:*",
+    "@sovereign/tracking-engine": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "bullmq": "^5.76.1",
     "dotenv": "^16.6.1",
     "fastify": "^5.8.5",

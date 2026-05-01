@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/types",
+  "name": "@sovereign/types",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

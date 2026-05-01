@@ -9,10 +9,10 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' })
 
 export const metadata: Metadata = {
-  title: 'Xavira Orbit',
+  title: 'Sovereign Engine',
   description: 'Deliverability Operating System for compliant outbound infrastructure.',
-  applicationName: 'Xavira Orbit',
-  metadataBase: new URL('https://xavira-orbit.local'),
+  applicationName: 'Sovereign Engine',
+  metadataBase: new URL('https://sovereign-engine.local'),
   icons: {
     shortcut: '/favicon.ico',
     icon: [

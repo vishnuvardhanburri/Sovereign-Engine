@@ -41,7 +41,7 @@ if ((process.env.LOG_FORMAT || '').toLowerCase() === 'json') {
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level,
-        service: process.env.SERVICE_NAME || process.env.npm_package_name || 'xavira-service',
+        service: process.env.SERVICE_NAME || process.env.npm_package_name || 'sovereign-service',
         host: os.hostname(),
         pid: process.pid,
         event_id: crypto.randomUUID(),

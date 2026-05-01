@@ -1,4 +1,4 @@
-# Xavira Quick Reference Card
+# Sovereign Engine Quick Reference Card
 
 ## Launch Checklist
 
@@ -36,7 +36,7 @@ vercel deploy
 
 ## Branding
 
-**Product Name:** Xavira
+**Product Name:** Sovereign Engine
 **Logo:** X
 **Tone:** Premium, professional (like Stripe)
 **No Technical Exposure:** No React, Redis, Next.js, etc.
@@ -244,7 +244,7 @@ Auto-configures DNS
 ### White-Label Branding Issues?
 1. Search codebase for "EmailFlow" - should find 0 results
 2. Check sidebar logo shows "X"
-3. Verify metadata says "Xavira"
+3. Verify metadata says "Sovereign Engine"
 4. Ensure no version numbers visible
 
 ### Real API Integration Help?
@@ -292,7 +292,7 @@ useEffect(() => {
 - Sidebar prefetch visible in DevTools
 - Campaign status update instant
 - Return visits use cache (refresh = background)
-- Branding: "Xavira" everywhere, no tech jargon
+- Branding: "Sovereign Engine" everywhere, no tech jargon
 - Deploy to Vercel (automatic on git push)
 - Monitor analytics (Core Web Vitals tracking)
 
@@ -302,7 +302,7 @@ useEffect(() => {
 
 - **8 Dashboard Pages** (Dashboard, Campaigns, Domains, Contacts, Sequences, Analytics, Inbox, Settings)
 - **Performance Optimizations** (Prefetch, caching, optimistic updates)
-- **White-Label Branding** (Xavira product name throughout)
+- **White-Label Branding** (Sovereign Engine product name throughout)
 - **Production Ready** (Error handling, types, monitoring)
 - **Fully Documented** (3 detailed guides + this quick reference)
 
@@ -316,8 +316,8 @@ useEffect(() => {
 4. Monitor analytics
 5. Validate production
 
-**Xavira is now live and performing at enterprise standards.**
+**Sovereign Engine is now live and performing at enterprise standards.**
 
 ---
 
-Created for Xavira Premium Edition
+Created for Sovereign Engine Premium Edition

@@ -86,7 +86,7 @@ export const appEnv = {
     const protocol = isLocal ? 'http' : 'https'
     return `${protocol}://${domain}`
   },
-  unsubscribeSecret: () => process.env.UNSUBSCRIBE_SECRET || process.env.CRON_SECRET || 'xavira-orbit',
+  unsubscribeSecret: () => process.env.UNSUBSCRIBE_SECRET || process.env.CRON_SECRET || 'sovereign-engine',
   resendWebhookSecret: () => process.env.RESEND_WEBHOOK_SECRET || '',
   telegramBotToken: () => process.env.TELEGRAM_BOT_TOKEN || '',
   openRouterApiKey: () => process.env.OPENROUTER_API_KEY || '',
@@ -136,7 +136,7 @@ export const appEnv = {
     }
   },
   imapMailbox: () => process.env.IMAP_MAILBOX || 'INBOX',
-  smtpFromEmail: () => process.env.SMTP_FROM_EMAIL || `no-reply@${process.env.SMTP_HOST?.split(':')[0] ?? 'xaviraorbit.com'}`,
+  smtpFromEmail: () => process.env.SMTP_FROM_EMAIL || `no-reply@${process.env.SMTP_HOST?.split(':')[0] ?? 'sovereignengine.com'}`,
   smtpTestMode: () => process.env.SMTP_TEST_MODE === 'true',
   smtpTestRecipients: () => {
     const raw = process.env.SMTP_TEST_RECIPIENTS || process.env.SMTP_TEST_RECIPIENT_EMAILS || ''
@@ -153,8 +153,8 @@ export const appEnv = {
   queuePromoteBatchSize: () => optionalInt('QUEUE_PROMOTE_BATCH_SIZE', 100),
   infrastructureTargetDailyVolume: () => optionalInt('INFRASTRUCTURE_TARGET_DAILY_VOLUME', 50000),
   // Optional: used to protect cron endpoints in production. Defaults to a stable value for dev/demo.
-  cronSecret: () => process.env.CRON_SECRET || 'xavira-orbit-cron',
-  authSecret: () => process.env.AUTH_SECRET || process.env.CRON_SECRET || 'xavira-orbit-auth',
+  cronSecret: () => process.env.CRON_SECRET || 'sovereign-engine-cron',
+  authSecret: () => process.env.AUTH_SECRET || process.env.CRON_SECRET || 'sovereign-engine-auth',
   // AI Integration
   aiMaxTokensPerRequest: () => optionalInt('AI_MAX_TOKENS_PER_REQUEST', 2000),
   aiDailyCostLimit: () => optionalInt('AI_DAILY_COST_LIMIT', 50), // $50 default

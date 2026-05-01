@@ -1,5 +1,5 @@
-import { getDomainScore as getDomainScoreSvc, shouldPauseDomain as shouldPauseDomainSvc, updateDomainStats as updateDomainStatsSvc } from '@xavira/reputation-engine'
-import type { TrackingIngestEvent } from '@xavira/types'
+import { getDomainScore as getDomainScoreSvc, shouldPauseDomain as shouldPauseDomainSvc, updateDomainStats as updateDomainStatsSvc } from '@sovereign/reputation-engine'
+import type { TrackingIngestEvent } from '@sovereign/types'
 import { query } from '@/lib/db'
 
 export async function getDomainScore(clientId: number, domainId: number) {

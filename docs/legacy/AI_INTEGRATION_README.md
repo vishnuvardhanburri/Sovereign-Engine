@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AI Integration system provides comprehensive AI-powered analysis and web scraping capabilities for the Xavira Orbit cold email platform. It includes cost-optimized LLM usage, intelligent model selection, response caching, and automated contact data extraction from websites.
+The AI Integration system provides comprehensive AI-powered analysis and web scraping capabilities for the Sovereign Engine cold email platform. It includes cost-optimized LLM usage, intelligent model selection, response caching, and automated contact data extraction from websites.
 
 ## Features
 
@@ -282,4 +282,4 @@ if (!status.healthy) {
 
 ## License
 
-This system is part of the Xavira Orbit platform and follows the same licensing terms.
+This system is part of the Sovereign Engine platform and follows the same licensing terms.

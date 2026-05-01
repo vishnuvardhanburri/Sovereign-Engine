@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { computeAdaptiveThroughput, type AdaptiveState, type DomainSignals, type ProviderSignals } from '@xavira/adaptive-controller'
+import { computeAdaptiveThroughput, type AdaptiveState, type DomainSignals, type ProviderSignals } from '@sovereign/adaptive-controller'
 
 export async function POST(req: Request) {
   try {

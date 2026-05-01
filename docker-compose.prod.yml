@@ -1,4 +1,4 @@
-name: xavira-orbit
+name: sovereign-engine
 
 x-json-logging: &json-logging
   driver: json-file
@@ -15,7 +15,7 @@ x-app-environment: &app-environment
   REQUIRE_INTERNAL_TLS: ${REQUIRE_INTERNAL_TLS:-false}
   APP_DOMAIN: ${APP_DOMAIN:-localhost:3000}
   APP_PROTOCOL: ${APP_PROTOCOL:-http}
-  DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/xavira_orbit?sslmode=disable}
+  DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgresql://postgres:password@postgres:5432/sovereign_engine?sslmode=disable}
   REDIS_URL: ${CONTAINER_REDIS_URL:-redis://redis:6379}
   SEND_QUEUE: ${SEND_QUEUE:-xv-send-queue}
   SEND_DLQ: ${SEND_DLQ:-xv-send-dlq}
@@ -101,16 +101,16 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-xavira_orbit}
+      POSTGRES_DB: ${POSTGRES_DB:-sovereign_engine}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - xavira_orbit_pgdata:/var/lib/postgresql/data
+      - sovereign_engine_pgdata:/var/lib/postgresql/data
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-xavira_orbit}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-sovereign_engine}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -122,7 +122,7 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - xavira_orbit_redisdata:/data
+      - sovereign_engine_redisdata:/data
     logging: *json-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -215,7 +215,7 @@ services:
       api-gateway:
         condition: service_healthy
     environment:
-      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-xavira-orbit}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-sovereign-engine}
       COMPOSE_FILE: /workspace/docker-compose.prod.yml
       AUTOSCALE_SERVICE: sender-worker
       AUTOSCALE_HEALTH_URL: ${AUTOSCALE_HEALTH_URL:-http://api-gateway:3000/api/health/stats?client_id=1}
@@ -249,7 +249,7 @@ services:
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
-      - xavira_orbit_ollama:/root/.ollama
+      - sovereign_engine_ollama:/root/.ollama
     logging: *json-logging
 
   ollama-pull:
@@ -290,6 +290,6 @@ services:
     logging: *json-logging
 
 volumes:
-  xavira_orbit_pgdata:
-  xavira_orbit_redisdata:
-  xavira_orbit_ollama:
+  sovereign_engine_pgdata:
+  sovereign_engine_redisdata:
+  sovereign_engine_ollama:

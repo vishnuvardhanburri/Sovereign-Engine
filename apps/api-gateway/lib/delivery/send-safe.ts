@@ -155,7 +155,7 @@ export async function sendSafe(input: SafeSendInput): Promise<SafeSendResult> {
   const coordResult = await deps.coordinatorSend({
     campaignId: String(context.campaign.id),
     to,
-    from: `Xavira Orbit <${selection.identity.email}>`,
+    from: `Sovereign Engine <${selection.identity.email}>`,
     subject: message.subject,
     html: message.html,
     text: message.text,
@@ -175,7 +175,7 @@ export async function sendSafe(input: SafeSendInput): Promise<SafeSendResult> {
   }
 
   const smtpResult = await deps.smtpSend({
-    fromEmail: `Xavira Orbit <${selection.identity.email}>`,
+    fromEmail: `Sovereign Engine <${selection.identity.email}>`,
     toEmail: to,
     cc: context.job.cc_emails ?? undefined,
     subject: message.subject,

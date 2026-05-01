@@ -1,4 +1,4 @@
-import type { DbExecutor } from '@xavira/types'
+import type { DbExecutor } from '@sovereign/types'
 import type { SegmentMetrics } from './scorer'
 
 function clamp(n: number, min: number, max: number) {

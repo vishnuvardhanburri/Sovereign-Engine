@@ -55,7 +55,7 @@ async function processQueueWorker() {
         const result = await coordinator.send({
           campaignId: email.campaign_id,
           to: email.to,
-          from: email.from || 'noreply@xavira.io',
+          from: email.from || 'noreply@sovereignengine.com',
           subject: email.subject,
           html: email.html_body,
           text: email.text_body,

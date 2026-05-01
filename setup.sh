@@ -43,9 +43,9 @@ if [ ! -f .env ]; then
   CRON_SECRET_VALUE="$(random_hex)"
   KILL_SWITCH_VALUE="$(random_hex)"
   cat > .env <<EOF
-DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/xavira_orbit?sslmode=disable
+DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/sovereign_engine?sslmode=disable
 REDIS_URL=redis://127.0.0.1:6379
-CONTAINER_DATABASE_URL=postgresql://postgres:password@postgres:5432/xavira_orbit?sslmode=disable
+CONTAINER_DATABASE_URL=postgresql://postgres:password@postgres:5432/sovereign_engine?sslmode=disable
 CONTAINER_REDIS_URL=redis://redis:6379
 
 APP_DOMAIN=localhost:3000
@@ -105,14 +105,14 @@ pnpm install
 info "Applying database schema"
 pnpm db:init
 
-SETUP_USER_EMAIL="${SETUP_USER_EMAIL:-demo@xavira.local}"
+SETUP_USER_EMAIL="${SETUP_USER_EMAIL:-demo@sovereign.local}"
 SETUP_USER_PASSWORD="${SETUP_USER_PASSWORD:-Demo1234!}"
 info "Creating demo user ${SETUP_USER_EMAIL}"
 pnpm user:create "$SETUP_USER_EMAIL" "$SETUP_USER_PASSWORD"
 
 cat <<EOF
 
-Xavira Orbit is ready.
+Sovereign Engine is ready.
 
 Local app:
   pnpm dev -p 3000

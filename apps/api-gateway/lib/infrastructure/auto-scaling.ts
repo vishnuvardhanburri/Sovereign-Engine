@@ -89,7 +89,7 @@ export async function addDomain(targetVolume: number = 50000): Promise<AutoScale
     return await transaction(async (executor: QueryExecutor) => {
       // Generate unique domain name
       const timestamp = Date.now()
-      const newDomain = `xavira-${timestamp % 1000000}.io` // Simulated domain
+      const newDomain = `sovereign-${timestamp % 1000000}.io` // Simulated domain
 
       // Create domain record
       const domainResult = await executor(

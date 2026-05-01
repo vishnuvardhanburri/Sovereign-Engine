@@ -1,4 +1,4 @@
-import { getOutcomeSignals, getOutcomeDomain, getOutcomeCampaign, getOutcomeTrace } from '@xavira/outcome-engine'
+import { getOutcomeSignals, getOutcomeDomain, getOutcomeCampaign, getOutcomeTrace } from '@sovereign/outcome-engine'
 import { query } from '@/lib/db'
 
 export async function getOutcomeSignalsAdapter(input: { clientId: number; domainId: number }) {

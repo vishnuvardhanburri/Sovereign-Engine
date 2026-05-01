@@ -1,10 +1,10 @@
 /**
- * Xavira AI Assistant API Route
+ * Sovereign AI Assistant API Route
  * Handles conversational AI interactions for cold email platform management
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { processXaviraAIRequest, getXaviraAI, XaviraAIRequest } from '@/lib/xavira-ai'
+import { processSovereignAIRequest, getSovereignAI, SovereignAIRequest } from '@/lib/sovereign-ai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,15 +19,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare AI request
-    const aiRequest: XaviraAIRequest = {
+    const aiRequest: SovereignAIRequest = {
       message: message.trim(),
       userId: 'anonymous',
       context: context || {},
       task: task || 'general'
     }
 
-    // Process with Xavira AI
-    const response = await processXaviraAIRequest(aiRequest)
+    // Process with Sovereign AI
+    const response = await processSovereignAIRequest(aiRequest)
 
     return NextResponse.json({
       success: true,
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Xavira AI API error:', error)
+    console.error('Sovereign AI API error:', error)
     return NextResponse.json(
       {
         error: 'Failed to process AI request',
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId') || 'anonymous'
 
-    const ai = getXaviraAI()
+    const ai = getSovereignAI()
     const history = ai.getConversationHistory(userId)
 
     return NextResponse.json({
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Xavira AI history fetch error:', error)
+    console.error('Sovereign AI history fetch error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch conversation history' },
       { status: 500 }
@@ -80,7 +80,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId') || 'anonymous'
 
-    const ai = getXaviraAI()
+    const ai = getSovereignAI()
     ai.clearHistory(userId)
 
     return NextResponse.json({
@@ -89,7 +89,7 @@ export async function DELETE(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Xavira AI history clear error:', error)
+    console.error('Sovereign AI history clear error:', error)
     return NextResponse.json(
       { error: 'Failed to clear conversation history' },
       { status: 500 }

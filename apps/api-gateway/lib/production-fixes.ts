@@ -391,7 +391,7 @@ export async function createAlert(clientId: number, type: string, severity: 'low
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          content: `Xavira Orbit alert: *${severity.toUpperCase()}* \`${type}\`\nclient=${clientId}\n${message}`,
+          content: `Sovereign Engine alert: *${severity.toUpperCase()}* \`${type}\`\nclient=${clientId}\n${message}`,
         }),
       }).catch(() => undefined)
     }
@@ -410,7 +410,7 @@ export async function createAlert(clientId: number, type: string, severity: 'low
         .sendMail({
           from: process.env.ALERT_EMAIL_FROM ?? process.env.SMTP_USER,
           to: emailTo,
-          subject: `[Xavira Orbit] ${severity.toUpperCase()} ${type} (client ${clientId})`,
+          subject: `[Sovereign Engine] ${severity.toUpperCase()} ${type} (client ${clientId})`,
           text: message,
         })
         .catch(() => undefined)

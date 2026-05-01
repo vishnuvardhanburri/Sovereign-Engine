@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/queue-utils",
+  "name": "@sovereign/queue-utils",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

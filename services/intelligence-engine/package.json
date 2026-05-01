@@ -1,11 +1,11 @@
 {
-  "name": "@xavira/intelligence-engine",
+  "name": "@sovereign/intelligence-engine",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@xavira/provider-engine": "workspace:*",
-    "@xavira/types": "workspace:*",
+    "@sovereign/provider-engine": "workspace:*",
+    "@sovereign/types": "workspace:*",
     "zod": "^3.25.76"
   },
   "devDependencies": {

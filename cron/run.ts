@@ -111,7 +111,7 @@ export async function runCronCycle(clientId?: number) {
       clientId: client,
       jobs,
       sendRequest: {
-        fromEmail: `no-reply@xaviraorbit.com`,
+        fromEmail: `no-reply@sovereignengine.com`,
         toEmail: jobs[0]?.contactEmail ?? 'recipient@example.com',
         subject: `Outbound message - ${bossDecision.execution_plan.sequence_step}`,
         html: `<p>Message body for ${bossDecision.execution_plan.sequence_step}</p>`,

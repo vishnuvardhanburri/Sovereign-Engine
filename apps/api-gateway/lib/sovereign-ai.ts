@@ -1,10 +1,10 @@
 /**
- * Xavira AI Assistant
+ * Sovereign AI Assistant
  * Conversational AI assistant for cold email platform management
  * Deterministic only, no external model dependencies.
  */
 
-export interface XaviraAIRequest {
+export interface SovereignAIRequest {
   message: string
   userId?: string
   context?: {
@@ -16,9 +16,9 @@ export interface XaviraAIRequest {
   task?: 'campaign_management' | 'contact_analysis' | 'content_generation' | 'spam_detection' | 'reply_analysis' | 'scraping' | 'general'
 }
 
-export interface XaviraAIResponse {
+export interface SovereignAIResponse {
   response: string
-  actions: XaviraAIAction[]
+  actions: SovereignAIAction[]
   confidence: number
   suggestedCommands?: string[]
   metadata: {
@@ -29,14 +29,14 @@ export interface XaviraAIResponse {
   }
 }
 
-export interface XaviraAIAction {
+export interface SovereignAIAction {
   type: 'create_campaign' | 'update_contacts' | 'generate_content' | 'analyze_performance' | 'scrape_contacts' | 'send_emails' | 'get_analytics'
   data: Record<string, any>
   priority: 'high' | 'medium' | 'low'
   description: string
 }
 
-export class XaviraAIAssistant {
+export class SovereignAIAssistant {
   private conversationHistory: Map<string, Array<{role: 'user' | 'assistant', content: string, timestamp: Date}>> = new Map()
 
   constructor() {
@@ -46,7 +46,7 @@ export class XaviraAIAssistant {
   /**
    * Process a natural language request and return intelligent response with actions
    */
-  async processRequest(request: XaviraAIRequest): Promise<XaviraAIResponse> {
+  async processRequest(request: SovereignAIRequest): Promise<SovereignAIResponse> {
     const startTime = Date.now()
     const userId = request.userId || 'anonymous'
 
@@ -67,13 +67,13 @@ export class XaviraAIAssistant {
       const confidence = this.calculateConfidence(intent, actions)
       const processingTime = Date.now() - startTime
 
-      const aiResponse: XaviraAIResponse = {
+      const aiResponse: SovereignAIResponse = {
         response,
         actions,
         confidence,
         suggestedCommands: this.getSuggestedCommands(intent),
         metadata: {
-          model: 'xavira-ai-assistant',
+          model: 'sovereign-ai-assistant',
           tokensUsed: Math.floor(request.message.length / 4), // Rough estimate
           cost: 0.001, // Minimal cost for assistant processing
           processingTime
@@ -86,13 +86,13 @@ export class XaviraAIAssistant {
       return aiResponse
 
     } catch (error) {
-      console.error('Xavira AI processing error:', error)
+      console.error('Sovereign AI processing error:', error)
       return {
         response: "I apologize, but I encountered an error processing your request. Please try rephrasing or contact support if the issue persists.",
         actions: [],
         confidence: 0,
         metadata: {
-          model: 'xavira-ai-assistant',
+          model: 'sovereign-ai-assistant',
           tokensUsed: 0,
           cost: 0,
           processingTime: Date.now() - startTime
@@ -104,7 +104,7 @@ export class XaviraAIAssistant {
   /**
    * Analyze the intent behind the user's message
    */
-  private async analyzeIntent(message: string, context?: XaviraAIRequest['context']): Promise<string> {
+  private async analyzeIntent(message: string, context?: SovereignAIRequest['context']): Promise<string> {
     const lowerMessage = message.toLowerCase()
     if (lowerMessage.includes('campaign') || lowerMessage.includes('create') || lowerMessage.includes('send')) {
       return 'campaign_management'
@@ -133,7 +133,7 @@ export class XaviraAIAssistant {
   /**
    * Generate a natural language response based on intent
    */
-  private async generateResponse(intent: string, request: XaviraAIRequest): Promise<string> {
+  private async generateResponse(intent: string, request: SovereignAIRequest): Promise<string> {
     const contextPrompt = request.context ? `
 Current context:
 - Campaign: ${request.context.currentCampaign || 'None'}
@@ -162,8 +162,8 @@ Current context:
   /**
    * Extract specific actions that can be taken based on the request
    */
-  private async extractActions(message: string, intent: string, context?: XaviraAIRequest['context']): Promise<XaviraAIAction[]> {
-    const actions: XaviraAIAction[] = []
+  private async extractActions(message: string, intent: string, context?: SovereignAIRequest['context']): Promise<SovereignAIAction[]> {
+    const actions: SovereignAIAction[] = []
 
     // Extract campaign creation
     if (intent === 'campaign_management' && message.toLowerCase().includes('create')) {
@@ -222,7 +222,7 @@ Current context:
   /**
    * Calculate confidence score for the response
    */
-  private calculateConfidence(intent: string, actions: XaviraAIAction[]): number {
+  private calculateConfidence(intent: string, actions: SovereignAIAction[]): number {
     let confidence = 0.5 // Base confidence
 
     // Higher confidence for clear intents with actions
@@ -345,37 +345,37 @@ Current context:
 }
 
 // Singleton instance
-let xaviraAIInstance: XaviraAIAssistant | null = null
+let sovereignAIInstance: SovereignAIAssistant | null = null
 
-export function getXaviraAI(): XaviraAIAssistant {
-  if (!xaviraAIInstance) {
-    xaviraAIInstance = new XaviraAIAssistant()
+export function getSovereignAI(): SovereignAIAssistant {
+  if (!sovereignAIInstance) {
+    sovereignAIInstance = new SovereignAIAssistant()
   }
-  return xaviraAIInstance
+  return sovereignAIInstance
 }
 
-export async function processXaviraAIRequest(request: XaviraAIRequest): Promise<XaviraAIResponse> {
-  const ai = getXaviraAI()
+export async function processSovereignAIRequest(request: SovereignAIRequest): Promise<SovereignAIResponse> {
+  const ai = getSovereignAI()
   return ai.processRequest(request)
 }
 
 // Convenience functions for common tasks
-export async function createCampaignWithAI(name: string, description?: string): Promise<XaviraAIResponse> {
-  return processXaviraAIRequest({
+export async function createCampaignWithAI(name: string, description?: string): Promise<SovereignAIResponse> {
+  return processSovereignAIRequest({
     message: `Create a new campaign called "${name}"${description ? ` with description: ${description}` : ''}`,
     task: 'campaign_management'
   })
 }
 
-export async function generateContentWithAI(type: string, context: string): Promise<XaviraAIResponse> {
-  return processXaviraAIRequest({
+export async function generateContentWithAI(type: string, context: string): Promise<SovereignAIResponse> {
+  return processSovereignAIRequest({
     message: `Generate ${type} content for: ${context}`,
     task: 'content_generation'
   })
 }
 
-export async function analyzeContactsWithAI(contactIds: string[]): Promise<XaviraAIResponse> {
-  return processXaviraAIRequest({
+export async function analyzeContactsWithAI(contactIds: string[]): Promise<SovereignAIResponse> {
+  return processSovereignAIRequest({
     message: `Analyze these contacts for cold email potential: ${contactIds.join(', ')}`,
     context: { currentContacts: contactIds },
     task: 'contact_analysis'

@@ -22,7 +22,7 @@ export interface PatternMemoryStore {
   patterns: PatternRecord[]
 }
 
-const MEMORY_FILE = path.join(process.cwd(), '.xavira-pattern-memory.json')
+const MEMORY_FILE = path.join(process.cwd(), '.sovereign-pattern-memory.json')
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0

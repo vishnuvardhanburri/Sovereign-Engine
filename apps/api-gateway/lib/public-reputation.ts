@@ -498,7 +498,7 @@ export async function buildHealthCertificate(input: PublicReputationInput) {
 
   const cert = {
     ok: true,
-    product: 'xavira-reputation-shield',
+    product: 'sovereign-reputation-shield',
     version: 'v1',
     certificate_id: `xvra_${sha256(`${domain}:${ip}:${Date.now()}`).slice(0, 24)}`,
     issued_at: new Date().toISOString(),

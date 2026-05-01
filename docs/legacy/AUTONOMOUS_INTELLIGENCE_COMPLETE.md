@@ -1,4 +1,4 @@
-# XAVIRA ORBIT v2.0
+# SOVEREIGN ENGINE v2.0
 ## FROM EXECUTION ENGINE TO AUTONOMOUS INTELLIGENCE SYSTEM
 
 **Commit:** df16ae7  
@@ -640,7 +640,7 @@ All running automatically.
 5. **Optimize continuously** via A/B testing
 6. **Scale safely** with automated controls
 
-**Xavira Orbit is no longer a sender.**
+**Sovereign Engine is no longer a sender.**
 
 **It is now an autonomous revenue intelligence engine.**
 

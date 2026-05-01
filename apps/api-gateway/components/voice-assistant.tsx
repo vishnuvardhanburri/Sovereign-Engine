@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Mic, MicOff, VolumeX } from 'lucide-react'
-import { provideAICoaching } from '@/lib/xavira-ai-pro'
+import { provideAICoaching } from '@/lib/sovereign-ai-pro'
 
 interface VoiceAssistantProps {
   onCommand: (command: string) => void

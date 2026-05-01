@@ -48,9 +48,9 @@ import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalizatio
 import { getGlobalIntelligence } from '@/adapters/intelligence'
 import { simulateOutcome } from '@/adapters/simulation'
 import { getOutcomeSignalsAdapter } from '@/adapters/outcome'
-import { getDomainScore } from '@xavira/reputation-engine'
-import { decideAdvanced } from '@xavira/decision-engine'
-import type { Lane, ValidationVerdict } from '@xavira/types'
+import { getDomainScore } from '@sovereign/reputation-engine'
+import { decideAdvanced } from '@sovereign/decision-engine'
+import type { Lane, ValidationVerdict } from '@sovereign/types'
 import { randomUUID } from 'crypto'
 // PRODUCTION READINESS FIXES
 import {

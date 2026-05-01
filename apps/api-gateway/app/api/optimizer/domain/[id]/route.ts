@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import IORedis from 'ioredis'
 import { query } from '@/lib/db'
-import { computeDomainMetrics, analyze, adjust } from '@xavira/optimizer-engine'
+import { computeDomainMetrics, analyze, adjust } from '@sovereign/optimizer-engine'
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const clientId = 1

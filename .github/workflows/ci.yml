@@ -18,7 +18,7 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       PUPPETEER_SKIP_DOWNLOAD: "true"
-      DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/xavira_orbit?sslmode=disable
+      DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/sovereign_engine?sslmode=disable
       REDIS_URL: redis://127.0.0.1:6379
       APP_DOMAIN: localhost:3000
       APP_PROTOCOL: http
@@ -72,4 +72,4 @@ jobs:
         run: pnpm -C apps/api-gateway build
 
       - name: Docker image builds
-        run: docker build . --tag xavira-orbit:ci
+        run: docker build . --tag sovereign-engine:ci

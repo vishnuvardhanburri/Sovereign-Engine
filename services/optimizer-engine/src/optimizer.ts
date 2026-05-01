@@ -1,4 +1,4 @@
-import type { DbExecutor, Lane } from '@xavira/types'
+import type { DbExecutor, Lane } from '@sovereign/types'
 import type { Redis } from 'ioredis'
 import { analyze, type OptimizerMetrics } from './analyzer'
 import { adjust, type PolicyAction } from './policy-adjuster'

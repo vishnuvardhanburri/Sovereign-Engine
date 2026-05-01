@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/circuit-breaker",
+  "name": "@sovereign/circuit-breaker",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

@@ -7,7 +7,7 @@ These steps require the founder's GitHub identity and organization permissions, 
 Recommended organization name:
 
 ```text
-xavira-labs
+sovereign-labs
 ```
 
 Move the repository in GitHub:

@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: xavira_orbit
+      POSTGRES_DB: sovereign_engine
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
-      - xavira_orbit_pgdata:/var/lib/postgresql/data
+      - sovereign_engine_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d xavira_orbit"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sovereign_engine"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -21,7 +21,7 @@ services:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - xavira_orbit_redisdata:/data
+      - sovereign_engine_redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -29,6 +29,6 @@ services:
       retries: 20
 
 volumes:
-  xavira_orbit_pgdata:
-  xavira_orbit_redisdata:
+  sovereign_engine_pgdata:
+  sovereign_engine_redisdata:
 

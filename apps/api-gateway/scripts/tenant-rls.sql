@@ -1,15 +1,15 @@
--- Xavira Orbit tenant isolation pool model.
+-- Sovereign Engine tenant isolation pool model.
 -- Run with: pnpm -C apps/api-gateway tenant:rls
 --
 -- Application sessions should set the client context before tenant-scoped work:
---   SELECT xavira_set_client_id(123);
+--   SELECT sovereign_set_client_id(123);
 --
 -- For strongest isolation, use a non-owner database role for the app. Table owners
 -- can bypass RLS unless FORCE ROW LEVEL SECURITY is enabled after rollout.
 
-CREATE SCHEMA IF NOT EXISTS xavira_security;
+CREATE SCHEMA IF NOT EXISTS sovereign_security;
 
-CREATE OR REPLACE FUNCTION xavira_current_client_id() RETURNS BIGINT AS $$
+CREATE OR REPLACE FUNCTION sovereign_current_client_id() RETURNS BIGINT AS $$
 DECLARE
   raw TEXT;
 BEGIN
@@ -21,7 +21,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-CREATE OR REPLACE FUNCTION xavira_set_client_id(client_id BIGINT) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION sovereign_set_client_id(client_id BIGINT) RETURNS VOID AS $$
 BEGIN
   PERFORM set_config('app.current_client_id', client_id::TEXT, false);
 END;
@@ -68,25 +68,25 @@ BEGIN
         AND column_name = 'client_id'
     ) THEN
       EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tenant_table);
-      EXECUTE format('DROP POLICY IF EXISTS xavira_tenant_select ON %I', tenant_table);
-      EXECUTE format('DROP POLICY IF EXISTS xavira_tenant_insert ON %I', tenant_table);
-      EXECUTE format('DROP POLICY IF EXISTS xavira_tenant_update ON %I', tenant_table);
-      EXECUTE format('DROP POLICY IF EXISTS xavira_tenant_delete ON %I', tenant_table);
+      EXECUTE format('DROP POLICY IF EXISTS sovereign_tenant_select ON %I', tenant_table);
+      EXECUTE format('DROP POLICY IF EXISTS sovereign_tenant_insert ON %I', tenant_table);
+      EXECUTE format('DROP POLICY IF EXISTS sovereign_tenant_update ON %I', tenant_table);
+      EXECUTE format('DROP POLICY IF EXISTS sovereign_tenant_delete ON %I', tenant_table);
 
       EXECUTE format(
-        'CREATE POLICY xavira_tenant_select ON %I FOR SELECT USING (xavira_current_client_id() IS NULL OR client_id IS NULL OR client_id = xavira_current_client_id())',
+        'CREATE POLICY sovereign_tenant_select ON %I FOR SELECT USING (sovereign_current_client_id() IS NULL OR client_id IS NULL OR client_id = sovereign_current_client_id())',
         tenant_table
       );
       EXECUTE format(
-        'CREATE POLICY xavira_tenant_insert ON %I FOR INSERT WITH CHECK (xavira_current_client_id() IS NULL OR client_id IS NULL OR client_id = xavira_current_client_id())',
+        'CREATE POLICY sovereign_tenant_insert ON %I FOR INSERT WITH CHECK (sovereign_current_client_id() IS NULL OR client_id IS NULL OR client_id = sovereign_current_client_id())',
         tenant_table
       );
       EXECUTE format(
-        'CREATE POLICY xavira_tenant_update ON %I FOR UPDATE USING (xavira_current_client_id() IS NULL OR client_id IS NULL OR client_id = xavira_current_client_id()) WITH CHECK (xavira_current_client_id() IS NULL OR client_id IS NULL OR client_id = xavira_current_client_id())',
+        'CREATE POLICY sovereign_tenant_update ON %I FOR UPDATE USING (sovereign_current_client_id() IS NULL OR client_id IS NULL OR client_id = sovereign_current_client_id()) WITH CHECK (sovereign_current_client_id() IS NULL OR client_id IS NULL OR client_id = sovereign_current_client_id())',
         tenant_table
       );
       EXECUTE format(
-        'CREATE POLICY xavira_tenant_delete ON %I FOR DELETE USING (xavira_current_client_id() IS NULL OR client_id IS NULL OR client_id = xavira_current_client_id())',
+        'CREATE POLICY sovereign_tenant_delete ON %I FOR DELETE USING (sovereign_current_client_id() IS NULL OR client_id IS NULL OR client_id = sovereign_current_client_id())',
         tenant_table
       );
     END IF;

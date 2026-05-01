@@ -1,4 +1,4 @@
-import type { DbExecutor } from '@xavira/types'
+import type { DbExecutor } from '@sovereign/types'
 import { computeDomainSegmentMetrics } from './learner'
 import { scoreSignals } from './scorer'
 

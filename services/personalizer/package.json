@@ -1,5 +1,5 @@
 {
-  "name": "@xavira/personalizer",
+  "name": "@sovereign/personalizer",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

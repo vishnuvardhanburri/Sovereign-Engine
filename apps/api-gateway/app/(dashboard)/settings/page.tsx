@@ -55,14 +55,14 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Workspace Settings</h1>
-        <p className="text-muted-foreground">Manage your Xavira Orbit workspace</p>
+        <p className="text-muted-foreground">Manage your Sovereign Engine workspace</p>
       </div>
 
       {/* Product Info */}
       <Card className="border-blue-500/20 bg-blue-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            Xavira Orbit
+            Sovereign Engine
           </CardTitle>
           <CardDescription>Outbound Infrastructure for Scalable Lead Generation</CardDescription>
         </CardHeader>

@@ -1,4 +1,4 @@
-import type { DbExecutor } from '@xavira/types'
+import type { DbExecutor } from '@sovereign/types'
 
 export type ProviderSignals = {
   provider?: 'gmail' | 'outlook' | 'yahoo' | 'other'

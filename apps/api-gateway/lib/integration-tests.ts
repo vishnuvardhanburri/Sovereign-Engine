@@ -27,7 +27,7 @@ function getRecipientEmails() {
     }
 
     return Array.from({ length: TARGET_CONTACTS }, (_, index) =>
-      `${localPart}+xavira-${index + 1}@${domain}`
+      `${localPart}+sovereign-${index + 1}@${domain}`
     )
   }
 
@@ -127,7 +127,7 @@ async function main() {
     recipientEmails.map((email, index) => ({
       email,
       name: `Test Contact ${index + 1}`,
-      company: 'Xavira QA',
+      company: 'Sovereign Engine QA',
     }))
   )
 
@@ -137,7 +137,7 @@ async function main() {
       {
         day: 0,
         subject: 'Validation email for {{FirstName}}',
-        body: 'Hi {{FirstName}},\n\nThis is a live validation message from Xavira Orbit.\n\nThanks,\nQA',
+        body: 'Hi {{FirstName}},\n\nThis is a live validation message from Sovereign Engine.\n\nThanks,\nQA',
       },
     ],
   })

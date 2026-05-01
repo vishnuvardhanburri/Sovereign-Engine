@@ -1,10 +1,10 @@
 {
-  "name": "@xavira/reply-handler",
+  "name": "@sovereign/reply-handler",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@xavira/types": "workspace:*"
+    "@sovereign/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22",

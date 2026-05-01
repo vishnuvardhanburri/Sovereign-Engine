@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
-import { loadDomainSignals, computeAdaptiveThroughput, type AdaptiveState, type ProviderSignals } from '@xavira/adaptive-controller'
+import { loadDomainSignals, computeAdaptiveThroughput, type AdaptiveState, type ProviderSignals } from '@sovereign/adaptive-controller'
 
 function reqEnv(name: string) {
   const v = process.env[name]

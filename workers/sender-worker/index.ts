@@ -4,21 +4,21 @@ import IORedis from 'ioredis'
 import { Pool } from 'pg'
 import crypto from 'crypto'
 import os from 'os'
-import { decide } from '@xavira/decision-engine'
-import { rotateInbox, enforceCaps } from '@xavira/sending-engine'
-import { ingestEvent } from '@xavira/tracking-engine'
-import { updateDomainStats, getDomainScore } from '@xavira/reputation-engine'
-import { sendSmtp } from '@xavira/smtp-client'
-import { ContentMutationService, type ContentMutationResult } from '@xavira/content-mutation'
+import { decide } from '@sovereign/decision-engine'
+import { rotateInbox, enforceCaps } from '@sovereign/sending-engine'
+import { ingestEvent } from '@sovereign/tracking-engine'
+import { updateDomainStats, getDomainScore } from '@sovereign/reputation-engine'
+import { sendSmtp } from '@sovereign/smtp-client'
+import { ContentMutationService, type ContentMutationResult } from '@sovereign/content-mutation'
 import {
   computeAdaptiveThroughput,
   loadDomainSignals,
   type AdaptiveControlSignal,
   type AdaptiveState,
   type ProviderSignals,
-} from '@xavira/adaptive-controller'
-import { detectProvider, getProviderPolicy } from '@xavira/provider-engine'
-import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@xavira/types'
+} from '@sovereign/adaptive-controller'
+import { detectProvider, getProviderPolicy } from '@sovereign/provider-engine'
+import type { DbExecutor, TrackingIngestEvent, ValidationVerdict, Lane } from '@sovereign/types'
 
 type SendJob = {
   clientId: number
@@ -1735,10 +1735,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
                     provider: recipientProvider,
                   },
                   headers: {
-                    'X-Xavira-Lane': lane,
-                    'X-Xavira-Adaptive': adaptive.reasons.join(','),
-                    'X-Xavira-QueueJobId': String(job.queueJobId ?? ''),
-                    'X-Xavira-CampaignId': String(job.campaignId ?? ''),
+                    'X-Sovereign Engine-Lane': lane,
+                    'X-Sovereign Engine-Adaptive': adaptive.reasons.join(','),
+                    'X-Sovereign Engine-QueueJobId': String(job.queueJobId ?? ''),
+                    'X-Sovereign Engine-CampaignId': String(job.campaignId ?? ''),
                   },
                 }
               ),

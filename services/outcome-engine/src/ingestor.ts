@@ -1,4 +1,4 @@
-import type { DbExecutor, TrackingIngestEvent } from '@xavira/types'
+import type { DbExecutor, TrackingIngestEvent } from '@sovereign/types'
 
 export type OutcomeDecision = 'send_now' | 'slow_lane' | 'defer' | 'drop' | 'unknown'
 

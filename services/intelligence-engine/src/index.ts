@@ -1,5 +1,5 @@
-import type { DbExecutor } from '@xavira/types'
-import { detectProvider, type Provider } from '@xavira/provider-engine'
+import type { DbExecutor } from '@sovereign/types'
+import { detectProvider, type Provider } from '@sovereign/provider-engine'
 
 export interface IntelligenceDeps {
   db: DbExecutor

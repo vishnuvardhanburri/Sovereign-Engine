@@ -2,12 +2,12 @@
 // @ts-nocheck
 
 /**
- * Xavira AI Demo
- * Interactive demonstration of the Xavira AI assistant capabilities
+ * Sovereign AI Demo
+ * Interactive demonstration of the Sovereign AI assistant capabilities
  */
 
 import 'dotenv/config'
-import { processXaviraAIRequest } from '../lib/xavira-ai'
+import { processSovereignAIRequest } from '../lib/sovereign-ai'
 import * as readline from 'readline'
 
 const rl = readline.createInterface({
@@ -16,9 +16,9 @@ const rl = readline.createInterface({
 })
 
 async function demo() {
-  console.log('🤖 Xavira AI Assistant Demo')
+  console.log('🤖 Sovereign AI Assistant Demo')
   console.log('==========================\n')
-  console.log('Welcome to Xavira AI! I\'m your intelligent assistant for cold email campaign management.')
+  console.log('Welcome to Sovereign AI! I\'m your intelligent assistant for cold email campaign management.')
   console.log('I can help you with campaigns, contacts, content generation, analytics, and more.\n')
   console.log('Try commands like:')
   console.log('• "Create a new campaign for tech startups"')
@@ -34,7 +34,7 @@ async function demo() {
   function askQuestion() {
     rl.question('You: ', async (input) => {
       if (input.toLowerCase() === 'quit' || input.toLowerCase() === 'exit') {
-        console.log('\n👋 Thanks for trying Xavira AI! Goodbye!')
+        console.log('\n👋 Thanks for trying Sovereign AI! Goodbye!')
         rl.close()
         return
       }
@@ -48,7 +48,7 @@ async function demo() {
 
       try {
         const startTime = Date.now()
-        const response = await processXaviraAIRequest({
+        const response = await processSovereignAIRequest({
           message: input,
           userId,
           context: {
@@ -62,7 +62,7 @@ async function demo() {
         const processingTime = Date.now() - startTime
         conversationCount++
 
-        console.log(`\n🤖 Xavira AI (${processingTime}ms, $${response.metadata.cost.toFixed(4)}):`)
+        console.log(`\n🤖 Sovereign AI (${processingTime}ms, $${response.metadata.cost.toFixed(4)}):`)
         console.log(response.response)
 
         if (response.actions && response.actions.length > 0) {
@@ -96,7 +96,7 @@ async function demo() {
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n\n👋 Demo interrupted. Thanks for trying Xavira AI!')
+  console.log('\n\n👋 Demo interrupted. Thanks for trying Sovereign AI!')
   rl.close()
   process.exit(0)
 })

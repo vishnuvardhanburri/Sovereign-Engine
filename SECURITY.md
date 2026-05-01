@@ -17,7 +17,7 @@ Contact the maintainer privately and include:
 
 ## Operational Kill Switch
 
-Xavira Orbit includes a global API/session kill switch:
+Sovereign Engine includes a global API/session kill switch:
 
 ```text
 POST /api/security/kill-switch

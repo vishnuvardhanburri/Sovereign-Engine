@@ -20,7 +20,7 @@ RUN pnpm install --frozen-lockfile
 
 # Build with safe placeholder values. Runtime configuration is supplied by Compose/Kubernetes/EC2.
 RUN NODE_ENV=production \
-  DATABASE_URL='postgresql://postgres:password@127.0.0.1:5432/xavira_orbit?sslmode=disable' \
+  DATABASE_URL='postgresql://postgres:password@127.0.0.1:5432/sovereign_engine?sslmode=disable' \
   REDIS_URL='redis://127.0.0.1:6379' \
   APP_DOMAIN='localhost:3000' \
   APP_PROTOCOL='http' \

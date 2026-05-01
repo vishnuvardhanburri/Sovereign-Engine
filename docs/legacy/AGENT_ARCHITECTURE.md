@@ -1,4 +1,4 @@
-# Xavira Orbit Agent Architecture
+# Sovereign Engine Agent Architecture
 
 This repository now includes a modular outbound swarm architecture with three layers:
 

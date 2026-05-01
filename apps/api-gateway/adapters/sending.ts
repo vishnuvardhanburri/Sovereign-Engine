@@ -1,5 +1,5 @@
-import { rotateInbox as rotateInboxSvc, enforceCaps as enforceCapsSvc, scheduleSend as scheduleSendSvc } from '@xavira/sending-engine'
-import type { Lane, SendIdentitySelection } from '@xavira/types'
+import { rotateInbox as rotateInboxSvc, enforceCaps as enforceCapsSvc, scheduleSend as scheduleSendSvc } from '@sovereign/sending-engine'
+import type { Lane, SendIdentitySelection } from '@sovereign/types'
 import { query } from '@/lib/db'
 
 // Adapter mode: preserve old signatures by delegating to services with injected deps.

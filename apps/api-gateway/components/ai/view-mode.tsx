@@ -17,7 +17,7 @@ type Ctx = {
 
 const C = createContext<Ctx | null>(null)
 
-const VIEW_KEY = 'xavira:view_mode'
+const VIEW_KEY = 'sovereign:view_mode'
 
 export function useViewMode() {
   const ctx = useContext(C)

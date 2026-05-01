@@ -1,4 +1,4 @@
-import type { DbExecutor, Lane, SendIdentitySelection } from '@xavira/types'
+import type { DbExecutor, Lane, SendIdentitySelection } from '@sovereign/types'
 // Import default to stay compatible across tsx/ESM boundaries.
 import LIMITS from '../../../configs/limits/default'
 

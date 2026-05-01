@@ -151,7 +151,7 @@ export function MiniCopilotChat() {
       <Card className="border-border/60 bg-card/40 backdrop-blur shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_45px_rgba(0,0,0,0.55)]">
         <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
           <div className="flex items-center gap-2">
-            <div className="text-sm font-semibold">Xavira AI Assistant</div>
+            <div className="text-sm font-semibold">Sovereign AI Assistant</div>
             <Badge variant="outline">Minimal</Badge>
             <Badge variant="secondary">{mode === 'auto' ? 'Auto' : 'Manual'}</Badge>
           </div>

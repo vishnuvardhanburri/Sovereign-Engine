@@ -1,7 +1,7 @@
 /**
  * AUTONOMOUS INTELLIGENCE SYSTEM - Core Exports
  *
- * Xavira Orbit now operates as a true autonomous revenue engine:
+ * Sovereign Engine now operates as a true autonomous revenue engine:
  *
  * FROM: Campaign execution tool (user creates campaign, system sends emails)
  * TO: Autonomous intelligence system (user sets goal, system decides everything)

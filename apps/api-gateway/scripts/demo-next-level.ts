@@ -4,7 +4,7 @@
  * Interactive demonstration of advanced AI capabilities
  */
 
-import { predictEmailPerformance, generateSmartPersonalization, provideAICoaching } from '../lib/xavira-ai-pro'
+import { predictEmailPerformance, generateSmartPersonalization, provideAICoaching } from '../lib/sovereign-ai-pro'
 import { startAutonomousOptimization } from '../lib/autonomous-optimizer'
 
 async function demoPredictiveAnalytics() {
@@ -173,7 +173,7 @@ async function demoAutonomousMode() {
 }
 
 async function runDemo() {
-  console.log('🎪 XAVIRA ORBIT PRO - NEXT-LEVEL FEATURES DEMO')
+  console.log('🎪 SOVEREIGN ENGINE PRO - NEXT-LEVEL FEATURES DEMO')
   console.log('===============================================')
   console.log('')
   console.log('Welcome to the future of cold email automation!')
@@ -189,7 +189,7 @@ async function runDemo() {
     console.log('\n🎉 DEMO COMPLETED!')
     console.log('===================')
     console.log('')
-    console.log('🚀 Your Xavira Orbit Pro platform is now equipped with:')
+    console.log('🚀 Your Sovereign Engine Pro platform is now equipped with:')
     console.log('   ✅ Predictive Analytics Engine')
     console.log('   ✅ Smart Personalization Engine')
     console.log('   ✅ Real-time AI Coaching')

@@ -37,7 +37,7 @@ function weakSecret(value = '') {
   const v = value.trim()
   return (
     v.length < 32 ||
-    ['change-me', 'change_me', 'xavira-orbit', 'local-test-key-32-bytes-minimum-value'].includes(v) ||
+    ['change-me', 'change_me', 'sovereign-engine', 'local-test-key-32-bytes-minimum-value'].includes(v) ||
     /^mock/i.test(v)
   )
 }
@@ -161,7 +161,7 @@ const summary = summarize(issues)
 if (jsonOutput) {
   console.log(JSON.stringify(summary, null, 2))
 } else {
-  console.log(`Xavira Orbit final production check: ${summary.ok ? 'PASS' : 'BLOCKED'}`)
+  console.log(`Sovereign Engine final production check: ${summary.ok ? 'PASS' : 'BLOCKED'}`)
   console.log(`Mode: ${realSend ? 'real-send' : 'dry-run/mock-safe'}`)
   console.log(`Blockers: ${summary.blockers}`)
   console.log(`Warnings: ${summary.warnings}`)

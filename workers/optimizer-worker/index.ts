@@ -1,8 +1,8 @@
 import 'dotenv/config'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
-import { startScheduler } from '@xavira/optimizer-engine'
-import type { DbExecutor } from '@xavira/types'
+import { startScheduler } from '@sovereign/optimizer-engine'
+import type { DbExecutor } from '@sovereign/types'
 
 function reqEnv(name: string) {
   const v = process.env[name]

@@ -1,5 +1,5 @@
-import type { Lane, ValidationVerdict } from '@xavira/types'
-import type { SimulationOutput } from '@xavira/simulation-engine'
+import type { Lane, ValidationVerdict } from '@sovereign/types'
+import type { SimulationOutput } from '@sovereign/simulation-engine'
 
 export type AdvancedDecision =
   | { action: 'drop'; reason: string }

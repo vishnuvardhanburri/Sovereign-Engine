@@ -1,8 +1,8 @@
-# Xavira Orbit Production Operating Guide
+# Sovereign Engine Production Operating Guide
 
-## What Xavira Orbit Does
+## What Sovereign Engine Does
 
-Xavira Orbit is an email delivery control system. It does not simply push messages as fast as possible. It watches delivery signals, learns which provider lanes are healthy, and automatically slows down or pauses risky lanes before reputation damage spreads.
+Sovereign Engine is an email delivery control system. It does not simply push messages as fast as possible. It watches delivery signals, learns which provider lanes are healthy, and automatically slows down or pauses risky lanes before reputation damage spreads.
 
 Think of it like a traffic control tower for outbound email:
 
@@ -74,8 +74,8 @@ Every sending domain is split into provider lanes: Gmail, Outlook, Yahoo, and Ot
 The states are:
 
 - `HEALTHY`: The lane is sending normally.
-- `THROTTLED`: Xavira Orbit sees warning signs and reduces speed.
-- `PAUSED`: Xavira Orbit sees serious risk and stops that lane.
+- `THROTTLED`: Sovereign Engine sees warning signs and reduces speed.
+- `PAUSED`: Sovereign Engine sees serious risk and stops that lane.
 
 A Gmail problem does not have to stop Outlook. A bad domain does not have to stop the whole company. The system isolates risk so good traffic can continue safely.
 
@@ -87,7 +87,7 @@ This protects the buyer from the classic mistake: blasting a new domain too quic
 
 ## Emergency Brake
 
-If a provider lane crosses hard risk thresholds, Xavira Orbit writes a pause signal into Postgres and Redis. Sender workers read that signal before sending.
+If a provider lane crosses hard risk thresholds, Sovereign Engine writes a pause signal into Postgres and Redis. Sender workers read that signal before sending.
 
 Example:
 
@@ -130,7 +130,7 @@ The production Compose file expects real secrets in `.env` or the host environme
 
 ## SOC2-Style Security Manifest
 
-Xavira Orbit now includes an enterprise hardening layer designed to support SOC2 Type II due diligence. Certification still requires company policies, evidence collection, vendor reviews, access reviews, and auditor validation, but the platform now has the technical controls buyers expect to see.
+Sovereign Engine now includes an enterprise hardening layer designed to support SOC2 Type II due diligence. Certification still requires company policies, evidence collection, vendor reviews, access reviews, and auditor validation, but the platform now has the technical controls buyers expect to see.
 
 ### Immutable Audit Trail
 
@@ -186,7 +186,7 @@ pnpm db:rls
 Application sessions should set:
 
 ```sql
-SELECT xavira_set_client_id(1);
+SELECT sovereign_set_client_id(1);
 ```
 
 For the strictest deployment, run the app with a non-owner database role and enable `FORCE ROW LEVEL SECURITY` after validating all queries set tenant context.
@@ -207,7 +207,7 @@ LOG_MAX_FILE=10
 For cold storage, enable the ops profile with an S3 destination:
 
 ```bash
-LOG_ARCHIVE_S3_URI=s3://your-bucket/xavira-orbit/prod \
+LOG_ARCHIVE_S3_URI=s3://your-bucket/sovereign-engine/prod \
 docker compose -f docker-compose.prod.yml --profile ops up -d log-archive
 ```
 
@@ -273,7 +273,7 @@ That document is the final handoff script: client inputs, server go-live sequenc
 
 ## Buyer Summary
 
-Xavira Orbit is built to be infrastructure agnostic. It can run on AWS EC2, Docker Compose, a VPS, or a container platform. The core scaling model is simple:
+Sovereign Engine is built to be infrastructure agnostic. It can run on AWS EC2, Docker Compose, a VPS, or a container platform. The core scaling model is simple:
 
 - Add sender workers to increase processing capacity.
 - Keep Postgres and Redis shared.
@@ -282,7 +282,7 @@ Xavira Orbit is built to be infrastructure agnostic. It can run on AWS EC2, Dock
 
 ## Reputation Shield API
 
-Xavira Orbit now exposes its reputation intelligence as a public product surface:
+Sovereign Engine now exposes its reputation intelligence as a public product surface:
 
 ```bash
 curl http://localhost:3000/api/v1/reputation/score/example.com
@@ -324,7 +324,7 @@ Call the API:
 
 ```bash
 curl -X POST "http://localhost:3000/api/v1/reputation/score" \
-  -H "x-api-key: $XAVIRA_REPUTATION_API_KEY" \
+  -H "x-api-key: $SOVEREIGN_REPUTATION_API_KEY" \
   -H "content-type: application/json" \
   -d '{"domain":"example.com","ip":"1.2.3.4"}'
 ```
@@ -397,7 +397,7 @@ COST_PER_SEND=0.002
 
 ## Content AI Boundary
 
-Xavira Orbit supports compliant template quality and approved variation workflows, but it does not build evasion systems whose purpose is to bypass ISP or AI pattern filters. Sustainable deliverability comes from relevance, consent, authentication, suppression, pacing, and reputation discipline.
+Sovereign Engine supports compliant template quality and approved variation workflows, but it does not build evasion systems whose purpose is to bypass ISP or AI pattern filters. Sustainable deliverability comes from relevance, consent, authentication, suppression, pacing, and reputation discipline.
 
 The safe product direction is:
 
@@ -449,16 +449,16 @@ CONTENT_MUTATION_POOL_TTL_SEC=86400
 
 ## Founder's Manifesto: The Five-Year AI-Deliverability War
 
-Email is becoming an adversarial trust market. Inbox providers will keep improving automated filtering. Senders will keep searching for shortcuts. Xavira Orbit's position is different: we win by becoming the most disciplined reputation operating system in the market.
+Email is becoming an adversarial trust market. Inbox providers will keep improving automated filtering. Senders will keep searching for shortcuts. Sovereign Engine's position is different: we win by becoming the most disciplined reputation operating system in the market.
 
 Year 1: Build the control tower. The product must make every send explainable, every pause auditable, and every ramp decision defensible.
 
-Year 2: Turn reputation intelligence into a standalone API. Customers should be able to use Xavira Orbit even when another system sends their email.
+Year 2: Turn reputation intelligence into a standalone API. Customers should be able to use Sovereign Engine even when another system sends their email.
 
 Year 3: Become infrastructure agnostic. The same brain should control workers across AWS, VPS providers, Kubernetes, and edge regions.
 
 Year 4: Build a trusted data moat. Aggregate anonymized provider-lane signals, seed placement outcomes, suppression patterns, and recovery playbooks into a continuously improving reputation model.
 
-Year 5: Own the compliant outbound category. The market will punish reckless bulk systems. Xavira Orbit should be known as the platform that scales outreach without hiding from rules, users, or providers.
+Year 5: Own the compliant outbound category. The market will punish reckless bulk systems. Sovereign Engine should be known as the platform that scales outreach without hiding from rules, users, or providers.
 
 The founding principle is simple: durable inbox placement is not hacked. It is earned, measured, protected, and compounded.

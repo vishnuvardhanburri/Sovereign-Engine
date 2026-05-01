@@ -1,4 +1,4 @@
-import type { Lane } from '@xavira/types'
+import type { Lane } from '@sovereign/types'
 
 export type Provider = 'gmail' | 'outlook' | 'yahoo' | 'other'
 

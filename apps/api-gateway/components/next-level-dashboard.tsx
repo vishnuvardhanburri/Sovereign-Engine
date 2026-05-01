@@ -19,7 +19,7 @@ import {
   Sparkles
 } from 'lucide-react'
 import { VoiceAssistant } from './voice-assistant'
-import { predictEmailPerformance, getOptimizationStats } from '@/lib/xavira-ai-pro'
+import { predictEmailPerformance, getOptimizationStats } from '@/lib/sovereign-ai-pro'
 import { startAutonomousOptimization, stopAutonomousOptimization } from '@/lib/autonomous-optimizer'
 
 interface DashboardStats {
@@ -107,7 +107,7 @@ export function NextLevelDashboard() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Sparkles className="h-8 w-8 text-purple-500" />
-            Xavira Orbit Pro
+            Sovereign Engine Pro
           </h1>
           <p className="text-muted-foreground">
             Next-level autonomous cold email platform with AI-powered optimization

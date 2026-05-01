@@ -2,7 +2,7 @@ import 'dotenv/config'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
 import { resolve4 } from 'dns/promises'
-import { AdaptiveControlEngine, type GlobalCooldownInput, type ProviderLane } from '@xavira/adaptive-controller'
+import { AdaptiveControlEngine, type GlobalCooldownInput, type ProviderLane } from '@sovereign/adaptive-controller'
 
 function reqEnv(name: string) {
   const v = process.env[name]

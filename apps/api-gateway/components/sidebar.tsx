@@ -62,7 +62,7 @@ export function Sidebar() {
   return (
     <>
       <div className="fixed top-0 left-0 right-0 z-40 md:hidden flex items-center justify-between bg-sidebar border-b border-sidebar-border px-4 py-3">
-        <h1 className="font-bold text-lg">Xavira Orbit</h1>
+        <h1 className="font-bold text-lg">Sovereign Engine</h1>
         <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
           {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </Button>
@@ -76,10 +76,10 @@ export function Sidebar() {
         <div className="flex flex-col h-full">
           <div className="hidden md:flex items-center gap-2 px-6 py-4 border-b border-sidebar-border">
             <div className="w-8 h-8 rounded-md bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm">
-              XO
+              SE
             </div>
             <div>
-              <h1 className="font-bold text-lg">Xavira Orbit</h1>
+              <h1 className="font-bold text-lg">Sovereign Engine</h1>
               <p className="text-xs text-sidebar-foreground/80">Lead Generation Infrastructure</p>
             </div>
           </div>
@@ -111,7 +111,7 @@ export function Sidebar() {
 
           <div className="border-t border-sidebar-border px-4 py-4 space-y-2">
             <div className="text-xs text-sidebar-foreground">
-              <p className="font-semibold">Xavira Orbit</p>
+              <p className="font-semibold">Sovereign Engine</p>
               <p className="text-sidebar-foreground/60">Enterprise Edition</p>
             </div>
           </div>

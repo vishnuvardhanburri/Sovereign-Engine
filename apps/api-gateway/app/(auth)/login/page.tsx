@@ -48,10 +48,10 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center space-y-3">
           <div className="w-14 h-14 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-base">
-            XO
+            SE
           </div>
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-white">Xavira Orbit</h1>
+            <h1 className="text-3xl font-bold text-white">Sovereign Engine</h1>
             <p className="text-slate-300 text-sm mt-2">Outbound Infrastructure for Scalable Lead Generation</p>
           </div>
         </div>
@@ -111,7 +111,7 @@ export default function LoginPage() {
             <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
               <p className="text-xs text-slate-300 font-medium">Trusted by teams who care about deliverability</p>
               <p className="text-xs text-slate-400 mt-2">
-                You own the infrastructure. Xavira Orbit runs a queue + worker system with strict stop-on-reply and suppression enforcement.
+                You own the infrastructure. Sovereign Engine runs a queue + worker system with strict stop-on-reply and suppression enforcement.
               </p>
             </div>
           </CardContent>

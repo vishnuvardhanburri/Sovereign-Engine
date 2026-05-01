@@ -1,5 +1,5 @@
 # AUTONOMOUS INTELLIGENCE SYSTEM
-## Transform Xavira Orbit from Execution Engine to Decision Engine
+## Transform Sovereign Engine from Execution Engine to Decision Engine
 
 ---
 
@@ -509,6 +509,6 @@ UPDATES TO APPLY:
 
 ---
 
-**Result:** Xavira Orbit becomes a thinking system that strategizes, optimizes, and scales autonomously.
+**Result:** Sovereign Engine becomes a thinking system that strategizes, optimizes, and scales autonomously.
 
 Not just a sender. An intelligence engine.

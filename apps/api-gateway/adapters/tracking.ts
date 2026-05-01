@@ -1,5 +1,5 @@
-import { ingestEvent as ingestEventSvc } from '@xavira/tracking-engine'
-import type { TrackingIngestEvent } from '@xavira/types'
+import { ingestEvent as ingestEventSvc } from '@sovereign/tracking-engine'
+import type { TrackingIngestEvent } from '@sovereign/types'
 import { query } from '@/lib/db'
 
 export async function ingestEvent(event: TrackingIngestEvent) {

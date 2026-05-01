@@ -3,8 +3,8 @@ import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
-import { ingestEvent } from '@xavira/tracking-engine'
-import type { DbExecutor } from '@xavira/types'
+import { ingestEvent } from '@sovereign/tracking-engine'
+import type { DbExecutor } from '@sovereign/types'
 
 type ImapAccount = { user: string; pass: string }
 

@@ -90,7 +90,7 @@ export async function DELETE(request: NextRequest) {
         `DELETE FROM events
          WHERE client_id = $1
            AND event_type IN ('sent','failed','bounce')
-           AND COALESCE(metadata->>'subject','') LIKE '[Xavira Orbit Test]%'`,
+           AND COALESCE(metadata->>'subject','') LIKE '[Sovereign Engine Test]%'`,
         [clientId]
       )
       return NextResponse.json({ ok: true })

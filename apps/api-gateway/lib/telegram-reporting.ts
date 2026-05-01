@@ -103,7 +103,7 @@ export async function generateDailyReport(clientId: number): Promise<DailyReport
 
 export async function formatReportForTelegram(report: DailyReport): Promise<string> {
   const lines: string[] = [
-    `📊 Xavira Orbit Daily Report - ${report.date}`,
+    `📊 Sovereign Engine Daily Report - ${report.date}`,
     ``,
     `📤 **Sending**`,
     `  Emails sent: ${report.emailsSent}`,

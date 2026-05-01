@@ -1,19 +1,19 @@
 // @ts-nocheck
 /**
- * Xavira AI Assistant Test Script
+ * Sovereign AI Assistant Test Script
  * Tests the conversational AI capabilities and OpenRouter integration
  */
 
 import 'dotenv/config'
-import { processXaviraAIRequest, getXaviraAI } from '../lib/xavira-ai'
+import { processSovereignAIRequest, getSovereignAI } from '../lib/sovereign-ai'
 
-async function testXaviraAI() {
-  console.log('🤖 Testing Xavira AI Assistant...\n')
+async function testSovereignAI() {
+  console.log('🤖 Testing Sovereign AI Assistant...\n')
 
   try {
     // Test basic conversation
     console.log('1. Testing basic conversation...')
-    const response1 = await processXaviraAIRequest({
+    const response1 = await processSovereignAIRequest({
       message: "Hello! Can you help me with my cold email campaigns?",
       userId: 'test-user'
     })
@@ -24,7 +24,7 @@ async function testXaviraAI() {
 
     // Test campaign creation intent
     console.log('2. Testing campaign creation intent...')
-    const response2 = await processXaviraAIRequest({
+    const response2 = await processSovereignAIRequest({
       message: "Create a new campaign called 'Tech Startup Outreach'",
       userId: 'test-user',
       context: {
@@ -40,7 +40,7 @@ async function testXaviraAI() {
 
     // Test content generation
     console.log('3. Testing content generation...')
-    const response3 = await processXaviraAIRequest({
+    const response3 = await processSovereignAIRequest({
       message: "Generate a subject line for a SaaS product launch",
       userId: 'test-user',
       task: 'content_generation'
@@ -52,7 +52,7 @@ async function testXaviraAI() {
 
     // Test contact analysis
     console.log('4. Testing contact analysis...')
-    const response4 = await processXaviraAIRequest({
+    const response4 = await processSovereignAIRequest({
       message: "Analyze my contact list for cold email potential",
       userId: 'test-user',
       context: {
@@ -67,7 +67,7 @@ async function testXaviraAI() {
 
     // Test conversation history
     console.log('5. Testing conversation history...')
-    const ai = getXaviraAI()
+    const ai = getSovereignAI()
     const history = ai.getConversationHistory('test-user')
     console.log('Conversation history length:', history.length)
     console.log('Last message:', history[history.length - 1]?.content.substring(0, 50) + '...')
@@ -75,7 +75,7 @@ async function testXaviraAI() {
 
     // Test scraping intent
     console.log('6. Testing web scraping intent...')
-    const response5 = await processXaviraAIRequest({
+    const response5 = await processSovereignAIRequest({
       message: "Scrape contact information from https://example.com/about",
       userId: 'test-user',
       task: 'scraping'
@@ -85,7 +85,7 @@ async function testXaviraAI() {
     console.log('✅ Web scraping test complete\n')
 
     // Final summary
-    console.log('🎉 Xavira AI Assistant Test Complete!')
+    console.log('🎉 Sovereign AI Assistant Test Complete!')
     console.log('✅ Features tested:')
     console.log('   - Natural language processing')
     console.log('   - Intent recognition')
@@ -111,10 +111,10 @@ async function testXaviraAI() {
     console.log(`   Cost Efficiency: $${(totalCost / totalTokens * 1000).toFixed(6)} per 1K tokens`)
 
   } catch (error) {
-    console.error('❌ Xavira AI test failed:', error)
+    console.error('❌ Sovereign AI test failed:', error)
     process.exit(1)
   }
 }
 
 // Run the test
-testXaviraAI().catch(console.error)
+testSovereignAI().catch(console.error)

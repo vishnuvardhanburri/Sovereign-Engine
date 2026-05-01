@@ -25,8 +25,8 @@ export const validatorEnv = {
   smtpTimeoutMs: () => Math.min(5000, int('VALIDATOR_SMTP_TIMEOUT_MS', 5000)),
   smtpPort: () => int('VALIDATOR_SMTP_PORT', 25),
   // Most MTAs accept any MAIL FROM; use a stable domain you control for best results.
-  fromEmail: () => process.env.VALIDATOR_FROM_EMAIL || 'validator@xavira.local',
-  heloName: () => process.env.VALIDATOR_HELO_NAME || 'xavira.local',
+  fromEmail: () => process.env.VALIDATOR_FROM_EMAIL || 'validator@sovereign.local',
+  heloName: () => process.env.VALIDATOR_HELO_NAME || 'sovereign.local',
 
   // Guardrails
   perDomainConcurrency: () => int('VALIDATOR_DOMAIN_CONCURRENCY', 3),

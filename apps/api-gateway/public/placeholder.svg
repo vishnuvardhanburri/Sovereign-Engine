@@ -1,4 +1,4 @@
-<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Xavira Orbit placeholder">
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sovereign Engine placeholder">
   <defs>
     <radialGradient id="a" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(340 260) rotate(52) scale(780)">
       <stop stop-color="#2F6BFF" stop-opacity="0.36"/>
@@ -17,5 +17,5 @@
   <circle cx="600" cy="600" r="282" fill="#07111F" stroke="#294B84" stroke-width="8"/>
   <path d="M392 412L808 788M808 412L392 788" stroke="url(#b)" stroke-width="72" stroke-linecap="round"/>
   <path d="M852 420C945 508 945 692 852 780" stroke="#E6F0FF" stroke-width="58" stroke-linecap="round"/>
-  <text x="600" y="1032" fill="#93A4BE" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="44" font-weight="700" letter-spacing="10">XAVIRA ORBIT</text>
+  <text x="600" y="1032" fill="#93A4BE" text-anchor="middle" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="44" font-weight="700" letter-spacing="10">SOVEREIGN ENGINE</text>
 </svg>

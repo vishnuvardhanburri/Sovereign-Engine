@@ -1,8 +1,8 @@
-# Xavira Performance Optimization Guide
+# Sovereign Engine Performance Optimization Guide
 
 ## Overview
 
-This guide documents the performance optimizations implemented in Xavira to ensure instant navigation (<200ms) and seamless user experience across all features.
+This guide documents the performance optimizations implemented in Sovereign Engine to ensure instant navigation (<200ms) and seamless user experience across all features.
 
 ## Architecture
 
@@ -242,17 +242,17 @@ const results = await api.contacts.getAll(params)
 4. **lib/performance.ts** - NEW - Monitoring utilities
 5. **lib/hooks/index.ts** - Added keepPreviousData, optimistic updates
 6. **components/sidebar.tsx** - Added prefetch on hover
-7. **app/layout.tsx** - Xavira branding
+7. **app/layout.tsx** - Sovereign Engine branding
 
-## White-Labeling: Xavira
+## White-Labeling: Sovereign Engine
 
-All references to "EmailFlow" or "Cold Email" have been replaced with "Xavira":
+All references to "EmailFlow" or "Cold Email" have been replaced with "Sovereign Engine":
 
-- Product name: **Xavira**
-- Sidebar branding: **Xavira** (logo "X")
-- Footer text: **Xavira Premium Edition**
-- Metadata: **Xavira**
-- Header: **Xavira Account**
+- Product name: **Sovereign Engine**
+- Sidebar branding: **Sovereign Engine** (logo "X")
+- Footer text: **Sovereign Engine Premium Edition**
+- Metadata: **Sovereign Engine**
+- Header: **Sovereign Account**
 
 No technical terms (React Query, Redis, etc.) are visible to users.
 
@@ -347,4 +347,4 @@ const nextConfig = {
 
 ---
 
-**Built with Xavira** - Premium Cold Email Automation Platform
+**Built with Sovereign Engine** - Premium Cold Email Automation Platform

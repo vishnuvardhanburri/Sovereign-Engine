@@ -1,8 +1,8 @@
-export function publicReputationOpenApi(baseUrl = 'https://your-xavira-domain.com') {
+export function publicReputationOpenApi(baseUrl = 'https://your-sovereign-domain.com') {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'Xavira Reputation Shield API',
+      title: 'Sovereign Reputation Shield API',
       version: '1.0.0',
       description: 'Public Reputation-as-a-Service API for domain and IP health certificates.',
     },
@@ -57,7 +57,7 @@ export function publicReputationOpenApi(baseUrl = 'https://your-xavira-domain.co
           type: 'object',
           properties: {
             ok: { type: 'boolean', example: true },
-            product: { type: 'string', example: 'xavira-reputation-shield' },
+            product: { type: 'string', example: 'sovereign-reputation-shield' },
             version: { type: 'string', example: 'v1' },
             certificate_id: { type: 'string', example: 'xvra_abc123' },
             issued_at: { type: 'string', format: 'date-time' },

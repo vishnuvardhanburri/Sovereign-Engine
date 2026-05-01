@@ -12,7 +12,7 @@ function html(baseUrl: string) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Xavira Reputation Shield API</title>
+    <title>Sovereign Reputation Shield API</title>
     <style>
       :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       body { margin: 0; background: #09110f; color: #ecfdf5; }
@@ -33,8 +33,8 @@ function html(baseUrl: string) {
     <main>
       <section class="hero">
         <span class="pill">Reputation-as-a-Service v1</span>
-        <h1>Xavira Reputation Shield API</h1>
-        <p>Generate a public Health Certificate for any domain or IP using Xavira Orbit's Adaptive Brain, provider lane cache, DNS light scan, and blacklist checks.</p>
+        <h1>Sovereign Reputation Shield API</h1>
+        <p>Generate a public Health Certificate for any domain or IP using Sovereign Engine's Adaptive Brain, provider lane cache, DNS light scan, and blacklist checks.</p>
       </section>
 
       <h2>Endpoint</h2>
@@ -49,7 +49,7 @@ Content-Type: application/json
 
       <h2>Quick cURL</h2>
       <pre>curl -X POST "${endpoint}" \\
-  -H "x-api-key: $XAVIRA_REPUTATION_API_KEY" \\
+  -H "x-api-key: $SOVEREIGN_REPUTATION_API_KEY" \\
   -H "content-type: application/json" \\
   -d '{"domain":"example.com","ip":"1.2.3.4"}'</pre>
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Xavira Orbit is an outbound infrastructure platform built around one principle:
+Sovereign Engine is an outbound infrastructure platform built around one principle:
 
 **Decide before sending, then learn from outcomes.**
 
@@ -80,7 +80,7 @@ flowchart LR
 
 ## Decision + Outcome Loop (Why this matters)
 
-Most cold email systems optimize for “more sends”. Xavira Orbit optimizes for:
+Most cold email systems optimize for “more sends”. Sovereign Engine optimizes for:
 
 - **domain safety first**
 - **reply/meeting outcomes second**
