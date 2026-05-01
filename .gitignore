@@ -23,6 +23,8 @@ dist/
 logs/
 *.log
 .DS_Store
+.demo/
+output/
 .sixth/
 .venv-pdf/
 

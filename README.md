@@ -103,6 +103,44 @@ Health stats expose:
 
 This makes the system inspectable during demos, due diligence, and production operations.
 
+## Buyer Demo Mode
+
+Run the full mock-safe buyer demo prep:
+
+```bash
+pnpm demo:buyer
+```
+
+This starts Postgres and Redis, applies the schema, creates the demo user, starts the API gateway on `localhost:3400`, starts the reputation and sender workers, and opens the key demo pages.
+
+Demo login:
+
+```text
+demo@sovereign.local
+Demo1234!
+```
+
+Stop background demo processes:
+
+```bash
+pnpm demo:buyer:stop
+```
+
+Full walkthrough:
+
+```text
+docs/BUYER_DEMO_GUIDE.md
+docs/VIDEO_RECORDING_GUIDE.md
+docs/TECHNICAL_PROOF_CHECKLIST.md
+```
+
+Generate clean Sovereign Engine B-roll clips and package them for sharing:
+
+```bash
+pnpm demo:clips
+pnpm demo:package
+```
+
 ## Scale Proof
 
 Sovereign Engine includes an internal mock stress test to prove pipeline throughput without sending real email:
