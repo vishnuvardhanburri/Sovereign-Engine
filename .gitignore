@@ -20,8 +20,9 @@ package-lock.json
 node_modules/
 .next/
 dist/
-logs/
+/logs/
 *.log
+*.tsbuildinfo
 .DS_Store
 .demo/
 output/
