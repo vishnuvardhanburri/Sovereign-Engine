@@ -100,7 +100,7 @@ node scripts/final-production-check.mjs --real-send
 
 ## What Not To Claim
 
-Do not claim guaranteed inboxing, evasion, invisibility, or bypass.
+Do not claim universal inbox outcomes, provider-policy shortcuts, hidden infrastructure, or delivery promises the system cannot control.
 
 Use this instead:
 

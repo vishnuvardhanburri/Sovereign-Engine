@@ -64,7 +64,7 @@ Use:
 
 Avoid:
 
-- Guaranteed inbox placement.
-- Bypass or evasion claims.
-- Invisible infrastructure claims.
+- Universal inbox-outcome promises.
+- Provider-policy shortcut claims.
+- Hidden-infrastructure claims.
 - Any promise that ignores consent, DNS, provider policy, or suppression requirements.

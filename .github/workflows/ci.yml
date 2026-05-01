@@ -74,6 +74,9 @@ jobs:
       - name: Brand check
         run: pnpm brand:check
 
+      - name: Buyer-safe copy check
+        run: pnpm copy:check
+
       - name: Production dry-run gate
         run: pnpm prod:check
 

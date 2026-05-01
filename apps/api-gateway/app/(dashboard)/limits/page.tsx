@@ -19,8 +19,8 @@ const safeClaims = [
 ]
 
 const notClaims = [
-  'No promise of guaranteed inbox placement.',
-  'No bypassing Gmail, Outlook, Yahoo, iCloud, or ESP policies.',
+  'No promise that every message lands in the inbox.',
+  'Provider policies remain mandatory for Gmail, Outlook, Yahoo, iCloud, and ESPs.',
   'No sending without lawful contacts and unsubscribe/suppression handling.',
   'No automatic creation of buyer-owned DNS, SMTP, or legal business assets.',
 ]

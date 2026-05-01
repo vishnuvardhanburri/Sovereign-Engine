@@ -92,6 +92,7 @@ The dashboard now includes the handoff surfaces a serious buyer expects during d
 - `/dashboard`: one-click Buyer Demo Kit, readiness score, Due Diligence PDF export, and Worker Live Map.
 - `/setup`: production readiness wizard with environment checks, DNS verification, SMTP readiness, compliance controls, and a printable report.
 - `/proof`: single-screen proof board for recording health, workers, readiness, scale commands, and diligence downloads.
+- `/trust`: enterprise trust center with safe buyer language, production-gate proof, and client-input boundaries.
 - `/limits`: honest known-limits and production-gate notes for due diligence.
 - `/activity`: replay feed that blends Reputation Brain decisions, delivery events, and tamper-evident audit actions.
 - `/raas`: public Reputation-as-a-Service console with cURL snippet, OpenAPI links, API-key testing, and health certificate output.
@@ -114,6 +115,7 @@ Sovereign Engine includes production-grade proof surfaces for technical buyers:
 /api/due-diligence/report?domain=example.com
 /api/handoff/data-room?domain=example.com
 /api/production/gate?domain=example.com
+/api/trust/summary?domain=example.com
 /api/activity/replay
 ```
 
@@ -140,6 +142,12 @@ Run browser QA with screenshots:
 
 ```bash
 pnpm qa:demo
+```
+
+Run buyer-facing copy safety checks:
+
+```bash
+pnpm copy:check
 ```
 
 Generate the final submission evidence folder:

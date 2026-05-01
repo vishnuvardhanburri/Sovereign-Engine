@@ -16,6 +16,7 @@
     "prod:check": "node scripts/final-production-check.mjs",
     "prod:check:real": "node scripts/final-production-check.mjs --real-send",
     "brand:check": "node scripts/check-branding.mjs",
+    "copy:check": "node scripts/check-buyer-copy.mjs",
     "doctor:demo": "node scripts/demo-doctor.mjs",
     "qa:demo": "node scripts/demo-browser-qa.mjs",
     "qa:demo:headed": "node scripts/demo-browser-qa.mjs --headed",

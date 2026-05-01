@@ -24,6 +24,7 @@ import {
   PackageCheck,
   ClipboardList,
   Scale,
+  BadgeCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
@@ -43,6 +44,7 @@ const navItems: NavItem[] = [
   { href: '/reputation', label: 'Reputation Brain', icon: Activity },
   { href: '/setup', label: 'Setup Wizard', icon: ClipboardCheck },
   { href: '/proof', label: 'Proof Board', icon: ClipboardList },
+  { href: '/trust', label: 'Trust Center', icon: BadgeCheck },
   { href: '/limits', label: 'Known Limits', icon: Scale },
   { href: '/activity', label: 'Activity Replay', icon: History },
   { href: '/raas', label: 'RaaS Console', icon: Shield },

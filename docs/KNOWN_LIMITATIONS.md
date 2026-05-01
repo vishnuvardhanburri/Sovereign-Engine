@@ -21,7 +21,7 @@ Sovereign Engine is demo-ready with mock-safe proof data and production-ready af
 ## Not Claimed
 
 - No guarantee of inbox placement.
-- No bypassing provider policies.
+- Provider policies remain mandatory.
 - No sending without lawful data and opt-out handling.
 - No automatic creation of buyer-owned DNS, SMTP, or legal/business assets.
 
