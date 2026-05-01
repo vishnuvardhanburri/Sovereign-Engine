@@ -13,6 +13,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { DemoModeIndicator } from '@/components/demo-mode-indicator'
+import { RecordingModeToggle } from '@/components/recording-mode-toggle'
+import { ProductionReadinessBadge } from '@/components/production-readiness-badge'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -45,6 +48,18 @@ export function Header() {
       </div>
 
       <div className="flex-1" /> {/* Spacer */}
+
+      <div className="mr-2">
+        <DemoModeIndicator />
+      </div>
+
+      <div className="mr-2">
+        <ProductionReadinessBadge />
+      </div>
+
+      <div className="mr-2 hidden sm:block">
+        <RecordingModeToggle />
+      </div>
 
       <div className="mr-2">
         <ThemeToggle />

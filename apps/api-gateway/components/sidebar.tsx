@@ -17,6 +17,13 @@ import {
   Settings,
   Bot,
   Activity,
+  ClipboardCheck,
+  History,
+  Shield,
+  Upload,
+  PackageCheck,
+  ClipboardList,
+  Scale,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createPrefetchUtils } from '@/lib/prefetch'
@@ -34,11 +41,18 @@ const navItems: NavItem[] = [
   { href: '/campaigns', label: 'Outbound Campaigns', icon: Mail, prefetch: 'prefetchCampaigns' },
   { href: '/domains', label: 'Sending Health', icon: Globe, prefetch: 'prefetchDomains' },
   { href: '/reputation', label: 'Reputation Brain', icon: Activity },
+  { href: '/setup', label: 'Setup Wizard', icon: ClipboardCheck },
+  { href: '/proof', label: 'Proof Board', icon: ClipboardList },
+  { href: '/limits', label: 'Known Limits', icon: Scale },
+  { href: '/activity', label: 'Activity Replay', icon: History },
+  { href: '/raas', label: 'RaaS Console', icon: Shield },
+  { href: '/demo-import', label: 'Demo Import', icon: Upload },
   { href: '/contacts', label: 'Prospects', icon: Users, prefetch: 'prefetchContacts' },
   { href: '/sequences', label: 'Message Sequences', icon: ListOrdered, prefetch: 'prefetchSequences' },
   { href: '/analytics', label: 'Performance', icon: LineChart, prefetch: 'prefetchAnalytics' },
   { href: '/inbox', label: 'Conversations', icon: MessageCircle, prefetch: 'prefetchInbox' },
   { href: '/sent', label: 'Sent Mail', icon: Mail },
+  { href: '/handoff', label: 'Buyer Handoff', icon: PackageCheck },
   { href: '/settings', label: 'Workspace', icon: Settings },
 ]
 

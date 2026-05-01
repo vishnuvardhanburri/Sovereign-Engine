@@ -16,6 +16,11 @@
     "prod:check": "node scripts/final-production-check.mjs",
     "prod:check:real": "node scripts/final-production-check.mjs --real-send",
     "brand:check": "node scripts/check-branding.mjs",
+    "doctor:demo": "node scripts/demo-doctor.mjs",
+    "qa:demo": "node scripts/demo-browser-qa.mjs",
+    "qa:demo:headed": "node scripts/demo-browser-qa.mjs --headed",
+    "submit:pack": "node scripts/submit-pack.mjs",
+    "submit:pack:qa": "node scripts/submit-pack.mjs --with-qa",
     "demo:buyer": "node scripts/buyer-demo.mjs",
     "demo:buyer:stress": "node scripts/buyer-demo.mjs --stress-count=10000",
     "demo:buyer:stop": "node scripts/buyer-demo.mjs --stop",
@@ -33,5 +38,8 @@
     "worker:optimizer": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/optimizer-worker worker:dev",
     "worker:inbound": "node scripts/sync-env.mjs && DOTENV_CONFIG_PATH=\"$(pwd)/.env\" pnpm -C workers/inbound-worker worker:dev",
     "tool:api": "pnpm -C services/tool-api tool:api"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }

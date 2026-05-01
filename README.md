@@ -85,12 +85,36 @@ Investor mode:
 
 Investor mode shows value generated, sending cost, gross margin, ROI multiple, and projected daily capacity.
 
+## Buyer-Ready Operating Screens
+
+The dashboard now includes the handoff surfaces a serious buyer expects during diligence:
+
+- `/dashboard`: one-click Buyer Demo Kit, readiness score, Due Diligence PDF export, and Worker Live Map.
+- `/setup`: production readiness wizard with environment checks, DNS verification, SMTP readiness, compliance controls, and a printable report.
+- `/proof`: single-screen proof board for recording health, workers, readiness, scale commands, and diligence downloads.
+- `/limits`: honest known-limits and production-gate notes for due diligence.
+- `/activity`: replay feed that blends Reputation Brain decisions, delivery events, and tamper-evident audit actions.
+- `/raas`: public Reputation-as-a-Service console with cURL snippet, OpenAPI links, API-key testing, and health certificate output.
+- `/demo-import`: safe CSV import flow using reserved demo domains, so demos never require real prospect data.
+- `/handoff`: final buyer handoff center with Data Room ZIP and PDF packet downloads.
+
+These pages are intentionally safe-by-default. They make the product easier to sell and operate without bypassing domain ownership, provider credentials, suppression policy, or compliance checks.
+
+The header also includes Recording Mode. Turn it on before Loom/OBS capture to hide demo noise and keep the command center clean on video.
+The dashboard includes Prepare Recording, which seeds safe demo data and turns Recording Mode on in one click.
+
 ## Production Proof
 
 Sovereign Engine includes production-grade proof surfaces for technical buyers:
 
 ```text
 /api/health/stats
+/api/setup/readiness?domain=example.com
+/api/setup/report?domain=example.com
+/api/due-diligence/report?domain=example.com
+/api/handoff/data-room?domain=example.com
+/api/production/gate?domain=example.com
+/api/activity/replay
 ```
 
 Health stats expose:
@@ -100,6 +124,35 @@ Health stats expose:
 - BullMQ waiting/active/delayed/failed counts.
 - Sender-worker heartbeat nodes.
 - DB queue depth.
+- Downloadable due-diligence PDF with readiness, worker, queue, audit, and security proof.
+- Downloadable Data Room ZIP with summary, proof metrics, buyer inputs, setup commands, DNS suggestions, next actions, and security controls.
+- Production gate JSON that makes demo-ready versus production-ready status explicit.
+
+## Final QA Commands
+
+Run the full local demo doctor:
+
+```bash
+pnpm doctor:demo
+```
+
+Run browser QA with screenshots:
+
+```bash
+pnpm qa:demo
+```
+
+Generate the final submission evidence folder:
+
+```bash
+pnpm submit:pack
+```
+
+Generate the pack and run browser QA inside it:
+
+```bash
+pnpm submit:pack:qa
+```
 
 This makes the system inspectable during demos, due diligence, and production operations.
 
@@ -176,7 +229,7 @@ docker compose -f docker-compose.prod.yml up -d --scale sender-worker=8
 
 Included services:
 
-- API Gateway: Next.js dashboard and API routes.
+- API Gateway: dashboard and API routes.
 - Reputation Worker: adaptive control brain.
 - Sender Workers: stateless sending muscle.
 - Postgres: durable state and audit history.

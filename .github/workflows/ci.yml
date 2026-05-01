@@ -22,13 +22,16 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       APP_DOMAIN: localhost:3000
       APP_PROTOCOL: http
+      AUTH_SECRET: ci_auth_secret_012345678901234567890123456789
+      CRON_SECRET: ci_cron_secret_012345678901234567890123456789
+      SECURITY_KILL_SWITCH_TOKEN: ci_kill_switch_012345678901234567890123456789
+      SECRET_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       SMTP_HOST: mock.local
       SMTP_PORT: "587"
       SMTP_USER: mock@localhost
       SMTP_PASS: mock
       SMTP_SECURE: "false"
       ZEROBOUNCE_API_KEY: mock
-      SECURITY_KILL_SWITCH_TOKEN: build-only
       MOCK_SMTP: "true"
       REPUTATION_PUBLIC_API_KEY: ""
       PUBLIC_REPUTATION_FREE_DAILY_LIMIT: "10"
@@ -67,6 +70,12 @@ jobs:
 
       - name: Typecheck API Gateway
         run: pnpm typecheck
+
+      - name: Brand check
+        run: pnpm brand:check
+
+      - name: Production dry-run gate
+        run: pnpm prod:check
 
       - name: Build API Gateway
         run: pnpm -C apps/api-gateway build

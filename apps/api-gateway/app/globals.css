@@ -143,3 +143,23 @@ html {
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+html[data-recording-mode='true'] body {
+  cursor: default;
+}
+
+html[data-recording-mode='true'] .recording-hide {
+  display: none !important;
+}
+
+html[data-recording-mode='true'] .recording-soften {
+  opacity: 0.9;
+}
+
+html[data-recording-mode='true'] [data-nextjs-dev-tools],
+html[data-recording-mode='true'] [data-nextjs-toast],
+html[data-recording-mode='true'] [data-nextjs-dialog] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

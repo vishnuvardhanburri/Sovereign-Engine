@@ -25,6 +25,7 @@ logs/
 .DS_Store
 .demo/
 output/
+test-results/
 .sixth/
 .venv-pdf/
 

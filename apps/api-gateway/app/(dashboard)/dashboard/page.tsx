@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   useCampaigns,
@@ -33,7 +34,17 @@ import { SelfHealActions } from '@/components/self-heal-actions'
 import { AnimatedNumber } from '@/components/animated-number'
 import { ExecutiveView } from '@/components/executive-view'
 import { ForecastPanel } from '@/components/forecast-panel'
-import { ArrowRight, PauseCircle, PlayCircle, RefreshCcw, ShieldAlert, Zap } from 'lucide-react'
+import { WorkerLiveMap } from '@/components/worker-live-map'
+import { Archive, ArrowRight, ClipboardCheck, Download, PauseCircle, PlayCircle, RefreshCcw, Rocket, ShieldAlert, Video, Zap } from 'lucide-react'
+
+type DashboardReadiness = {
+  ok: boolean
+  score: number
+  status: 'READY' | 'NEEDS_ATTENTION' | 'BLOCKED'
+  blockers: number
+  warnings: number
+  nextActions?: string[]
+}
 
 const DashboardSentChart = dynamic(
   () => import('@/components/dashboard-sent-chart').then((m) => m.DashboardSentChart),
@@ -52,6 +63,12 @@ function riskTone(level: 'LOW' | 'MEDIUM' | 'HIGH'): string {
   return 'bg-rose-500/15 text-rose-200 border-rose-500/30'
 }
 
+async function fetchDashboardReadiness(): Promise<DashboardReadiness> {
+  const response = await fetch('/api/setup/readiness?domain=sovereign-demo.example', { cache: 'no-store' })
+  if (!response.ok) throw new Error('Failed to load readiness')
+  return response.json()
+}
+
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
   const { data: chartData, isLoading: chartLoading } = useChartData()
@@ -65,6 +82,11 @@ export default function DashboardPage() {
   const { data: campaigns } = useCampaigns()
   const control = useInfrastructureControl()
   const { data: operatorActions } = useOperatorActions(60)
+  const readiness = useQuery({
+    queryKey: ['dashboard-production-readiness'],
+    queryFn: fetchDashboardReadiness,
+    refetchInterval: 60_000,
+  })
 
   const [campaignToStart, setCampaignToStart] = useState<string>('')
   const [startOpen, setStartOpen] = useState(false)
@@ -121,6 +143,49 @@ export default function DashboardPage() {
     }
   }
 
+  async function runBuyerDemo(action: 'start' | 'reset'): Promise<void> {
+    try {
+      const res = await fetch(`/api/demo/buyer/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: 1 }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error || `Failed to ${action} buyer demo`)
+      }
+      const body = (await res.json()) as { contactsImported?: number; removedContacts?: number }
+      await readiness.refetch()
+      if (action === 'start') {
+        toast.success(`Buyer demo armed. Sample contacts: ${body.contactsImported ?? 0}`)
+      } else {
+        toast.success(`Buyer demo reset. Removed contacts: ${body.removedContacts ?? 0}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Failed to ${action} buyer demo`)
+    }
+  }
+
+  async function prepareRecordingDemo(): Promise<void> {
+    try {
+      const res = await fetch('/api/demo/recording/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: 1 }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error || 'Failed to prepare recording demo')
+      }
+      window.localStorage.setItem('sovereign-engine-recording-mode', 'true')
+      document.documentElement.dataset.recordingMode = 'true'
+      await readiness.refetch()
+      toast.success('Recording demo prepared. Open /proof after the dashboard hook.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to prepare recording demo')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -153,6 +218,83 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <Card className="overflow-hidden border-cyan-500/15 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_34%),linear-gradient(135deg,_rgba(15,23,42,0.92),_rgba(2,6,23,0.98))]">
+        <CardContent className="p-5">
+          <div className="grid gap-5 lg:grid-cols-[1fr_1.25fr] lg:items-center">
+            <div>
+              <Badge variant="outline" className="mb-3 border-cyan-500/25 bg-cyan-500/10 text-cyan-200">
+                <ClipboardCheck className="mr-1 h-3.5 w-3.5" />
+                Buyer demo command kit
+              </Badge>
+              <h2 className="text-2xl font-semibold tracking-tight">One-click proof mode for Sovereign Engine</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Seed demo-safe reputation lanes, sample contacts, audit events, and readiness evidence before recording
+                the Acquire/client walkthrough. No real email is sent.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Readiness score</div>
+                <div className="mt-1 flex items-end gap-2">
+                  <div className="text-4xl font-semibold tracking-tighter">{readiness.data?.score ?? '--'}</div>
+                  <Badge
+                    variant="outline"
+                    className={
+                      readiness.data?.status === 'READY'
+                        ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200'
+                        : readiness.data?.status === 'BLOCKED'
+                          ? 'border-red-500/30 bg-red-500/15 text-red-200'
+                          : 'border-amber-500/30 bg-amber-500/15 text-amber-200'
+                    }
+                  >
+                    {readiness.data?.status ?? 'CHECKING'}
+                  </Badge>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {readiness.data?.blockers ?? 0} blockers · {readiness.data?.warnings ?? 0} warnings
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <Button className="gap-2" onClick={() => runBuyerDemo('start')}>
+                  <Rocket className="h-4 w-4" />
+                  Start Buyer Demo
+                </Button>
+                <Button variant="secondary" className="gap-2" onClick={prepareRecordingDemo}>
+                  <Video className="h-4 w-4" />
+                  Prepare Recording
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={() => runBuyerDemo('reset')}>
+                  <RefreshCcw className="h-4 w-4" />
+                  Reset Demo
+                </Button>
+                <Button variant="outline" className="gap-2" asChild>
+                  <a href="/api/handoff/data-room?domain=sovereign-demo.example" target="_blank" rel="noreferrer">
+                    <Archive className="h-4 w-4" />
+                    Data Room ZIP
+                  </a>
+                </Button>
+                <Button variant="outline" className="gap-2" asChild>
+                  <a href="/api/due-diligence/report?domain=sovereign-demo.example" target="_blank" rel="noreferrer">
+                    <Download className="h-4 w-4" />
+                    Due Diligence PDF
+                  </a>
+                </Button>
+                <Button variant="ghost" className="gap-2" asChild>
+                  <Link href="/proof">
+                    Proof Board <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button variant="ghost" className="gap-2" asChild>
+                  <Link href="/setup">
+                    Setup Center <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <ExecutiveView health={health} analytics={analytics} executive={executive} />
       <ForecastPanel forecast={forecast} />
@@ -204,6 +346,8 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      <WorkerLiveMap />
 
       {/* Control Panel */}
       <Card className="bg-white/5 backdrop-blur border-white/10">

@@ -82,6 +82,7 @@ function sha256(value: string) {
 }
 
 function toNumber(value: unknown, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
 }
