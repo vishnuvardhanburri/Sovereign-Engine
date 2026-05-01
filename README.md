@@ -1,4 +1,4 @@
-# Xavira Orbit
+# Xavira Sovereign Engine
 
 ![Node](https://img.shields.io/badge/node-22.x-brightgreen)
 ![API](https://img.shields.io/badge/api-gateway-black)
