@@ -29,7 +29,7 @@
     "@sovereign/smtp-client": "workspace:*",
     "@sovereign/tracking-engine": "workspace:*",
     "@sovereign/types": "workspace:*",
-    "bullmq": "^5.76.1",
+    "bullmq": "^5.76.4",
     "dotenv": "^16.6.1",
     "ioredis": "^5.10.1",
     "pg": "^8.11.3"
