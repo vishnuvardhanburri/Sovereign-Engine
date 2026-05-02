@@ -35,6 +35,11 @@
 
 ## Local QA Commands
 
+- `pnpm launch:ready`: one-command launch/submission readiness check with production Docker stack and evidence logs
+- `pnpm launch:stop`: stops the launched production Docker stack
+- `pnpm launch:ready --with-browser`: same flow with browser QA screenshots
+- `pnpm launch:ready --with-build`: same flow with an additional local production build
+- `pnpm launch:ready --with-typecheck`: same flow with an additional local TypeScript pass
 - `pnpm doctor:demo`: checks Docker, Postgres, Redis, env, schema, demo user, key pages, PDF/ZIP, and worker heartbeat
 - `pnpm qa:demo`: browser QA with screenshots under `output/playwright/demo-qa`
 - `pnpm copy:check`: guards buyer-facing surfaces from risky or misleading acquisition language

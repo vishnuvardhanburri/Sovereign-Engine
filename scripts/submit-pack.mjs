@@ -8,6 +8,7 @@ const args = process.argv.slice(2)
 const baseUrlArg = args.find((arg) => arg.startsWith('--base-url='))
 const baseUrl = (baseUrlArg?.slice('--base-url='.length) || process.env.DEMO_BASE_URL || 'http://127.0.0.1:3400').replace(/\/$/, '')
 const skipBuild = args.includes('--skip-build')
+const skipChecks = args.includes('--skip-checks')
 const withQa = args.includes('--with-qa')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
 const packDir = path.join(root, 'output', 'submit-pack', stamp)
@@ -70,9 +71,11 @@ function copyDirIfExists(source, target) {
 
 const commandResults = []
 
-commandResults.push(['typecheck', run('pnpm', ['typecheck'], 'typecheck.log')])
-commandResults.push(['brand:check', run('pnpm', ['brand:check'], 'brand-check.log')])
-commandResults.push(['doctor:demo', run('pnpm', ['doctor:demo'], 'doctor-demo.log')])
+if (!skipChecks) {
+  commandResults.push(['typecheck', run('pnpm', ['typecheck'], 'typecheck.log')])
+  commandResults.push(['brand:check', run('pnpm', ['brand:check'], 'brand-check.log')])
+  commandResults.push(['doctor:demo', run('pnpm', ['doctor:demo'], 'doctor-demo.log')])
+}
 if (!skipBuild) commandResults.push(['build', run('pnpm', ['-C', 'apps/api-gateway', 'build'], 'build.log')])
 if (withQa) commandResults.push(['qa:demo', run('pnpm', ['qa:demo'], 'browser-qa.log')])
 

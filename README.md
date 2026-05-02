@@ -132,6 +132,30 @@ Health stats expose:
 
 ## Final QA Commands
 
+Run the complete one-command launch/submission check:
+
+```bash
+pnpm launch:ready
+```
+
+This starts the safe production Docker stack, checks buyer-facing copy, runs the production dry-run gate,
+validates Docker Compose, starts the API and workers, runs live endpoint checks, and creates an evidence pack
+under `output/launch-ready/latest`.
+
+For deeper local checks, run:
+
+```bash
+pnpm launch:ready --with-browser
+pnpm launch:ready --with-build
+pnpm launch:ready --with-typecheck
+```
+
+Stop the launched Docker stack:
+
+```bash
+pnpm launch:stop
+```
+
 Run the full local demo doctor:
 
 ```bash

@@ -10,23 +10,74 @@ const baseUrl = (baseUrlArg?.slice('--base-url='.length) || process.env.DEMO_BAS
 const headed = args.includes('--headed')
 const installBrowsers = args.includes('--install-browsers')
 const outDir = path.join(root, 'output', 'playwright', 'demo-qa')
-const specPath = path.join(outDir, 'demo-qa.spec.mjs')
-const configPath = path.join(outDir, 'playwright.config.mjs')
+const pages = ['/dashboard', '/proof', '/reputation', '/setup', '/activity', '/raas', '/demo-import', '/handoff']
+const qaTimeoutMs = Number(process.env.DEMO_QA_TIMEOUT_MS || 120_000)
 
+fs.rmSync(outDir, { recursive: true, force: true })
 fs.mkdirSync(outDir, { recursive: true })
 
-fs.writeFileSync(
-  specPath,
-  `
-import { test, expect } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
+function installChromium() {
+  console.log('Installing Playwright Chromium browser...')
+  const install = spawnSync('pnpm', ['exec', 'playwright', 'install', 'chromium'], {
+    cwd: root,
+    env: process.env,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5 * 60 * 1000,
+  })
+  if (install.stdout) process.stdout.write(install.stdout)
+  if (install.stderr) process.stderr.write(install.stderr)
+  return install.status === 0
+}
 
-const baseURL = process.env.DEMO_BASE_URL || '${baseUrl}'
-const outDir = process.env.DEMO_QA_OUT_DIR || '${outDir.replace(/\\/g, '\\\\')}'
-const pages = ['/dashboard', '/proof', '/reputation', '/setup', '/activity', '/raas', '/demo-import', '/handoff']
+function screenshotName(route) {
+  return `${route.replace(/\//g, '_').replace(/^_/, '') || 'home'}.png`
+}
 
-test('Sovereign Engine recording flow loads cleanly', async ({ page }) => {
+function writeHtmlGallery() {
+  const cards = pages
+    .map((route) => {
+      const file = screenshotName(route)
+      return `<article><h2>${route}</h2><img src="../${file}" alt="${route} screenshot" /></article>`
+    })
+    .join('\n')
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sovereign Engine Browser QA</title>
+  <style>
+    body { margin: 0; padding: 32px; background: #0c111d; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; }
+    main { display: grid; gap: 24px; }
+    article { border: 1px solid rgba(148, 163, 184, .24); border-radius: 18px; padding: 18px; background: rgba(15, 23, 42, .82); }
+    h1, h2 { margin: 0 0 14px; }
+    img { width: 100%; border-radius: 12px; border: 1px solid rgba(148, 163, 184, .22); background: #fff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sovereign Engine Browser QA</h1>
+    ${cards}
+  </main>
+</body>
+</html>`
+  const reportDir = path.join(outDir, 'html-report')
+  fs.mkdirSync(reportDir, { recursive: true })
+  fs.writeFileSync(path.join(reportDir, 'index.html'), html)
+}
+
+async function runQa() {
+  const { chromium } = await import('@playwright/test')
+  const browser = await chromium.launch({ headless: !headed })
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1100 },
+    ignoreHTTPSErrors: true,
+  })
+  const page = await context.newPage()
+  page.setDefaultTimeout(20_000)
+  page.setDefaultNavigationTimeout(30_000)
+
   const findings = []
   const badResponses = []
   page.on('console', (message) => {
@@ -41,27 +92,34 @@ test('Sovereign Engine recording flow loads cleanly', async ({ page }) => {
     }
   })
 
-  await page.goto(baseURL + '/login', { waitUntil: 'networkidle' })
-  await page.fill('#email', 'demo@sovereign.local')
-  await page.fill('#password', 'Demo1234!')
-  await page.click('button[type="submit"]')
-  await page.waitForURL(/\\/dashboard/, { timeout: 15000 })
-  await page.evaluate(() => {
-    window.localStorage.setItem('sovereign-engine-recording-mode', 'true')
-    document.documentElement.dataset.recordingMode = 'true'
-  })
+  try {
+    await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' })
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+    await page.fill('#email', 'demo@sovereign.local')
+    await page.fill('#password', 'Demo1234!')
+    await page.click('button[type="submit"]')
+    await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+    await page.evaluate(() => {
+      window.localStorage.setItem('sovereign-engine-recording-mode', 'true')
+      document.documentElement.dataset.recordingMode = 'true'
+    })
 
-  for (const route of pages) {
-    await page.goto(baseURL + route, { waitUntil: 'networkidle' })
-    await expect(page.locator('body')).toContainText('Sovereign Engine', { timeout: 15000 })
-    await page.screenshot({ path: path.join(outDir, route.replace(/\\//g, '_').replace(/^_/, '') + '.png'), fullPage: true })
+    for (const route of pages) {
+      await page.goto(`${baseUrl}${route}`, { waitUntil: 'domcontentloaded' })
+      await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
+      const body = await page.locator('body').innerText({ timeout: 15_000 })
+      if (!body.includes('Sovereign Engine')) throw new Error(`${route} did not render Sovereign Engine branding.`)
+      await page.screenshot({ path: path.join(outDir, screenshotName(route)), fullPage: true })
+    }
+  } finally {
+    await browser.close()
   }
 
   const seriousResponses = badResponses.filter((item) => {
     const pathname = new URL(item.url).pathname
     if (item.status >= 500) return true
     if (pathname === '/_vercel/insights/script.js') return false
-    return !/\\/(favicon\\.ico|apple-icon\\.png|icon(-dark|-light)?-?\\d*x?\\d*\\.png|icon\\.svg)$/.test(pathname)
+    return !/(favicon\.ico|apple-icon\.png|icon(-dark|-light)?-?\d*x?\d*\.png|icon\.svg)$/.test(pathname)
   })
   const seriousFindings = findings.filter((item) => {
     if (item.type === 'console' && /Failed to load resource: the server responded with a status of 404/i.test(item.text)) {
@@ -71,78 +129,39 @@ test('Sovereign Engine recording flow loads cleanly', async ({ page }) => {
   })
 
   fs.writeFileSync(path.join(outDir, 'browser-findings.json'), JSON.stringify({ findings, badResponses, seriousFindings, seriousResponses }, null, 2))
-  expect(seriousResponses).toEqual([])
-  expect(seriousFindings).toEqual([])
-})
-`
-)
+  writeHtmlGallery()
 
-fs.writeFileSync(
-  configPath,
-  `
-export default {
-  timeout: 60000,
-  use: {
-    headless: ${headed ? 'false' : 'true'},
-    viewport: { width: 1440, height: 1100 },
-    ignoreHTTPSErrors: true,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-  },
-  reporter: [['line'], ['html', { outputFolder: '${path.join(outDir, 'html-report').replace(/\\/g, '\\\\')}', open: 'never' }]],
-}
-`
-)
-
-function run(commandArgs) {
-  return spawnSync('pnpm', commandArgs, {
-    cwd: root,
-    env: {
-      ...process.env,
-      DEMO_BASE_URL: baseUrl,
-      DEMO_QA_OUT_DIR: outDir,
-    },
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-}
-
-function print(result) {
-  if (result.stdout) process.stdout.write(result.stdout)
-  if (result.stderr) process.stderr.write(result.stderr)
-}
-
-if (installBrowsers) {
-  console.log('Installing Playwright Chromium browser...')
-  const install = run(['exec', 'playwright', 'install', 'chromium'])
-  print(install)
-  if (install.status !== 0) process.exit(install.status ?? 1)
-}
-
-console.log(`Running browser QA against ${baseUrl}`)
-let result = run(['exec', 'playwright', 'test', specPath, '--config', configPath])
-print(result)
-
-const missingBrowser =
-  result.status !== 0 &&
-  /Executable doesn't exist|Please run the following command to download new browsers|playwright install/i.test(`${result.stdout}\n${result.stderr}`)
-
-if (missingBrowser && !installBrowsers) {
-  console.log('Playwright browser is missing. Installing Chromium once, then retrying...')
-  const install = run(['exec', 'playwright', 'install', 'chromium'])
-  print(install)
-  if (install.status === 0) {
-    result = run(['exec', 'playwright', 'test', specPath, '--config', configPath])
-    print(result)
-  } else {
-    result = install
+  if (seriousResponses.length || seriousFindings.length) {
+    throw new Error(`Browser QA found ${seriousResponses.length} serious HTTP issue(s) and ${seriousFindings.length} serious console issue(s).`)
   }
 }
 
-if (result.status === 0) {
-  console.log(`Browser QA passed. Screenshots: ${path.relative(root, outDir)}`)
-} else {
-  console.error(`Browser QA failed. Artifacts: ${path.relative(root, outDir)}`)
+async function main() {
+  console.log(`Running browser QA against ${baseUrl}`)
+  if (installBrowsers) installChromium()
+
+  try {
+    await Promise.race([
+      runQa(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Browser QA timed out after ${qaTimeoutMs}ms.`)), qaTimeoutMs)),
+    ])
+    console.log(`Browser QA passed. Screenshots: ${path.relative(root, outDir)}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/Executable doesn't exist|Please run the following command to download new browsers|playwright install/i.test(message) && !installBrowsers) {
+      if (installChromium()) {
+        await Promise.race([
+          runQa(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`Browser QA timed out after ${qaTimeoutMs}ms.`)), qaTimeoutMs)),
+        ])
+        console.log(`Browser QA passed. Screenshots: ${path.relative(root, outDir)}`)
+        return
+      }
+    }
+    console.error(`Browser QA failed. Artifacts: ${path.relative(root, outDir)}`)
+    console.error(message)
+    process.exitCode = 1
+  }
 }
 
-process.exitCode = result.status ?? 1
+main()
