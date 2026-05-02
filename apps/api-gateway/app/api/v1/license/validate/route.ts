@@ -1,24 +1,89 @@
+import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const plans = {
+  starter: {
+    name: 'Starter',
+    price: '$299/mo',
+    limits: { domains: 3, apiRequestsPerDay: 1000, simulatedEventsPerRun: 10000 },
+  },
+  growth: {
+    name: 'Growth',
+    price: '$799/mo',
+    limits: { domains: 25, apiRequestsPerDay: 10000, simulatedEventsPerRun: 10000 },
+  },
+  enterprise: {
+    name: 'Enterprise',
+    price: 'Contact Sales',
+    limits: { domains: 250, apiRequestsPerDay: 100000, simulatedEventsPerRun: 10000 },
+  },
+}
+
+function hash(value: string) {
+  return crypto.createHash('sha256').update(value).digest('hex')
+}
+
+function configuredLicenses() {
+  const raw = process.env.SOVEREIGN_LICENSE_KEYS || ''
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function resolvePlan(key: string) {
+  if (/enterprise/i.test(key)) return plans.enterprise
+  if (/growth/i.test(key)) return plans.growth
+  return plans.starter
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
-  const configuredKey = process.env.SOVEREIGN_LICENSE_KEY || ''
-  const submittedKey = body.license_key || request.headers.get('x-sovereign-license') || configuredKey
-  const demoMode = process.env.SOVEREIGN_LICENSE_DEMO_MODE !== 'false'
+  const licenseKey = String(body.license_key || body.licenseKey || '')
+  const instanceId = String(body.instance_id || body.instanceId || 'unregistered-instance')
+  const configured = configuredLicenses()
+  const demoAllowed = process.env.NODE_ENV !== 'production' || process.env.MOCK_SMTP === 'true'
+  const active =
+    configured.length > 0
+      ? configured.includes(licenseKey)
+      : demoAllowed && /^se_(starter|growth|enterprise)_demo_[a-z0-9-]*$/i.test(licenseKey)
 
-  if (!submittedKey && !demoMode) {
-    return NextResponse.json({ valid: false, reason: 'LICENSE_REQUIRED' }, { status: 402 })
-  }
-  if (configuredKey && submittedKey !== configuredKey) {
-    return NextResponse.json({ valid: false, reason: 'LICENSE_INVALID' }, { status: 403 })
-  }
+  const plan = resolvePlan(licenseKey)
+  const generatedAt = new Date().toISOString()
 
+  return NextResponse.json(
+    {
+      ok: true,
+      active,
+      product: 'Sovereign Engine',
+      positioning: 'Deliverability Operating System (Outbound Revenue Protection Infrastructure)',
+      plan,
+      license: {
+        fingerprint: licenseKey ? hash(licenseKey).slice(0, 16) : null,
+        instance_id: instanceId,
+        validated_at: generatedAt,
+        expires_at: active ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+      },
+      acquisitionNote:
+        'Demo licenses are for acquisition validation only. Production buyers should configure SOVEREIGN_LICENSE_KEYS or replace this endpoint with their billing provider.',
+    },
+    { status: active ? 200 : 401 }
+  )
+}
+
+export async function GET() {
   return NextResponse.json({
-    valid: true,
-    mode: configuredKey ? 'LICENSED' : 'DEMO_VALIDATION_STUB',
-    plan: process.env.SOVEREIGN_LICENSE_PLAN || 'ENTERPRISE',
-    tenant_id: body.tenant_id || 'demo-tenant',
-    features: ['domain_protection', 'reputation_control', 'queue_telemetry', 'worker_scaling'],
-    note: 'License validation stub for SaaS monetization diligence.',
+    ok: true,
+    endpoint: '/api/v1/license/validate',
+    method: 'POST',
+    demoLicenseKeys: ['se_starter_demo_acquire', 'se_growth_demo_acquire', 'se_enterprise_demo_acquire'],
+    pricing: {
+      starter: plans.starter.price,
+      growth: plans.growth.price,
+      enterprise: plans.enterprise.price,
+    },
   })
 }

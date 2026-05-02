@@ -16,7 +16,7 @@ const plans = [
   },
   {
     name: 'Enterprise',
-    price: 'Custom',
+    price: 'Contact Sales',
     description: 'For teams treating deliverability as revenue infrastructure.',
     features: ['Everything in Growth', 'Custom sender topology', 'Dedicated warmup policy', 'Queue scaling proof', 'CTO handoff pack'],
   },

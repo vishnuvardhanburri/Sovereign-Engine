@@ -4,7 +4,10 @@
 
 - `architecture.md`: System boundaries and repo layout
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative
-- `acquisition/ACQUIRE_LISTING_COPY.md`: Acquire.com listing copy and buyer FAQ
+- `acquisition/ACQUIRE_LISTING_COPY.md`: Acquire.com listing copy
+- `acquisition/FAQ.md`: buyer FAQ with safe claim boundaries
+- `acquisition/BUYER_REPLY_SYSTEM.md`: initial reply, data-room reply, negotiation reply, and close scripts
+- `acquisition/PRICE_STRATEGY.md`: listing range, target close range, and negotiation anchors
 - `acquisition/QUEUE_SCALING_PROOF.md`: queue system and 10,000 event proof narrative
 - `flow.md`: Request and processing flow
 - `api.md`: API overview (gateway + validator)
@@ -34,6 +37,9 @@
 - `/api/handoff/data-room?domain=example.com`: downloadable buyer data-room ZIP
 - `/api/production/gate?domain=example.com`: demo-ready versus production-ready gate status
 - `/api/trust/summary?domain=example.com`: machine-readable trust certificate and safe buyer claims
+- `/demo/metrics`: synthetic 10,000-event proof metrics for acquisition demos
+- `/api/v1/license/validate`: demo license validation endpoint for monetization diligence
+- `/api/v1/api-keys`: demo API-key issue/list endpoint
 - `/api/demo/recording/prepare`: one-click safe recording preparation
 
 ## Local QA Commands

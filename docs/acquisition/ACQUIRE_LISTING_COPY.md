@@ -2,50 +2,59 @@
 
 ## Title
 
-Sovereign Engine: Deliverability Operating System for Outbound Revenue Teams
+Outbound Revenue Infrastructure (Deliverability OS + Reputation Control + Scaling Engine)
 
-## Hook
+## Short Hook
 
-Protects outbound revenue by preventing domain burn.
-Monitors inbox placement, reputation risk, queue pressure, and worker scaling.
-Used as an internal infrastructure system, now available for acquisition.
+Sovereign Engine protects outbound revenue by helping teams prevent domain burn, monitor provider risk, and control sending pressure before reputation damage compounds.
 
-## Full Description
+## Full Body
 
-Sovereign Engine is a deliverability operating system for outbound revenue teams. It is built around a simple buyer pain: outbound revenue depends on domains staying healthy and messages reaching inboxes.
+Sovereign Engine is a Deliverability Operating System: outbound revenue protection infrastructure for SaaS teams, agencies, and growth infrastructure companies.
 
-The system includes a Next.js command center, reputation dashboard, queue/worker telemetry, domain health monitoring, simulated inbox placement proof, API routes, worker services, and data-room automation.
+Most outbound products focus on composing or sending emails. Sovereign Engine sits lower in the stack. It gives operators a command center for reputation state, provider-lane health, queue pressure, worker status, production readiness, and compliance-first send controls.
 
-The acquisition angle is infrastructure value. A buyer can use the repo as the foundation for a SaaS product that helps sales teams, RevOps operators, agencies, or internal growth teams prevent domain burn, control sending pressure, and preserve outbound revenue.
+The value narrative is infrastructure vs. tool:
 
-No revenue, customer, or traction claims are made. Demo metrics are simulated and labeled as such. The product is packaged to show the working system, technical architecture, monetization path, deployment flow, and buyer diligence artifacts.
+- Tools help send campaigns.
+- Infrastructure protects the sending system those campaigns depend on.
+- Sovereign Engine is built to reduce domain-burn risk, expose delivery pressure early, and give buyers a foundation for a monetizable deliverability product.
 
-## Demand Narrative
+The repo includes:
 
-- Protects outbound revenue
-- Prevents domain burn
-- Preserves inbox placement
-- Replaces fragile sending setups
-- Gives buyers a faster path than building deliverability infrastructure from scratch
+- Next.js command center and dashboards
+- Reputation control-plane APIs
+- Health oracle and worker heartbeat monitoring
+- Redis/BullMQ queue architecture
+- Docker production stack
+- One-command launch proof via `pnpm launch:ready`
+- Data-room generator via `pnpm generate:data-room`
+- Simulated 10,000-event proof endpoint at `/demo/metrics`
+- API-key and license-validation demo endpoints
+- Buyer-facing docs, FAQ, and acquisition reply scripts
 
-## Acquisition Terms Positioning
+No revenue, customer, or traction claims are made. Pricing, metrics, and ROI views are presented as monetization signals and simulated diligence proof only.
 
-Single acquisition opportunity. Not positioned as a licensing campaign.
+Sovereign Engine is an internal infrastructure system, available for acquisition, and suitable for buyers who want to commercialize deliverability/reputation infrastructure faster than building it from scratch.
 
-## Buyer FAQ
+## Pricing Signal
 
-### Does this claim real revenue?
+- Starter: $299/mo
+- Growth: $799/mo
+- Enterprise: Contact Sales
 
-No. Pricing and demo metrics are monetization and diligence signals only.
+## Acquisition Status Line
 
-### What is the clear ROI?
+Available for acquisition. In discussions with buyers. Looking for a strategic acquirer who can connect distribution, customer relationships, or existing outbound infrastructure.
 
-Outbound teams lose revenue when domain reputation drops. Sovereign Engine gives them visibility and controls to reduce that risk.
+## ROI Translation
 
-### What does this replace?
+Outbound revenue is fragile when domains degrade. Sovereign Engine frames ROI around avoided domain burn, preserved inbox placement, reduced operator time, and faster deployment of deliverability infrastructure.
 
-Manual sending scripts, disconnected warmup tools, spreadsheet reputation tracking, and fragile queue setups.
+## Safe Claim Boundaries
 
-### What does a buyer get?
-
-The app, API routes, worker structure, docs, data-room generator, demo system, pricing page, and acquisition positioning.
+- Does not claim fake revenue.
+- Does not claim customers.
+- Does not claim guaranteed inbox placement.
+- Does not send real email in demo mode.
+- Requires buyer-owned domains, DNS, SMTP/ESP credentials, compliance policy, and validation keys for real production use.

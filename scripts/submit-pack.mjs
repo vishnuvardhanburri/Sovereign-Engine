@@ -80,6 +80,7 @@ if (!skipBuild) commandResults.push(['build', run('pnpm', ['-C', 'apps/api-gatew
 if (withQa) commandResults.push(['qa:demo', run('pnpm', ['qa:demo'], 'browser-qa.log')])
 
 await download('/api/health/stats?client_id=1', 'health-stats.json')
+await download('/demo/metrics', 'demo-metrics.json')
 await download('/api/setup/readiness?domain=sovereign-demo.example', 'readiness.json')
 await download('/api/reputation/monitor?client_id=1', 'reputation-monitor.json')
 await download('/api/activity/replay?client_id=1&limit=50', 'activity-replay.json')
@@ -92,6 +93,10 @@ copyIfExists('docs/PRODUCTION_SUBMISSION_CHECKLIST.md')
 copyIfExists('docs/TECHNICAL_PROOF_CHECKLIST.md')
 copyIfExists('docs/VIDEO_RECORDING_GUIDE.md')
 copyIfExists('docs/KNOWN_LIMITATIONS.md')
+copyIfExists('docs/acquisition/ACQUIRE_LISTING_COPY.md')
+copyIfExists('docs/acquisition/BUYER_REPLY_SYSTEM.md')
+copyIfExists('docs/acquisition/FAQ.md')
+copyIfExists('docs/acquisition/PRICE_STRATEGY.md')
 const copiedScreenshots = copyDirIfExists('output/playwright/demo-qa', 'screenshots')
 
 const failed = commandResults.filter(([, result]) => !result.ok)
@@ -109,6 +114,7 @@ const summary = [
   '## Included Evidence',
   '',
   '- health-stats.json',
+  '- demo-metrics.json',
   '- readiness.json',
   '- reputation-monitor.json',
   '- activity-replay.json',

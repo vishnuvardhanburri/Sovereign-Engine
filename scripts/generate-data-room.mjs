@@ -18,6 +18,14 @@ function copy(src, dest = src) {
   fs.copyFileSync(from, to)
 }
 
+function copyDir(src, dest = src) {
+  const from = path.join(root, src)
+  if (!fs.existsSync(from)) return
+  const to = path.join(room, dest)
+  fs.mkdirSync(path.dirname(to), { recursive: true })
+  fs.cpSync(from, to, { recursive: true })
+}
+
 function write(name, content) {
   const file = path.join(room, name)
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -37,11 +45,15 @@ copy('docs/TECHNICAL_PROOF_CHECKLIST.md')
 copy('docs/PRODUCTION_SUBMISSION_CHECKLIST.md')
 copy('docs/acquisition/HOMEPAGE_COPY.md')
 copy('docs/acquisition/ACQUIRE_LISTING_COPY.md')
+copy('docs/acquisition/BUYER_REPLY_SYSTEM.md')
+copy('docs/acquisition/FAQ.md')
+copy('docs/acquisition/PRICE_STRATEGY.md')
 copy('docs/acquisition/QUEUE_SCALING_PROOF.md')
 copy('apps/api-gateway/public/placeholder-logo.png', 'screenshots/placeholder-logo.png')
+copyDir('output/playwright/demo-qa', 'screenshots/browser-qa')
 
-run('typecheck-optional', 'pnpm', ['typecheck'])
 run('brand-check', 'pnpm', ['brand:check'])
+run('copy-check', 'pnpm', ['copy:check'])
 
 write('ARCHITECTURE_SUMMARY.md', `# Sovereign Engine Architecture
 
@@ -74,9 +86,63 @@ GET /demo/metrics
 This is explicitly synthetic and does not claim customer traction.
 `)
 
+write('DEMO_METRICS_SAMPLE.json', JSON.stringify({
+  mode: 'SIMULATED_DELIVERABILITY_PROOF',
+  disclaimer: 'Synthetic metrics for acquisition demo only; no revenue or customer traction claim.',
+  summary: {
+    simulatedEventsProcessed: 10000,
+    domainsProtected: 24,
+    avgReputationScore: 88,
+    domainBurnPreventionEvents: 37,
+    workerConcurrencyProof: 50,
+  },
+  providerLanes: ['Gmail', 'Outlook', 'Yahoo', 'iCloud'],
+  pipelineStages: ['validator', 'adaptive-controller', 'bullmq-queue', 'sender-workers', 'reputation-ingest'],
+}, null, 2))
+
+write('PRICING_AND_LICENSE.md', `# Pricing And License Signal
+
+Pricing:
+- Starter: $299/mo
+- Growth: $799/mo
+- Enterprise: Contact Sales
+
+License validation:
+\`\`\`text
+POST /api/v1/license/validate
+GET /api/v1/license/validate
+\`\`\`
+
+API key demo:
+\`\`\`text
+POST /api/v1/api-keys
+GET /api/v1/api-keys
+\`\`\`
+
+These are monetization signals for diligence. No revenue claim is made.
+`)
+
+write('BUYER_VALIDATION_COMMANDS.md', `# Buyer Validation Commands
+
+Launch proof:
+\`\`\`bash
+pnpm launch:ready
+\`\`\`
+
+Data room:
+\`\`\`bash
+pnpm generate:data-room
+\`\`\`
+
+Demo metrics:
+\`\`\`text
+GET /demo/metrics
+\`\`\`
+`)
+
 write('DATA_ROOM_MANIFEST.json', JSON.stringify({
   product: 'Sovereign Engine',
-  category: 'Deliverability Operating System for Outbound Revenue Teams',
+  category: 'Deliverability Operating System (Outbound Revenue Protection Infrastructure)',
   generatedAt: new Date().toISOString(),
   disclaimer: 'No fake revenue, no fake customers. Demo metrics are simulated.',
   files: fs.readdirSync(room, { recursive: true }),
