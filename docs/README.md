@@ -3,6 +3,9 @@
 ## Core
 
 - `architecture.md`: System boundaries and repo layout
+- `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative
+- `acquisition/ACQUIRE_LISTING_COPY.md`: Acquire.com listing copy and buyer FAQ
+- `acquisition/QUEUE_SCALING_PROOF.md`: queue system and 10,000 event proof narrative
 - `flow.md`: Request and processing flow
 - `api.md`: API overview (gateway + validator)
 - `BUYER_DEMO_GUIDE.md`: Five-minute mock-safe buyer demo flow
@@ -35,6 +38,9 @@
 
 ## Local QA Commands
 
+- `pnpm deploy:production`: starts services and verifies health metrics
+- `pnpm demo:investor`: opens reputation dashboard, live metrics, and worker-scaling proof
+- `pnpm generate:data-room`: exports acquisition data room under `output/data-room`
 - `pnpm launch:ready`: one-command launch/submission readiness check with production Docker stack and evidence logs
 - `pnpm launch:stop`: stops the launched production Docker stack
 - `pnpm launch:ready --with-browser`: same flow with browser QA screenshots

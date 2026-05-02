@@ -6,11 +6,11 @@
 ![Redis](https://img.shields.io/badge/redis-7-red)
 ![Status](https://img.shields.io/badge/status-production--grade-success)
 
-## Deliverability Operating System for Serious Outbound Teams
+## Deliverability Operating System for Outbound Revenue Teams
 
-Sovereign Engine is not a cold-email script.
+Sovereign Engine is a deliverability operating system for outbound revenue teams.
 
-It is a full-stack deliverability control system built for founders, agencies, and operators who need outbound infrastructure that can scale without burning domains, losing auditability, or turning into manual chaos.
+It protects outbound revenue by monitoring domain health, controlling sending pressure, tracking inbox-placement signals, and surfacing reputation risk before domains burn.
 
 The core idea is simple:
 
@@ -19,6 +19,39 @@ Validate -> Decide -> Queue -> Shape -> Send -> Measure -> Learn -> Protect
 ```
 
 Sovereign Engine is designed to make sending decisions like an infrastructure brain, not a blast tool.
+
+## Acquisition Positioning
+
+```text
+Protect outbound revenue before domains burn.
+Control inbox placement, sender reputation, and queue pressure from one operating system.
+Replace fragile sending setups with infrastructure built for revenue preservation.
+```
+
+Pricing signal:
+
+- Starter: `$299/mo`
+- Growth: `$799/mo`
+- Enterprise: `Custom`
+
+Buyer commands:
+
+```bash
+pnpm deploy:production   # start services and verify production-style health
+pnpm demo:investor       # open reputation dashboard, live metrics, and worker proof
+pnpm generate:data-room  # architecture, API docs, scaling proof, screenshots/assets
+```
+
+Monetization/API signals:
+
+```text
+GET  /demo/metrics
+POST /api/v1/license/validate
+GET  /api/v1/api-keys
+POST /api/v1/api-keys
+```
+
+No revenue, customer, or traction claims are made. Demo metrics are simulated and clearly labeled.
 
 ## Final Client Inputs
 
