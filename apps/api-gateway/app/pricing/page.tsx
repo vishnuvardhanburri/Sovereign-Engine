@@ -1,4 +1,4 @@
-import { CheckCircle2, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
 
 const plans = [
   {
@@ -20,6 +20,20 @@ const plans = [
     description: 'For agencies and growth infrastructure companies treating deliverability as revenue infrastructure.',
     features: ['Everything in Growth', '250k+/day architecture planning', 'Custom sender topology', 'Dedicated warmup policy', 'Queue scaling proof', 'CTO handoff pack'],
   },
+]
+
+const platformIncludes = [
+  'Command center for provider lanes, queue state, worker heartbeat, and reputation events.',
+  'Postgres, Redis/BullMQ, sender-worker, reputation-worker, audit trail, and health oracle.',
+  'Safe evaluation mode with 10,000-event mock proof and no external email traffic.',
+  'Production gate that blocks real sending until required operator inputs are configured.',
+]
+
+const operatorConnects = [
+  'Operator-owned sending domains, DNS records, legal sender identity, and HTTPS host.',
+  'SMTP/ESP credentials, API keys, production secrets, and provider quotas.',
+  'Consent-aware contact source, suppression list, unsubscribe policy, and compliance process.',
+  'Warmup/reputation policy appropriate for the operator’s own domains and sending history.',
 ]
 
 export const metadata = {
@@ -66,6 +80,36 @@ export default function PricingPage() {
         <p className="mt-8 text-sm text-slate-500">
           Pricing reflects an enterprise infrastructure layer, not commodity email volume. Real 100k+/day sending depends on operator-owned domains, ESP quotas, DNS, compliance policy, and warmup strategy. No revenue claims are implied.
         </p>
+
+        <div className="mt-12 grid gap-5 md:grid-cols-2">
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-6">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-emerald-200">
+              <ShieldCheck size={16} /> Included in Sovereign Engine
+            </div>
+            <ul className="mt-5 space-y-3 text-sm text-slate-200">
+              {platformIncludes.map((item) => (
+                <li key={item} className="flex gap-3">
+                  <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={16} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-6">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-amber-200">
+              <KeyRound size={16} /> Operator Connects
+            </div>
+            <ul className="mt-5 space-y-3 text-sm text-slate-200">
+              {operatorConnects.map((item) => (
+                <li key={item} className="flex gap-3">
+                  <LockKeyhole className="mt-0.5 shrink-0 text-amber-300" size={16} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </section>
     </main>
   )

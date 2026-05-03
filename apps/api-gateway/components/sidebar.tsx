@@ -54,7 +54,7 @@ const navItems: NavItem[] = [
   { href: '/analytics', label: 'Performance', icon: LineChart, prefetch: 'prefetchAnalytics' },
   { href: '/inbox', label: 'Conversations', icon: MessageCircle, prefetch: 'prefetchInbox' },
   { href: '/sent', label: 'Sent Mail', icon: Mail },
-  { href: '/handoff', label: 'Buyer Handoff', icon: PackageCheck },
+  { href: '/handoff', label: 'Deployment Handoff', icon: PackageCheck },
   { href: '/settings', label: 'Workspace', icon: Settings },
 ]
 
