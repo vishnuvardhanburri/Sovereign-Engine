@@ -16,9 +16,9 @@ No revenue is claimed. Pricing and ROI views are monetization signals only.
 
 The proof metrics are simulated and clearly labeled. The system generates seeded 10,000-event proof data to demonstrate architecture, queue flow, reputation scoring, and buyer diligence readiness.
 
-## Why could this be worth $120K-$200K?
+## Why could this be worth a $125K acquisition ask?
 
-The value is in saved build time, working infrastructure, technical breadth, acquisition packaging, and a clear market narrative: protecting outbound revenue before domain reputation damage becomes expensive.
+The value is in saved build time, working infrastructure, technical breadth, acquisition packaging, and a clear market narrative: protecting outbound revenue before domain reputation damage becomes expensive. The product is priced as premium infrastructure with Starter at $1,499/mo, Growth at $4,999/mo, and Enterprise from $12,000/mo.
 
 ## What is included?
 

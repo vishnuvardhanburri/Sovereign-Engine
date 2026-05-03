@@ -10,6 +10,13 @@ type LoginBody = {
   password?: string
 }
 
+function shouldUseSecureCookie() {
+  const appProtocol = (process.env.APP_PROTOCOL || '').trim().toLowerCase()
+  const appBaseUrl = (process.env.APP_BASE_URL || '').trim().toLowerCase()
+  if (appProtocol === 'http' || appBaseUrl.startsWith('http://')) return false
+  return process.env.NODE_ENV === 'production'
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as LoginBody
@@ -19,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'email and password are required' }, { status: 400 })
     }
 
-    const user = await query<{ id: number; email: string; password_hash: string | null }>(
+    const user = await query<{ id: number | string; email: string; password_hash: string | null }>(
       `SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 1`,
       [email]
     )
@@ -37,25 +44,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'invalid credentials' }, { status: 401 })
     }
 
+    const userId = Number(row.id)
+    if (!Number.isSafeInteger(userId)) {
+      return NextResponse.json({ error: 'invalid user id' }, { status: 500 })
+    }
+
     const clientId = appEnv.defaultClientId()
-    const token = createSessionToken(appEnv.authSecret(), { user_id: row.id, email: row.email, client_id: clientId })
-    const res = NextResponse.json({ ok: true, user: { id: row.id, email: row.email, client_id: clientId } })
+    const token = createSessionToken(appEnv.authSecret(), { user_id: userId, email: row.email, client_id: clientId })
+    const res = NextResponse.json({ ok: true, user: { id: userId, email: row.email, client_id: clientId } })
     res.cookies.set(getSessionCookieName(), token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: shouldUseSecureCookie(),
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
     })
     await recordAuditLog({
       request,
-      actorId: row.id,
+      actorId: userId,
       actorType: 'user',
       clientId,
       actionType: 'auth.login.success',
       resourceType: 'session',
-      resourceId: row.id,
-      details: { user_id: row.id, client_id: clientId },
+      resourceId: userId,
+      details: { user_id: userId, client_id: clientId },
     })
     return res
   } catch (error) {

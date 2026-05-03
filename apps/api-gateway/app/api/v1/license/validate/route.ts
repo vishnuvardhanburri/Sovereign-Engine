@@ -7,18 +7,18 @@ export const dynamic = 'force-dynamic'
 const plans = {
   starter: {
     name: 'Starter',
-    price: '$299/mo',
-    limits: { domains: 3, apiRequestsPerDay: 1000, simulatedEventsPerRun: 10000 },
+    price: '$1,499/mo',
+    limits: { domains: 10, apiRequestsPerDay: 10000, dailyControlPlaneVolume: 25000, simulatedEventsPerRun: 10000 },
   },
   growth: {
     name: 'Growth',
-    price: '$799/mo',
-    limits: { domains: 25, apiRequestsPerDay: 10000, simulatedEventsPerRun: 10000 },
+    price: '$4,999/mo',
+    limits: { domains: 75, apiRequestsPerDay: 100000, dailyControlPlaneVolume: 100000, simulatedEventsPerRun: 10000 },
   },
   enterprise: {
     name: 'Enterprise',
-    price: 'Contact Sales',
-    limits: { domains: 250, apiRequestsPerDay: 100000, simulatedEventsPerRun: 10000 },
+    price: 'From $12,000/mo',
+    limits: { domains: 250, apiRequestsPerDay: 500000, dailyControlPlaneVolume: 250000, simulatedEventsPerRun: 10000 },
   },
 }
 

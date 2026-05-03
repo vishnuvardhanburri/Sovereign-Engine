@@ -2,12 +2,12 @@
 
 ## Listing Range
 
-List between $150K and $200K.
+List at $125K if the marketplace needs a clean, credible anchor. Keep the private strategic range at $125K-$175K.
 
 Recommended public ask:
 
 ```text
-$175,000
+$125,000
 ```
 
 ## Target Close
@@ -15,7 +15,7 @@ $175,000
 Target close range:
 
 ```text
-$110,000-$160,000
+$100,000-$145,000
 ```
 
 ## Strategic Framing
@@ -38,12 +38,12 @@ The buyer is paying for:
 - Rebuild cost: senior engineering time across Next.js, Postgres, Redis/BullMQ, workers, dashboards, deployment, and docs
 - Speed: buyer can validate in minutes with `pnpm launch:ready`
 - Category: outbound revenue protection infrastructure
-- Monetization path: Starter $299/mo, Growth $799/mo, Enterprise contact sales
+- Monetization path: Starter $1,499/mo, Growth $4,999/mo, Enterprise from $12,000/mo
 - Distribution fit: most valuable to a buyer with existing outbound SaaS, agency, or RevOps customers
 
 ## Floor Guidance
 
-Avoid going below $100K unless the buyer offers exceptional speed, clean transfer terms, or strategic upside.
+Avoid going below $95K unless the buyer offers exceptional speed, clean transfer terms, or strategic upside.
 
 ## Close Script
 

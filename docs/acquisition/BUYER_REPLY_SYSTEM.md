@@ -40,7 +40,7 @@ The system is best evaluated as infrastructure: reputation state, pacing control
 
 I understand the concern around pre-revenue status. That is why I am pricing this as a technical asset and infrastructure acquisition, not a revenue multiple.
 
-The value is the time saved, working implementation, positioning, data-room readiness, and the ability for the buyer to plug it into existing distribution. My target close range is $110K-$160K, with listing expectations in the $150K-$200K range.
+The value is the time saved, working implementation, positioning, data-room readiness, and the ability for the buyer to plug it into existing distribution. I am anchoring the listing at $125K, with flexibility for a serious buyer who can close cleanly.
 
 If you can move quickly, I am open to structuring the close around repo transfer, documentation handoff, and a short technical walkthrough.
 

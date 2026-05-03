@@ -3,22 +3,22 @@ import { CheckCircle2, ShieldCheck } from 'lucide-react'
 const plans = [
   {
     name: 'Starter',
-    price: '$299/mo',
-    description: 'For lean outbound teams protecting one sending motion.',
-    features: ['Domain health monitoring', 'Reputation scoring', 'Queue visibility', 'Demo-safe API access'],
+    price: '$1,499/mo',
+    description: 'For serious outbound teams protecting early production sending infrastructure.',
+    features: ['Up to 25k/day control-plane proof', 'Domain health monitoring', 'Reputation scoring', 'Queue visibility', 'Demo-safe API access'],
   },
   {
     name: 'Growth',
-    price: '$799/mo',
-    description: 'For revenue teams scaling outbound across multiple domains.',
-    features: ['Everything in Starter', 'Worker health telemetry', 'Inbox placement simulation', 'Sending throttles', 'Reputation event logs'],
+    price: '$4,999/mo',
+    description: 'For teams operating 100k+/day outbound workflows across multiple domains.',
+    features: ['Everything in Starter', '100k+/day infrastructure control plane', 'Worker health telemetry', 'Inbox placement simulation', 'Sending throttles', 'Reputation event logs'],
     featured: true,
   },
   {
     name: 'Enterprise',
-    price: 'Contact Sales',
-    description: 'For teams treating deliverability as revenue infrastructure.',
-    features: ['Everything in Growth', 'Custom sender topology', 'Dedicated warmup policy', 'Queue scaling proof', 'CTO handoff pack'],
+    price: 'From $12,000/mo',
+    description: 'For agencies and growth infrastructure companies treating deliverability as revenue infrastructure.',
+    features: ['Everything in Growth', '250k+/day architecture planning', 'Custom sender topology', 'Dedicated warmup policy', 'Queue scaling proof', 'CTO handoff pack'],
   },
 ]
 
@@ -64,7 +64,7 @@ export default function PricingPage() {
           ))}
         </div>
         <p className="mt-8 text-sm text-slate-500">
-          Pricing is a monetization signal for buyer diligence. No revenue claims are implied.
+          Pricing is an infrastructure monetization signal for buyer diligence. Real 100k+/day sending depends on buyer-owned domains, ESP quotas, DNS, compliance policy, and warmup strategy. No revenue claims are implied.
         </p>
       </section>
     </main>

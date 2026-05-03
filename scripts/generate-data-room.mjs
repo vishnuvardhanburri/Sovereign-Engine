@@ -103,9 +103,9 @@ write('DEMO_METRICS_SAMPLE.json', JSON.stringify({
 write('PRICING_AND_LICENSE.md', `# Pricing And License Signal
 
 Pricing:
-- Starter: $299/mo
-- Growth: $799/mo
-- Enterprise: Contact Sales
+- Starter: $1,499/mo
+- Growth: $4,999/mo
+- Enterprise: From $12,000/mo
 
 License validation:
 \`\`\`text
@@ -119,7 +119,7 @@ POST /api/v1/api-keys
 GET /api/v1/api-keys
 \`\`\`
 
-These are monetization signals for diligence. No revenue claim is made.
+These are premium infrastructure monetization signals for diligence. No revenue claim is made.
 `)
 
 write('BUYER_VALIDATION_COMMANDS.md', `# Buyer Validation Commands

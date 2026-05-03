@@ -39,9 +39,11 @@ Sovereign Engine is an internal infrastructure system, available for acquisition
 
 ## Pricing Signal
 
-- Starter: $299/mo
-- Growth: $799/mo
-- Enterprise: Contact Sales
+- Starter: $1,499/mo
+- Growth: $4,999/mo
+- Enterprise: From $12,000/mo
+
+These numbers position Sovereign Engine as infrastructure, not commodity email sending. Actual 100k+/day sending requires buyer-owned domains, ESP or MTA capacity, DNS, compliance policy, and warmup.
 
 ## Acquisition Status Line
 

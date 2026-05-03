@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/store'
 import { AppLayout } from '@/components/app-layout'
@@ -13,20 +13,25 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading, bootstrap } = useAuth()
   const router = useRouter()
+  const [hasBootstrapped, setHasBootstrapped] = useState(false)
 
   useEffect(() => {
-    if (!user && !isLoading) {
-      void bootstrap()
+    if (user && !hasBootstrapped) {
+      setHasBootstrapped(true)
+      return
     }
-  }, [user, isLoading, bootstrap])
+    if (!user && !isLoading && !hasBootstrapped) {
+      void bootstrap().finally(() => setHasBootstrapped(true))
+    }
+  }, [user, isLoading, hasBootstrapped, bootstrap])
 
   useEffect(() => {
-    if (!user && !isLoading) {
+    if (!user && !isLoading && hasBootstrapped) {
       router.push('/login')
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, hasBootstrapped, router])
 
-  if (!user) {
+  if (!user || !hasBootstrapped) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="space-y-4 w-96">
