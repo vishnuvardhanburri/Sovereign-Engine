@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const productionInputs = [
-  'Buyer-owned sending domains with DNS access.',
+  'Operator-owned sending domains with DNS access.',
   'Verified SMTP/ESP credentials and approved sender identities.',
   'Validation provider key for production imports.',
   'Consent-aware contact source, suppression list, unsubscribe policy, and legal address.',
@@ -22,7 +22,7 @@ const notClaims = [
   'No promise that every message lands in the inbox.',
   'Provider policies remain mandatory for Gmail, Outlook, Yahoo, iCloud, and ESPs.',
   'No sending without lawful contacts and unsubscribe/suppression handling.',
-  'No automatic creation of buyer-owned DNS, SMTP, or legal business assets.',
+  'No automatic creation of operator-owned DNS, SMTP, or legal business assets.',
 ]
 
 export default function LimitsPage() {
@@ -31,12 +31,12 @@ export default function LimitsPage() {
       <div className="rounded-3xl border border-amber-500/15 bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.16),_transparent_34%),linear-gradient(135deg,_hsl(var(--card)),_hsl(var(--background)))] p-6">
         <Badge variant="outline" className="mb-3 border-amber-500/20 bg-amber-500/10 text-amber-500">
           <Scale className="mr-1 h-3.5 w-3.5" />
-          Honest diligence notes
+          Honest operating notes
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">Known Limits & Production Gate</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          This page is designed for serious buyers. It explains what the system can prove today, what must be supplied
-          by the buyer, and what claims Sovereign Engine intentionally does not make.
+          This page is designed for serious operators. It explains what the system can prove today, what must be supplied
+          by the operator, and what claims Sovereign Engine intentionally does not make.
         </p>
       </div>
 
@@ -45,7 +45,7 @@ export default function LimitsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-amber-500" />
-              Buyer Inputs Required
+              Operator Inputs Required
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">

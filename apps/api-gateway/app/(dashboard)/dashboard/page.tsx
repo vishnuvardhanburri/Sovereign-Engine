@@ -143,7 +143,7 @@ export default function DashboardPage() {
     }
   }
 
-  async function runBuyerDemo(action: 'start' | 'reset'): Promise<void> {
+  async function runEvaluationDemo(action: 'start' | 'reset'): Promise<void> {
     try {
       const res = await fetch(`/api/demo/buyer/${action}`, {
         method: 'POST',
@@ -152,17 +152,17 @@ export default function DashboardPage() {
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error || `Failed to ${action} buyer demo`)
+        throw new Error(body?.error || `Failed to ${action} evaluation demo`)
       }
       const body = (await res.json()) as { contactsImported?: number; removedContacts?: number }
       await readiness.refetch()
       if (action === 'start') {
-        toast.success(`Buyer demo armed. Sample contacts: ${body.contactsImported ?? 0}`)
+        toast.success(`Evaluation demo armed. Sample contacts: ${body.contactsImported ?? 0}`)
       } else {
-        toast.success(`Buyer demo reset. Removed contacts: ${body.removedContacts ?? 0}`)
+        toast.success(`Evaluation demo reset. Removed contacts: ${body.removedContacts ?? 0}`)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : `Failed to ${action} buyer demo`)
+      toast.error(err instanceof Error ? err.message : `Failed to ${action} evaluation demo`)
     }
   }
 
@@ -225,12 +225,12 @@ export default function DashboardPage() {
             <div>
               <Badge variant="outline" className="mb-3 border-cyan-500/25 bg-cyan-500/10 text-cyan-200">
                 <ClipboardCheck className="mr-1 h-3.5 w-3.5" />
-                Buyer demo command kit
+                Evaluation command kit
               </Badge>
               <h2 className="text-2xl font-semibold tracking-tight">One-click proof mode for Sovereign Engine</h2>
               <p className="mt-2 text-sm text-slate-300">
                 Seed demo-safe reputation lanes, sample contacts, audit events, and readiness evidence before recording
-                the Acquire/client walkthrough. No real email is sent.
+                the technical walkthrough. No real email is sent.
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-[0.7fr_1.3fr]">
@@ -256,15 +256,15 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <Button className="gap-2" onClick={() => runBuyerDemo('start')}>
+                <Button className="gap-2" onClick={() => runEvaluationDemo('start')}>
                   <Rocket className="h-4 w-4" />
-                  Start Buyer Demo
+                  Start Evaluation Demo
                 </Button>
                 <Button variant="secondary" className="gap-2" onClick={prepareRecordingDemo}>
                   <Video className="h-4 w-4" />
                   Prepare Recording
                 </Button>
-                <Button variant="outline" className="gap-2" onClick={() => runBuyerDemo('reset')}>
+                <Button variant="outline" className="gap-2" onClick={() => runEvaluationDemo('reset')}>
                   <RefreshCcw className="h-4 w-4" />
                   Reset Demo
                 </Button>

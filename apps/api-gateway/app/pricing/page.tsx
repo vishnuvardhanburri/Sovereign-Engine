@@ -64,7 +64,7 @@ export default function PricingPage() {
           ))}
         </div>
         <p className="mt-8 text-sm text-slate-500">
-          Pricing is an infrastructure monetization signal for buyer diligence. Real 100k+/day sending depends on buyer-owned domains, ESP quotas, DNS, compliance policy, and warmup strategy. No revenue claims are implied.
+          Pricing reflects an enterprise infrastructure layer, not commodity email volume. Real 100k+/day sending depends on operator-owned domains, ESP quotas, DNS, compliance policy, and warmup strategy. No revenue claims are implied.
         </p>
       </section>
     </main>

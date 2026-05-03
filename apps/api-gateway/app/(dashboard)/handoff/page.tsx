@@ -3,9 +3,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-const buyerNeeds = [
+const operatorNeeds = [
   'A VPS or container host with Docker enabled.',
-  'A sending domain the buyer controls for DNS records.',
+  'A sending domain the operator controls for DNS records.',
   'SMTP or ESP credentials from a compliant provider.',
   'Optional validation and enrichment API keys for production hygiene.',
   'A first admin user and production secrets generated during setup.',
@@ -14,7 +14,7 @@ const buyerNeeds = [
 const readyInsideSystem = [
   'Dashboard command center, health oracle, audit chain, and RaaS API.',
   'Postgres schema, Redis/BullMQ queueing, sender-worker and reputation-worker wiring.',
-  'Demo mode, buyer stress proof scripts, and safe sample import flow.',
+  'Demo mode, stress proof scripts, and safe sample import flow.',
   'Production docker-compose, setup.sh, and environment validation commands.',
   'SOC2-style tamper-evident logs and secret-vault support.',
 ]
@@ -24,8 +24,8 @@ const commands = [
   'bash setup.sh',
   'docker compose -f docker-compose.prod.yml up -d --build',
   'pnpm db:init',
-  'pnpm public-api-key:create -- --name buyer-demo --tier pro',
-  'pnpm demo:buyer:stress',
+  'pnpm public-api-key:create -- --name operator-demo --tier pro',
+  'STRESS_COUNT=10000 pnpm stress:test',
 ]
 
 export default function HandoffPage() {
@@ -34,11 +34,11 @@ export default function HandoffPage() {
       <div className="rounded-3xl border bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.18),_transparent_34%),linear-gradient(135deg,_hsl(var(--card)),_hsl(var(--background)))] p-6">
         <Badge variant="outline" className="mb-3 border-teal-500/20 bg-teal-500/10 text-teal-600">
           <PackageCheck className="mr-1 h-3 w-3" />
-          Buyer handoff
+          Deployment handoff
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight">Production Handoff Center</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          The system is packaged so a buyer can connect their infrastructure and credentials quickly. Real sending stays locked behind domain ownership, SMTP credentials, and compliance checks.
+          The system is packaged so an operator can connect infrastructure and credentials quickly. Real sending stays locked behind domain ownership, SMTP credentials, and compliance checks.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild>
@@ -78,11 +78,11 @@ export default function HandoffPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-amber-500" />
-              Buyer Provides
+              Operator Provides
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {buyerNeeds.map((item) => (
+            {operatorNeeds.map((item) => (
               <div key={item} className="flex gap-3 rounded-2xl border p-3 text-sm">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-500" />
                 {item}
@@ -116,13 +116,13 @@ export default function HandoffPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <p>
-              Sovereign Engine should be delivered with demo mode on, seeded proof data available, and production sending disabled until the buyer connects verified domains and provider credentials.
+              Sovereign Engine should run with demo mode on, seeded proof data available, and production sending disabled until verified domains and provider credentials are connected.
             </p>
             <p>
-              That keeps the product credible during diligence while preventing accidental traffic, credential exposure, or non-compliant sending.
+              That keeps the product credible during technical review while preventing accidental traffic, credential exposure, or non-compliant sending.
             </p>
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-700">
-              Recommended handoff posture: demo-ready today, production-ready after buyer DNS and SMTP secrets are connected.
+              Recommended posture: evaluation mode is ready today; real sending unlocks after verified DNS, SMTP secrets, and compliance inputs are connected.
             </div>
           </CardContent>
         </Card>

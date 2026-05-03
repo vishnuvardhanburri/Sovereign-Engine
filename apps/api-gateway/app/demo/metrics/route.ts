@@ -31,15 +31,15 @@ export async function GET() {
   ]
   return NextResponse.json({
     mode: 'SIMULATED_DELIVERABILITY_PROOF',
-    disclaimer: 'Synthetic metrics for acquisition demo only; no revenue or customer traction claim.',
+    disclaimer: 'Synthetic metrics for evaluation mode only; no revenue or customer traction claim.',
     generatedAt: now.toISOString(),
     positioning: 'Deliverability Operating System (Outbound Revenue Protection Infrastructure)',
-    targetBuyers: ['outbound SaaS teams', 'agencies', 'growth infrastructure companies'],
+    targetOperators: ['outbound SaaS teams', 'agencies', 'growth infrastructure companies'],
     pricingSignal: {
       starter: '$1,499/mo',
       growth: '$4,999/mo',
       enterprise: 'From $12,000/mo',
-      note: 'Premium infrastructure pricing signal for acquisition diligence; not a revenue claim.',
+      note: 'Premium infrastructure pricing signal for technical evaluation; not a revenue claim.',
     },
     summary: {
       simulatedEventsProcessed: 10000,

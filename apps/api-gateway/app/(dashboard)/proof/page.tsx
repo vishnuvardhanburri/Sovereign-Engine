@@ -99,9 +99,9 @@ export default function ProofPage() {
         </Badge>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Buyer Proof Board</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Technical Proof Board</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-300">
-              One page for the recording and diligence call: infrastructure health, worker heartbeat, queue state,
+              One page for the recording and technical review: infrastructure health, worker heartbeat, queue state,
               readiness score, and the exact commands used to prove scale safely.
             </p>
           </div>
@@ -196,10 +196,10 @@ export default function ProofPage() {
           <CardContent>
             <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-4 text-sm text-slate-100">
               <code>{[
-                'pnpm demo:buyer',
+                'pnpm launch:ready',
                 'curl http://localhost:3400/api/health/stats?client_id=1',
                 'curl http://localhost:3400/api/setup/readiness?domain=sovereign-demo.example',
-                'curl -I http://localhost:3400/api/due-diligence/report?domain=sovereign-demo.example',
+                'curl http://localhost:3400/api/trust/summary?domain=sovereign-demo.example',
                 'STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:test',
               ].join('\n')}</code>
             </pre>
@@ -210,7 +210,7 @@ export default function ProofPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5 text-violet-400" />
-              Buyer Narrative
+              Operator Narrative
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -219,11 +219,11 @@ export default function ProofPage() {
               evidence: health, queues, workers, auditability, readiness, and repeatable setup.
             </p>
             <p>
-              Use it in the video after the dashboard hook, then open the Data Room ZIP and PDF packet to show that
-              handoff is packaged.
+              Use it in the video after the dashboard hook, then open the deployment ZIP and PDF packet to show that
+              the system is packaged.
             </p>
             <Button variant="outline" asChild>
-              <Link href="/handoff">Open Buyer Handoff</Link>
+              <Link href="/handoff">Open Deployment Handoff</Link>
             </Button>
           </CardContent>
         </Card>

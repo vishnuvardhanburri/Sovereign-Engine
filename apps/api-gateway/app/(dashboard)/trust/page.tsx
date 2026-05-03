@@ -28,12 +28,12 @@ const trustPillars = [
   },
   {
     title: 'Tamper-Evident Audit',
-    detail: 'Privileged actions are written as append-only events with chain hashes for diligence and incident review.',
+    detail: 'Privileged actions are written as append-only events with chain hashes for technical review and incident response.',
     icon: FileCheck2,
   },
   {
     title: 'Live Health Oracle',
-    detail: 'Postgres, Redis, BullMQ, worker heartbeats, queue pressure, and latency are exposed for buyer proof.',
+    detail: 'Postgres, Redis, BullMQ, worker heartbeats, queue pressure, and latency are exposed for operator proof.',
     icon: RadioTower,
   },
   {
@@ -53,7 +53,7 @@ const safeLanguage = [
   'Provider-aware reputation control',
   'Safe ramping and emergency braking',
   'Compliance-first outbound infrastructure',
-  'Due-diligence-ready audit and health proof',
+  'Technical-validation-ready audit and health proof',
 ]
 
 const avoidLanguage = [
@@ -67,11 +67,11 @@ const avoidLanguage = [
 const platformHandles = [
   'Database schema, queues, dashboards, workers, audit logs, health checks, and mock stress proof.',
   'Provider-lane controls for Gmail, Outlook, Yahoo, and iCloud.',
-  'Buyer handoff ZIP, due-diligence PDF, setup report, and production gate JSON.',
+  'Deployment ZIP, technical PDF, setup report, and production gate JSON.',
 ]
 
-const buyerSupplies = [
-  'Buyer-owned domains, DNS access, legal sending identity, and public dashboard host.',
+const operatorSupplies = [
+  'Operator-owned domains, DNS access, legal sending identity, and public dashboard host.',
   'SMTP/ESP credentials, validation provider key, production secrets, and HTTPS.',
   'Consent-aware contact source, suppression list, unsubscribe policy, and legal address where required.',
 ]
@@ -88,8 +88,8 @@ export default function TrustCenterPage() {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Enterprise Trust Center</h1>
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-              The buyer-safe proof surface for Sovereign Engine: what is production-ready, what stays gated, what
-              the client must connect, and what claims the product intentionally avoids.
+              The safe proof surface for Sovereign Engine: what is built, what stays gated, what
+              operators must connect, and what claims the product intentionally avoids.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -130,7 +130,7 @@ export default function TrustCenterPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-emerald-500" />
-              Say This In Buyer Calls
+              Safe Product Language
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -180,11 +180,11 @@ export default function TrustCenterPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-violet-500" />
-              Buyer Connects After Handoff
+              Operator Connects After Handoff
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {buyerSupplies.map((item) => (
+            {operatorSupplies.map((item) => (
               <div key={item} className="rounded-2xl border p-3 text-sm text-muted-foreground">{item}</div>
             ))}
           </CardContent>
