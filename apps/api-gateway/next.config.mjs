@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // Allow Playwright (and other tools) to hit the dev server on 127.0.0.1 without
+  // Next.js dev-origin restrictions breaking hydration/HMR clients.
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   typescript: {
     ignoreBuildErrors: true,
   },

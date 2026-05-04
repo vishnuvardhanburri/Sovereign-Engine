@@ -34,6 +34,10 @@ const demoEnv = {
   APP_PROTOCOL: 'http',
   MOCK_SMTP: 'true',
   MOCK_SMTP_FASTLANE: 'true',
+  // In local dev there is no supervisor to restart a rotated worker.
+  // Disable rotation so the 10K mock stress proof completes reliably.
+  WORKER_ROTATION_SEND_LIMIT: '0',
+  WORKER_ROTATION_MAX_AGE_MS: '0',
   ZEROBOUNCE_API_KEY: 'mock',
   SMTP_HOST: 'mock.local',
   SMTP_PORT: '587',
@@ -170,6 +174,32 @@ async function waitForUrl(url, timeoutMs = 60_000) {
   throw new Error(`Timed out waiting for ${url}`)
 }
 
+async function postJson(url, payload, timeoutMs = 20_000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload ?? {}),
+      signal: controller.signal,
+    })
+    const text = await response.text().catch(() => '')
+    let json = null
+    try {
+      json = text ? JSON.parse(text) : null
+    } catch {
+      // ignore
+    }
+    if (!response.ok || json?.ok !== true) {
+      throw new Error(`POST ${url} failed: HTTP ${response.status}${text ? `; ${text.slice(0, 240)}` : ''}`)
+    }
+    return json
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function openUrl(url) {
   if (process.platform === 'darwin') {
     spawnSync('open', [url], { stdio: 'ignore' })
@@ -216,6 +246,11 @@ async function main() {
     ]
     writePids(pids)
     await waitForUrl(`http://127.0.0.1:${port}/api/health/stats?client_id=1`)
+
+    // Seed demo data so /reputation and /reputation?investor=1 look "alive" immediately.
+    await postJson(`http://127.0.0.1:${port}/api/demo/recording/prepare`, { client_id: 1 }).catch((err) => {
+      console.warn('[buyer-demo] recording prepare failed (continuing)', err?.message ?? String(err))
+    })
   }
 
   if (stressCount > 0) {

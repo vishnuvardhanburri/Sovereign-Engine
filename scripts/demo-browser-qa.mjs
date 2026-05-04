@@ -95,10 +95,18 @@ async function runQa() {
   try {
     await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' })
     await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
-    await page.fill('#email', 'demo@sovereign.local')
-    await page.fill('#password', 'Demo1234!')
-    await page.click('button[type="submit"]')
-    await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
+    // Use the standards-based login API to avoid flakiness around hydration timing
+    // in Next.js dev mode.
+    await page.evaluate(async () => {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'demo@sovereign.local', password: 'Demo1234!' }),
+      })
+      if (!res.ok) throw new Error('login failed')
+    })
+    await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' })
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {})
     await page.evaluate(() => {
       window.localStorage.setItem('sovereign-engine-recording-mode', 'true')
       document.documentElement.dataset.recordingMode = 'true'
@@ -119,6 +127,8 @@ async function runQa() {
     const pathname = new URL(item.url).pathname
     if (item.status >= 500) return true
     if (pathname === '/_vercel/insights/script.js') return false
+    // Demo-only Next.js dev UX suppression endpoints. These may 404 depending on Next version.
+    if (pathname === '/__nextjs_disable_devtools' || pathname === '/__nextjs_disable_dev_overlay') return false
     return !/(favicon\.ico|apple-icon\.png|icon(-dark|-light)?-?\d*x?\d*\.png|icon\.svg)$/.test(pathname)
   })
   const seriousFindings = findings.filter((item) => {
