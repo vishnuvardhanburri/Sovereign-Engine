@@ -289,6 +289,8 @@ async function main() {
 
   const urls = [
     `http://localhost:${port}/login`,
+    `http://localhost:${port}/dashboard`,
+    `http://localhost:${port}/proof`,
     `http://localhost:${port}/reputation`,
     `http://localhost:${port}/reputation?investor=1`,
     `http://localhost:${port}/api/health/stats?client_id=1`,

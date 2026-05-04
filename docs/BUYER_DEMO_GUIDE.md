@@ -112,12 +112,17 @@ horizontal worker scale.
 
 ## Recording Checklist
 
-- Show the login screen with Sovereign Engine branding.
-- Show `/reputation` lane states and the live brain feed.
-- Show `/api/health/stats?client_id=1`.
-- Run the stress command.
-- Return to `/reputation?investor=1`.
-- Close with the production handoff story: Docker, setup script, health oracle, audit chain, and buyer-owned SMTP/DNS/domain assets.
+- Start with a 5-second clean-start proof: run `docker ps` before launching the demo.
+- Show the login screen with Sovereign Engine branding, then the dashboard (visual hook).
+- Show `/proof` (credibility): worker heartbeat + queue health tiles + readiness board.
+- Run the stress command and keep `/proof` + `/reputation?investor=1` visible while it runs (power + system reacting).
+- Close by showing the Data Room ZIP download (trust + closure), then `ls -lt output/data-room/*.zip | head -n 3` in terminal.
+
+Buyer-safe line to say once:
+
+```text
+This is mock-safe validation, but the architecture is designed for production-scale deployment on real infrastructure.
+```
 
 ## Generated Clip Pack
 

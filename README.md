@@ -226,6 +226,7 @@ This makes the system inspectable during demos, due diligence, and production op
 Run the full mock-safe buyer demo prep:
 
 ```bash
+docker ps
 pnpm demo:buyer
 ```
 
