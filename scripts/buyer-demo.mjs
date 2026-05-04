@@ -75,6 +75,25 @@ function canRun(command) {
   return spawnSync('sh', ['-lc', `command -v ${command} >/dev/null 2>&1`]).status === 0
 }
 
+function hasICloudDatalessFiles() {
+  if (process.platform !== 'darwin') return { ok: true, dataless: [] }
+  // On macOS with iCloud “Optimize Mac Storage”, some files can be offloaded and marked
+  // `dataless`. Reading them can block/hang, which breaks the buyer demo scripts.
+  const criticalFiles = [
+    path.join(root, 'apps', 'api-gateway', 'lib', 'backend.ts'),
+    path.join(root, 'apps', 'api-gateway', 'lib', 'db.ts'),
+    path.join(root, 'apps', 'api-gateway', 'lib', 'env.ts'),
+    path.join(root, 'workers', 'sender-worker', 'index.ts'),
+  ]
+  const dataless = []
+  for (const file of criticalFiles) {
+    if (!fs.existsSync(file)) continue
+    const res = spawnSync('ls', ['-lO', file], { encoding: 'utf8' })
+    if (res.status === 0 && /\bdataless\b/.test(res.stdout || '')) dataless.push(path.relative(root, file))
+  }
+  return { ok: dataless.length === 0, dataless }
+}
+
 function readPids() {
   if (!fs.existsSync(pidFile)) return []
   try {
@@ -220,6 +239,17 @@ async function main() {
   log('Mode: mock-safe; no real email is sent.')
 
   ensureEnvFile()
+
+  const datalessCheck = hasICloudDatalessFiles()
+  if (!datalessCheck.ok) {
+    log('\nBuyer demo failed: iCloud offloaded files detected (macOS dataless flag).')
+    log('These files must be downloaded locally before running the demo:')
+    for (const file of datalessCheck.dataless) log(`- ${file}`)
+    log('\nFix:')
+    log('- Move the repo out of iCloud-synced Desktop/Documents, OR')
+    log('- In Finder: right-click the repo folder -> Download Now')
+    throw new Error('iCloud dataless files detected')
+  }
 
   if (!skipInstall && !fs.existsSync(path.join(root, 'node_modules'))) {
     run('pnpm', ['install'])
