@@ -4,12 +4,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Hide Next.js dev UI indicators (the small "N" / build activity badge).
+  // Hide Next.js dev UI indicators (the small "N" badge).
   // Useful for clean demos/screenshares.
-  devIndicators: {
-    buildActivity: false,
-    appIsrStatus: false,
-  },
+  // (Next.js 16+ supports `devIndicators: false`.)
+  devIndicators: false,
   images: {
     unoptimized: true,
   },
