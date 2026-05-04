@@ -97,7 +97,8 @@ function runStep(name, command, commandArgs, options = {}) {
   })
   const output = `${result.stdout || ''}${result.stderr || ''}${result.error ? `\n${result.error.message}` : ''}`
   const durationMs = Date.now() - started
-  const ok = result.status === 0
+  const rawOk = result.status === 0
+  const ok = rawOk || Boolean(options.allowFailure)
   writeLog(name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase(), output)
   results.push({
     name,
@@ -108,14 +109,21 @@ function runStep(name, command, commandArgs, options = {}) {
     log: `${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}.log`,
   })
 
-  if (ok) {
+  if (rawOk) {
     log(`[PASS] ${name} (${Math.round(durationMs / 1000)}s)`)
-  } else {
-    const tail = output.trim().split('\n').slice(-28).join('\n')
-    log(`[FAIL] ${name} (${Math.round(durationMs / 1000)}s)`)
-    if (tail) log(tail)
-    throw new Error(`${name} failed. See output/launch-ready/latest/${results.at(-1).log}`)
+    return
   }
+
+  const tail = output.trim().split('\n').slice(-28).join('\n')
+  if (options.allowFailure) {
+    log(`[WARN] ${name} (${Math.round(durationMs / 1000)}s)`)
+    if (tail) log(tail)
+    return
+  }
+
+  log(`[FAIL] ${name} (${Math.round(durationMs / 1000)}s)`)
+  if (tail) log(tail)
+  throw new Error(`${name} failed. See output/launch-ready/latest/${results.at(-1).log}`)
 }
 
 async function ensureDocker() {
@@ -136,9 +144,19 @@ async function ensureDocker() {
   let result = check()
   let output = `${result.stdout || ''}${result.stderr || ''}`
   if (result.status !== 0 && process.platform === 'darwin') {
+    if (/manually paused/i.test(output)) {
+      log('Docker Desktop is paused. Restarting Docker Desktop to unpause...')
+      spawnSync('docker', ['desktop', 'restart'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' })
+      await new Promise((resolve) => setTimeout(resolve, 5_000))
+      result = check()
+      output = `${result.stdout || ''}${result.stderr || ''}`
+    }
     log('Docker is not running. Opening Docker Desktop and waiting...')
     spawnSync('open', ['-a', 'Docker'], { stdio: 'ignore' })
-    const deadline = Date.now() + 180_000
+    // Docker Desktop can take several minutes after a cold boot or upgrade.
+    // We wait longer here so "pnpm launch:ready" behaves like a single-command
+    // buyer proof instead of failing spuriously.
+    const deadline = Date.now() + 600_000
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 3_000))
       result = check()
@@ -162,7 +180,9 @@ async function ensureDocker() {
   })
   if (!ok) {
     log(`[FAIL] ${name} (${Math.round(durationMs / 1000)}s)`)
-    throw new Error('Docker daemon is not running. Start Docker Desktop, then run pnpm launch:ready again.')
+    throw new Error(
+      'Docker daemon is not running. Start Docker Desktop (approve any first-run prompts), then run pnpm launch:ready again.'
+    )
   }
   log(`[PASS] ${name} (${Math.round(durationMs / 1000)}s)`)
 }
@@ -335,7 +355,10 @@ async function main() {
     runStep('Production dry-run gate', 'node', ['scripts/final-production-check.mjs', `--env=${path.relative(root, demoEnvFile)}`])
     runStep('Stop stale local demo', 'pnpm', ['demo:buyer:stop'])
     await ensureDocker()
-    runStep('Stop previous launch stack', 'pnpm', ['launch:stop'])
+    // On some machines Docker Desktop can transiently return EOF while restarting.
+    // Stopping the previous stack is best-effort: we still continue and rely on
+    // compose up + health checks to prove readiness.
+    runStep('Stop previous launch stack', 'pnpm', ['launch:stop'], { allowFailure: true })
     runStep('Production compose config', 'docker', ['compose', '-f', 'docker-compose.prod.yml', 'config'])
     runStep('Start production Docker stack', 'docker', [
       'compose',
