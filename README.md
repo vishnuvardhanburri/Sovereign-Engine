@@ -43,6 +43,130 @@ Validate -> Decide -> Queue -> Shape -> Send -> Measure -> Learn -> Protect
 
 Sovereign Engine is designed to make sending decisions like an infrastructure brain, not a blast tool.
 
+## Architecture Diagrams
+
+### System Architecture
+
+```mermaid
+flowchart LR
+  subgraph "Client Inputs"
+    DNS["DNS + Domains"]
+    SMTP["SMTP / ESP Credentials"]
+    Contacts["Consent-Aware Contacts"]
+  end
+
+  subgraph "Sovereign Engine Command Layer"
+    UI["Next.js Command Center"]
+    API["API Gateway"]
+    RaaS["Public Reputation API"]
+    Health["Health Oracle"]
+  end
+
+  subgraph "Control Plane"
+    Validator["Validator Pipeline"]
+    Brain["Adaptive Control Engine"]
+    Reputation["Reputation Worker"]
+    Audit["Tamper-Evident Audit Log"]
+  end
+
+  subgraph "Data Plane"
+    Queue["BullMQ / Redis Queues"]
+    Sender["Stateless Sender Workers"]
+    Events["Event Ingestor"]
+  end
+
+  subgraph "State Layer"
+    Postgres[("Postgres")]
+    Redis[("Redis")]
+    Evidence["Evidence + Data Room"]
+  end
+
+  DNS --> Validator
+  SMTP --> Sender
+  Contacts --> Validator
+  UI --> API
+  API --> Brain
+  API --> Health
+  API --> RaaS
+  Validator --> Queue
+  Brain --> Queue
+  Brain --> Reputation
+  Queue --> Sender
+  Sender --> Events
+  Events --> Reputation
+  Reputation --> Brain
+  Brain --> Audit
+  API --> Postgres
+  Queue --> Redis
+  Reputation --> Postgres
+  Audit --> Postgres
+  Health --> Postgres
+  Health --> Redis
+  Postgres --> Evidence
+```
+
+### Adaptive Send Flow
+
+```mermaid
+sequenceDiagram
+  participant Operator as Operator
+  participant Gateway as API Gateway
+  participant Validator as Validator
+  participant Brain as Adaptive Brain
+  participant Queue as Redis Queue
+  participant Worker as Sender Worker
+  participant State as Reputation State
+  participant Audit as Audit Trail
+
+  Operator->>Gateway: Start mock-safe campaign or proof run
+  Gateway->>Validator: Check consent, suppression, and hygiene
+  Validator->>Brain: Submit eligible work with domain/provider context
+  Brain->>State: Read lane health and safe-ramp limits
+  Brain->>Queue: Schedule work with controlled pacing
+  Brain->>Audit: Record throttle or override decision
+  Queue->>Worker: Dispatch eligible job
+  Worker->>State: Report success, deferral, bounce, or block signal
+  State->>Brain: Update lane health
+  Brain-->>Queue: Continue, throttle, or pause lane
+```
+
+### Buyer Due-Diligence Mindmap
+
+```mermaid
+mindmap
+  root((Sovereign Engine))
+    code
+      API Gateway
+      Reputation Worker
+      Sender Workers
+      Docker Compose
+      Stress Test Tooling
+    docs
+      Compliance Mapping
+      Threat Model
+      Operating Guide
+      Acquisition FAQ
+      Buyer Replies
+    evidence
+      100 Point Scorecard
+      Health Oracle Proof
+      Queue Scaling Proof
+      Demo Video
+      Data Room Generator
+    controls
+      Provider Lanes
+      Safe Ramp
+      Emergency Brake
+      Manual Override
+      Audit Chain
+    buyer value
+      Revenue Protection
+      Lower Domain Risk
+      Faster Diligence
+      Five Minute Setup
+      Mock-Safe Proof
+```
+
 ## Acquisition Positioning
 
 ```text
