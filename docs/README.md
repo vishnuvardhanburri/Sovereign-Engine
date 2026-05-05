@@ -8,6 +8,7 @@
 - `demo.html`: clean video page for GitHub Pages-style viewing
 - `compliance/README.md`: SOC2-oriented compliance mapping (not a certification claim)
 - `threat-model/README.md`: Threat model summary for due diligence
+- `governance/`: license, security policy, and contribution notes
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative
 - `acquisition/ACQUIRE_LISTING_COPY.md`: Acquire.com listing copy
 - `acquisition/FAQ.md`: buyer FAQ with safe claim boundaries

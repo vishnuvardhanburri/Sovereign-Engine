@@ -15,7 +15,11 @@
 └── evidence/   100/100 Test Reports, proof scorecard, and repeatable validation
 ```
 
-Commands in this README can be run from the repo root. The root `package.json` and `setup.sh` delegate into `code/`.
+Run command examples from the hardened engine folder:
+
+```bash
+cd code
+```
 
 ## Acquisition Demo Video
 
@@ -56,6 +60,7 @@ Pricing signal:
 Buyer commands:
 
 ```bash
+cd code
 pnpm deploy:production   # start services and verify production-style health
 pnpm demo:investor       # open reputation dashboard, live metrics, and worker proof
 pnpm generate:data-room  # architecture, API docs, scaling proof, screenshots/assets
@@ -325,6 +330,7 @@ Included services:
 Fresh machine:
 
 ```bash
+cd code
 ./setup.sh
 ```
 
@@ -353,7 +359,7 @@ pnpm worker:sender
 Final production check:
 
 ```bash
-cp code/configs/env/.env.production.example code/.env
+cp configs/env/.env.production.example .env
 pnpm prod:check
 pnpm prod:check:real
 ```
@@ -462,7 +468,7 @@ Sender workers are stateless, which means capacity can be added by starting more
 
 ## Demo Checklist for a Buyer
 
-1. Run `./setup.sh`.
+1. Run `cd code && ./setup.sh`.
 2. Open `/dashboard`.
 3. Open `/reputation`.
 4. Start reputation and sender workers.
