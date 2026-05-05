@@ -8,9 +8,12 @@
 
 ## Repository Layout
 
-- `code/`: the hardened engine (API gateway, workers, Docker, scripts)
-- `docs/`: compliance mapping, threat model, and buyer diligence docs
-- `evidence/`: 100-point proof scorecard and repeatable buyer-safe proof references
+```text
+/
+├── code/       The hardened private repo: API gateway, workers, Docker, scripts
+├── docs/       Compliance Mapping, Threat Model, and buyer diligence docs
+└── evidence/   100/100 Test Reports, proof scorecard, and repeatable validation
+```
 
 Commands in this README can be run from the repo root. The root `package.json` and `setup.sh` delegate into `code/`.
 
