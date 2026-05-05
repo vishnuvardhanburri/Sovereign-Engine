@@ -4,6 +4,8 @@
 
 - `architecture.md`: System boundaries and repo layout
 - `OPERATING_GUIDE.md`: Production operating guide (one-command start + ramp + scaling proof)
+- `demo.md`: buyer demo video, proof flow, and acquisition walkthrough
+- `demo.html`: clean video page for GitHub Pages-style viewing
 - `compliance/README.md`: SOC2-oriented compliance mapping (not a certification claim)
 - `threat-model/README.md`: Threat model summary for due diligence
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative

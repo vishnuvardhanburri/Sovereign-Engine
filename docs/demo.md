@@ -2,6 +2,14 @@
 
 This demo flow is designed to show proof, safety, and explainability in minutes.
 
+## Acquisition Demo Video
+
+[![Sovereign Engine acquisition demo](assets/sovereign-engine-acquisition-demo-poster.jpg)](assets/sovereign-engine-acquisition-demo.mp4)
+
+Watch the full buyer demo: [sovereign-engine-acquisition-demo.mp4](assets/sovereign-engine-acquisition-demo.mp4)
+
+This recording is a mock-safe acquisition walkthrough. It shows the command center, health proof, stress-test flow, and data-room handoff without sending real email.
+
 ## 1) Live System Health
 
 **Endpoint**

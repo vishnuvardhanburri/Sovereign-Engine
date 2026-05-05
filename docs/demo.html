@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sovereign Engine Acquisition Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #101820;
+        --muted: #5d6a73;
+        --line: #d8dee4;
+        --surface: #f7f9fb;
+        --accent: #126b5d;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: clamp(30px, 5vw, 56px);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      p {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.6;
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        margin-top: 26px;
+        border: 1px solid var(--line);
+        background: #000;
+      }
+
+      a {
+        color: var(--accent);
+        font-weight: 650;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sovereign Engine Acquisition Demo</h1>
+      <p>
+        Mock-safe buyer walkthrough showing the command center, health proof,
+        stress-test flow, and data-room handoff. No real email is sent in this
+        recording.
+      </p>
+      <video
+        controls
+        preload="metadata"
+        poster="assets/sovereign-engine-acquisition-demo-poster.jpg"
+        src="assets/sovereign-engine-acquisition-demo.mp4"
+      ></video>
+      <p>
+        Direct download:
+        <a href="assets/sovereign-engine-acquisition-demo.mp4">
+          sovereign-engine-acquisition-demo.mp4
+        </a>
+      </p>
+    </main>
+  </body>
+</html>

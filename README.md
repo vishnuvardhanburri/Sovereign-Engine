@@ -14,6 +14,14 @@
 
 Commands in this README can be run from the repo root. The root `package.json` and `setup.sh` delegate into `code/`.
 
+## Acquisition Demo Video
+
+[![Sovereign Engine acquisition demo](docs/assets/sovereign-engine-acquisition-demo-poster.jpg)](docs/assets/sovereign-engine-acquisition-demo.mp4)
+
+Watch the buyer demo: [sovereign-engine-acquisition-demo.mp4](docs/assets/sovereign-engine-acquisition-demo.mp4)
+
+Demo page for GitHub/due diligence: [docs/demo.md](docs/demo.md)
+
 ## Deliverability Operating System for Outbound Revenue Teams
 
 Sovereign Engine is a deliverability operating system for outbound revenue teams.
