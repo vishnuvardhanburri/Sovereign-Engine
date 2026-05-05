@@ -32,7 +32,7 @@ These are the only mandatory outside pieces for a real production send:
 2. Copy the production template:
 
 ```bash
-cp configs/env/.env.production.example .env
+cp code/configs/env/.env.production.example code/.env
 ```
 
 3. Fill real values in `.env`.
@@ -45,7 +45,7 @@ pnpm prod:check:real
 5. Start the stack in safe mock mode first:
 
 ```bash
-MOCK_SMTP=true docker compose -f docker-compose.prod.yml up -d --build --scale sender-worker=2
+MOCK_SMTP=true docker compose -f code/docker-compose.prod.yml up -d --build --scale sender-worker=2
 ```
 
 6. Create an admin user:
@@ -72,7 +72,7 @@ STRESS_COUNT=500 STRESS_TIMEOUT_MS=60000 pnpm stress:test
 10. Switch to real sending only after DNS and provider verification pass:
 
 ```bash
-MOCK_SMTP=false docker compose -f docker-compose.prod.yml up -d --scale sender-worker=2
+MOCK_SMTP=false docker compose -f code/docker-compose.prod.yml up -d --scale sender-worker=2
 pnpm prod:check:real
 ```
 
@@ -93,8 +93,8 @@ Run these before submission or client handoff:
 
 ```bash
 pnpm typecheck
-pnpm -C workers/sender-worker build
-docker compose -f docker-compose.prod.yml config >/tmp/sovereign-compose.yml
+pnpm -C code/workers/sender-worker build
+docker compose -f code/docker-compose.prod.yml config >/tmp/sovereign-compose.yml
 pnpm prod:check
 curl -sS "$APP_PROTOCOL://$APP_DOMAIN/api/health/stats?client_id=1"
 ```
@@ -123,4 +123,3 @@ The final submission story is:
 ```text
 Sovereign Engine is deployable with one Docker Compose stack, inspectable through health endpoints, provable through mock stress tests, and ready for real sending once the client supplies domains, DNS, SMTP/ESP credentials, validation keys, and compliant contact data.
 ```
-

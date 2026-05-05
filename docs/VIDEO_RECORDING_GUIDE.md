@@ -31,7 +31,7 @@ http://localhost:3400/api/health/stats?client_id=1
 
 ## Record Four Clips
 
-Save the clips under `output/video-clips/` with these exact base names:
+Save the clips under `code/output/video-clips/` with these exact base names:
 
 ```text
 01-login-dashboard-hook.mp4
@@ -99,8 +99,8 @@ pnpm demo:package
 Output:
 
 ```text
-output/video-clips/sovereign-engine-demo-clips.zip
-output/video-clips/SOVEREIGN_ENGINE_VIDEO_MANIFEST.md
+code/output/video-clips/sovereign-engine-demo-clips.zip
+code/output/video-clips/SOVEREIGN_ENGINE_VIDEO_MANIFEST.md
 ```
 
 The packager excludes files with legacy brand names in their filenames and refuses to create the bundle if the recommended MP4 clips are missing.
@@ -116,5 +116,5 @@ This includes full architecture, deployment, and due diligence artifacts—so bu
 And show the newest ZIP in terminal:
 
 ```bash
-ls -lt output/data-room/*.zip | head -n 3
+ls -lt code/output/data-room/*.zip | head -n 3
 ```

@@ -9,7 +9,7 @@ const bundleName = 'sovereign-engine-demo-clips.zip'
 const bundlePath = path.join(clipsDir, bundleName)
 const manifestPath = path.join(clipsDir, 'SOVEREIGN_ENGINE_VIDEO_MANIFEST.md')
 const force = process.argv.includes('--force')
-const freshnessReference = path.join(root, 'README.md')
+const freshnessReference = path.join(root, '..', 'README.md')
 
 const requiredPrefixes = [
   '01-command-center-login-reputation',

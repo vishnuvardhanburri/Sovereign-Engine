@@ -12,6 +12,7 @@ next.user-config.*
 .env.*
 .env*.local
 package-lock.json
+/pnpm-lock.yaml
 
 # Keep example env files committed
 !.env.example

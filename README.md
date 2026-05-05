@@ -6,6 +6,14 @@
 ![Redis](https://img.shields.io/badge/redis-7-red)
 ![Status](https://img.shields.io/badge/status-production--grade-success)
 
+## Repository Layout
+
+- `code/`: the hardened engine (API gateway, workers, Docker, scripts)
+- `docs/`: compliance mapping, threat model, and buyer diligence docs
+- `evidence/`: 100-point proof scorecard and repeatable buyer-safe proof references
+
+Commands in this README can be run from the repo root. The root `package.json` and `setup.sh` delegate into `code/`.
+
 ## Deliverability Operating System for Outbound Revenue Teams
 
 Sovereign Engine is a deliverability operating system for outbound revenue teams.
@@ -173,7 +181,7 @@ pnpm launch:ready
 
 This starts the safe production Docker stack, checks buyer-facing copy, runs the production dry-run gate,
 validates Docker Compose, starts the API and workers, runs live endpoint checks, and creates an evidence pack
-under `output/launch-ready/latest`.
+under `code/output/launch-ready/latest`.
 
 For deeper local checks, run:
 
@@ -284,13 +292,13 @@ Real sending should always follow DNS authentication, consent, suppression, prov
 Run the production stack:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build --scale sender-worker=2
+docker compose -f code/docker-compose.prod.yml up -d --build --scale sender-worker=2
 ```
 
 Scale workers horizontally:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --scale sender-worker=8
+docker compose -f code/docker-compose.prod.yml up -d --scale sender-worker=8
 ```
 
 Included services:
@@ -334,7 +342,7 @@ pnpm worker:sender
 Final production check:
 
 ```bash
-cp configs/env/.env.production.example .env
+cp code/configs/env/.env.production.example code/.env
 pnpm prod:check
 pnpm prod:check:real
 ```

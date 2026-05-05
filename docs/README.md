@@ -3,6 +3,9 @@
 ## Core
 
 - `architecture.md`: System boundaries and repo layout
+- `OPERATING_GUIDE.md`: Production operating guide (one-command start + ramp + scaling proof)
+- `compliance/README.md`: SOC2-oriented compliance mapping (not a certification claim)
+- `threat-model/README.md`: Threat model summary for due diligence
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative
 - `acquisition/ACQUIRE_LISTING_COPY.md`: Acquire.com listing copy
 - `acquisition/FAQ.md`: buyer FAQ with safe claim boundaries
@@ -46,16 +49,16 @@
 
 - `pnpm deploy:production`: starts services and verifies health metrics
 - `pnpm demo:investor`: opens reputation dashboard, live metrics, and worker-scaling proof
-- `pnpm generate:data-room`: exports acquisition data room under `output/data-room`
+- `pnpm generate:data-room`: exports acquisition data room under `code/output/data-room`
 - `pnpm launch:ready`: one-command launch/submission readiness check with production Docker stack and evidence logs
 - `pnpm launch:stop`: stops the launched production Docker stack
 - `pnpm launch:ready --with-browser`: same flow with browser QA screenshots
 - `pnpm launch:ready --with-build`: same flow with an additional local production build
 - `pnpm launch:ready --with-typecheck`: same flow with an additional local TypeScript pass
 - `pnpm doctor:demo`: checks Docker, Postgres, Redis, env, schema, demo user, key pages, PDF/ZIP, and worker heartbeat
-- `pnpm qa:demo`: browser QA with screenshots under `output/playwright/demo-qa`
+- `pnpm qa:demo`: browser QA with screenshots under `code/output/playwright/demo-qa`
 - `pnpm copy:check`: guards buyer-facing surfaces from risky or misleading acquisition language
-- `pnpm submit:pack`: exports final evidence under `output/submit-pack`
+- `pnpm submit:pack`: exports final evidence under `code/output/submit-pack`
 
 ## Legacy (historical)
 

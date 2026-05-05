@@ -145,9 +145,9 @@ const issues = []
   const productionFiles = [
     'docker-compose.prod.yml',
     'Dockerfile',
-    'DOCS.md',
-    'README.md',
-    'docs/PRODUCTION_SUBMISSION_CHECKLIST.md',
+    '../docs/OPERATING_GUIDE.md',
+    '../README.md',
+    '../docs/PRODUCTION_SUBMISSION_CHECKLIST.md',
   ]
   for (const file of productionFiles) {
     if (!fs.existsSync(path.join(root, file))) {

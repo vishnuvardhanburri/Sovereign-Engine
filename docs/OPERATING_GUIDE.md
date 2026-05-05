@@ -18,13 +18,13 @@ Think of it like a traffic control tower for outbound email:
 For a production-style Docker deployment:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build --scale sender-worker=2
+docker compose -f code/docker-compose.prod.yml up -d --build --scale sender-worker=2
 ```
 
 Scale sender capacity by increasing the worker count:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --scale sender-worker=6
+docker compose -f code/docker-compose.prod.yml up -d --scale sender-worker=6
 ```
 
 Sender workers are stateless. Any worker can process any eligible send job because the source of truth lives in Postgres and Redis. This means workers can run on one EC2 instance, many EC2 instances, or any container platform that can reach the same Postgres and Redis.
@@ -43,7 +43,7 @@ The system is intended to be 99% ready from the repository. The remaining 1% mus
 Use this template for production:
 
 ```bash
-cp configs/env/.env.production.example .env
+cp code/configs/env/.env.production.example code/.env
 ```
 
 Then run:
@@ -197,7 +197,7 @@ Set `REQUIRE_INTERNAL_TLS=true` in environments where managed Postgres/Redis and
 
 ### Log Rotation And Cold Archive
 
-`docker-compose.prod.yml` uses Docker JSON log rotation by default:
+`code/docker-compose.prod.yml` uses Docker JSON log rotation by default:
 
 ```text
 LOG_MAX_SIZE=50m
@@ -208,7 +208,7 @@ For cold storage, enable the ops profile with an S3 destination:
 
 ```bash
 LOG_ARCHIVE_S3_URI=s3://your-bucket/sovereign-engine/prod \
-docker compose -f docker-compose.prod.yml --profile ops up -d log-archive
+docker compose -f code/docker-compose.prod.yml --profile ops up -d log-archive
 ```
 
 The archive worker compresses Docker JSON logs older than `LOG_ARCHIVE_AFTER_DAYS=30` and uploads them with `DEEP_ARCHIVE` storage class by default.
@@ -218,13 +218,13 @@ The archive worker compresses Docker JSON logs older than `LOG_ARCHIVE_AFTER_DAY
 Compose deployments can scale manually:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --scale sender-worker=8
+docker compose -f code/docker-compose.prod.yml up -d --scale sender-worker=8
 ```
 
 The optional ops profile includes a sender autoscaler that watches `/api/health/stats`, BullMQ backlog, database queue depth, live worker heartbeats, Docker CPU, and Docker memory. It scales up quickly on backlog pressure and only scales down after several idle windows, which avoids flapping during bursty campaigns:
 
 ```bash
-docker compose -f docker-compose.prod.yml --profile ops up -d sender-autoscaler
+docker compose -f code/docker-compose.prod.yml --profile ops up -d sender-autoscaler
 ```
 
 Useful knobs:
@@ -250,7 +250,7 @@ Recovery point objective: Postgres should be backed up continuously or at least 
 Recovery time objective: A warm standby host can restore from Postgres backup, attach Redis, pull the repository, and run:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f code/docker-compose.prod.yml up -d --build
 ```
 
 Business continuity plan:
@@ -419,7 +419,7 @@ CONTENT_MUTATION_ENABLED=false
 To run the optional local model in Docker:
 
 ```bash
-docker compose -f docker-compose.prod.yml --profile content-ai up -d ollama ollama-pull
+docker compose -f code/docker-compose.prod.yml --profile content-ai up -d ollama ollama-pull
 ```
 
 Then enable mutation for sender workers:
@@ -427,7 +427,7 @@ Then enable mutation for sender workers:
 ```bash
 CONTENT_MUTATION_ENABLED=true \
 CONTENT_MUTATION_ENDPOINT=http://ollama:11434/api/generate \
-docker compose -f docker-compose.prod.yml up -d --scale sender-worker=2
+docker compose -f code/docker-compose.prod.yml up -d --scale sender-worker=2
 ```
 
 How it works:

@@ -64,24 +64,25 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: code/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm -C code install --frozen-lockfile
 
       - name: Typecheck API Gateway
-        run: pnpm typecheck
+        run: pnpm -C code typecheck
 
       - name: Brand check
-        run: pnpm brand:check
+        run: pnpm -C code brand:check
 
       - name: Buyer-safe copy check
-        run: pnpm copy:check
+        run: pnpm -C code copy:check
 
       - name: Production dry-run gate
-        run: pnpm prod:check
+        run: pnpm -C code prod:check
 
       - name: Build API Gateway
-        run: pnpm -C apps/api-gateway build
+        run: pnpm -C code build
 
       - name: Docker image builds
-        run: docker build . --tag sovereign-engine:ci
+        run: docker build ./code --tag sovereign-engine:ci

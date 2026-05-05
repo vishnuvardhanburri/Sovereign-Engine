@@ -21,9 +21,9 @@ Expected result: no matches.
 ## Build Checks
 
 ```bash
-pnpm install
+pnpm -C code install
 pnpm typecheck
-pnpm -C workers/sender-worker build
+pnpm -C code/workers/sender-worker build
 DATABASE_URL='postgresql://postgres:password@127.0.0.1:5432/sovereign_engine?sslmode=disable' \
 REDIS_URL='redis://127.0.0.1:6379' \
 APP_DOMAIN='localhost:3400' \
@@ -33,13 +33,13 @@ CRON_SECRET='cron_secret_012345678901234567890123456789' \
 SECURITY_KILL_SWITCH_TOKEN='kill_switch_012345678901234567890123456789' \
 SECRET_MASTER_KEY='master_key_012345678901234567890123456789' \
 MOCK_SMTP='true' \
-pnpm -C apps/api-gateway build
+pnpm build
 ```
 
 ## Infrastructure Checks
 
 ```bash
-docker compose -f docker-compose.prod.yml config >/tmp/sovereign-compose.yml
+docker compose -f code/docker-compose.prod.yml config >/tmp/sovereign-compose.yml
 pnpm prod:check
 ```
 

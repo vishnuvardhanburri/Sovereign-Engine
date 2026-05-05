@@ -71,9 +71,10 @@ Run these before a buyer call:
 
 ```bash
 pnpm typecheck
-pnpm -C workers/sender-worker build
-docker compose -f docker-compose.prod.yml config >/tmp/sovereign-compose.yml
-node scripts/final-production-check.mjs --env=configs/env/.env.production.example
+pnpm -C code/workers/sender-worker build
+docker compose -f code/docker-compose.prod.yml config >/tmp/sovereign-compose.yml
+cp code/configs/env/.env.production.example code/.env
+pnpm prod:check
 ```
 
 The example production env should block because secrets are placeholders. That is expected and proves the readiness checker catches unsafe launches.
@@ -95,7 +96,7 @@ SMTP_USER='apikey' \
 SMTP_PASS='SG.live-production-token-0123456789' \
 MOCK_SMTP='false' \
 SEND_ALLOW_UNKNOWN_VALIDATION='false' \
-node scripts/final-production-check.mjs --real-send
+pnpm prod:check:real
 ```
 
 ## What Not To Claim
@@ -116,7 +117,7 @@ horizontal worker scale.
 - Show the login screen with Sovereign Engine branding, then the dashboard (visual hook).
 - Show `/proof` (credibility): worker heartbeat + queue health tiles + readiness board.
 - Run the stress command and keep `/proof` + `/reputation?investor=1` visible while it runs (power + system reacting).
-- Close by showing the Data Room ZIP download (trust + closure), then `ls -lt output/data-room/*.zip | head -n 3` in terminal.
+- Close by showing the Data Room ZIP download (trust + closure), then `ls -lt code/output/data-room/*.zip | head -n 3` in terminal.
 
 Buyer-safe line to say once:
 
@@ -136,6 +137,6 @@ pnpm demo:package
 This creates:
 
 ```text
-output/video-clips/sovereign-engine-demo-clips.zip
-output/video-clips/SOVEREIGN_ENGINE_VIDEO_MANIFEST.md
+code/output/video-clips/sovereign-engine-demo-clips.zip
+code/output/video-clips/SOVEREIGN_ENGINE_VIDEO_MANIFEST.md
 ```
