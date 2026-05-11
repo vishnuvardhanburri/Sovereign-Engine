@@ -7,6 +7,7 @@ import './globals.css'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' })
+const analyticsEnabled = process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === 'true'
 
 export const metadata: Metadata = {
   title: 'Sovereign Engine',
@@ -53,7 +54,7 @@ export default function RootLayout({
         <Providers>
           <NextDevToolsOff />
           {children}
-          {process.env.NODE_ENV === 'production' && <Analytics />}
+          {analyticsEnabled && <Analytics />}
         </Providers>
       </body>
     </html>

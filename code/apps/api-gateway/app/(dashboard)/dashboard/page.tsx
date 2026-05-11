@@ -35,6 +35,7 @@ import { AnimatedNumber } from '@/components/animated-number'
 import { ExecutiveView } from '@/components/executive-view'
 import { ForecastPanel } from '@/components/forecast-panel'
 import { WorkerLiveMap } from '@/components/worker-live-map'
+import { OperationsCommandCenter } from '@/components/enterprise/operations-command-center'
 import { Archive, ArrowRight, ClipboardCheck, Download, PauseCircle, PlayCircle, RefreshCcw, Rocket, ShieldAlert, Video, Zap } from 'lucide-react'
 
 type DashboardReadiness = {
@@ -218,6 +219,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <OperationsCommandCenter />
 
       <Card className="overflow-hidden border-cyan-500/15 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_34%),linear-gradient(135deg,_rgba(15,23,42,0.92),_rgba(2,6,23,0.98))]">
         <CardContent className="p-5">

@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { OperationsCommandCenter } from '@/components/enterprise/operations-command-center'
 import {
   Table,
   TableBody,
@@ -321,6 +322,8 @@ export default function ReputationDashboardPage() {
           {data?.generatedAt ? <span>Last sample {shortTime(data.generatedAt)}</span> : null}
         </div>
       </div>
+
+      <OperationsCommandCenter mode="reputation" />
 
       <Card>
         <CardContent className="pt-6">

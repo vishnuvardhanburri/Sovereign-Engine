@@ -16,6 +16,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { DemoModeIndicator } from '@/components/demo-mode-indicator'
 import { RecordingModeToggle } from '@/components/recording-mode-toggle'
 import { ProductionReadinessBadge } from '@/components/production-readiness-badge'
+import { NotificationCenter } from '@/components/enterprise/notification-center'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -55,6 +56,10 @@ export function Header() {
 
       <div className="mr-2">
         <ProductionReadinessBadge />
+      </div>
+
+      <div className="mr-2 hidden md:block">
+        <NotificationCenter />
       </div>
 
       <div className="mr-2 hidden sm:block">

@@ -10,6 +10,7 @@
 - `cross-platform/README.md`: web, desktop, mobile, realtime, SDK, and release architecture
 - `cross-platform/SECURITY_CHECKLIST.md`: device session, signed action, IPC, and mobile hardening checklist
 - `cross-platform/RELEASE_PIPELINE.md`: web, desktop, mobile, SDK, and native packaging release plan
+- `ux/ENTERPRISE_UX_SYSTEM.md`: enterprise UX principles, realtime layer, motion system, and cross-platform interaction polish
 - `threat-model/README.md`: Threat model summary for due diligence
 - `governance/`: license, security policy, and contribution notes
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative

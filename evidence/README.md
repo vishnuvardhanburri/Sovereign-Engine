@@ -2,6 +2,12 @@
 
 This folder contains committed, buyer-safe proof artifacts and repeatable test/run instructions.
 
+Committed evidence:
+
+- `SCORECARD_100.md`: 100/100 buyer proof scorecard
+- `ENTERPRISE_QA_REPORT.md`: enterprise QA and chaos validation summary
+- `ENTERPRISE_UX_READINESS.md`: enterprise realtime UX readiness summary
+
 Generated (not committed) evidence is written under:
 
 - `code/output/launch-ready/latest` (one-command launch readiness evidence)
@@ -26,4 +32,3 @@ STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:test
 pnpm generate:data-room
 ls -lt code/output/data-room/*.zip | head -n 3
 ```
-

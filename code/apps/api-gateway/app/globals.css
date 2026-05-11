@@ -37,6 +37,16 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --enterprise-surface: oklch(0.985 0 0 / 0.78);
+  --enterprise-surface-strong: oklch(1 0 0 / 0.92);
+  --enterprise-border: oklch(0.72 0.02 240 / 0.24);
+  --enterprise-info: oklch(0.63 0.14 232);
+  --enterprise-success: oklch(0.69 0.16 154);
+  --enterprise-warning: oklch(0.78 0.16 72);
+  --enterprise-critical: oklch(0.66 0.22 25);
+  --motion-fast: 160ms;
+  --motion-base: 260ms;
+  --motion-slow: 520ms;
 }
 
 .dark {
@@ -73,6 +83,13 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+  --enterprise-surface: oklch(0.18 0.025 260 / 0.78);
+  --enterprise-surface-strong: oklch(0.14 0.03 260 / 0.94);
+  --enterprise-border: oklch(0.82 0.04 240 / 0.15);
+  --enterprise-info: oklch(0.72 0.14 232);
+  --enterprise-success: oklch(0.77 0.16 154);
+  --enterprise-warning: oklch(0.84 0.16 72);
+  --enterprise-critical: oklch(0.7 0.22 25);
 }
 
 @theme inline {
@@ -162,4 +179,74 @@ html[data-recording-mode='true'] [data-nextjs-dialog] {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+@keyframes sovereign-scanline {
+  0% {
+    transform: translateX(-18%);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateX(118%);
+    opacity: 0;
+  }
+}
+
+@keyframes sovereign-heartbeat {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.62;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes sovereign-grid-drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 44px 44px;
+  }
+}
+
+.enterprise-surface {
+  background: var(--enterprise-surface);
+  border-color: var(--enterprise-border);
+  box-shadow: 0 24px 80px rgb(2 6 23 / 0.18);
+}
+
+.enterprise-scanline::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(125 211 252 / 0.16), transparent);
+  transform: translateX(-18%);
+  animation: sovereign-scanline 5.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.enterprise-grid-drift {
+  animation: sovereign-grid-drift 26s linear infinite;
+}
+
+.enterprise-heartbeat {
+  animation: sovereign-heartbeat 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }
