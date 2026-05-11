@@ -24,6 +24,7 @@
 - `TECHNICAL_PROOF_CHECKLIST.md`: Build, proof, and due-diligence checks
 - `VIDEO_RECORDING_GUIDE.md`: Clip names, recording flow, and packaging
 - `PRODUCTION_SUBMISSION_CHECKLIST.md`: Final handoff checklist
+- `qa/README.md`: enterprise QA, chaos, and production-stack stress commands
 
 ## Buyer-Facing Dashboard Routes
 
@@ -63,6 +64,8 @@
 - `pnpm launch:ready --with-typecheck`: same flow with an additional local TypeScript pass
 - `pnpm doctor:demo`: checks Docker, Postgres, Redis, env, schema, demo user, key pages, PDF/ZIP, and worker heartbeat
 - `pnpm qa:demo`: browser QA with screenshots under `code/output/playwright/demo-qa`
+- `pnpm qa:enterprise -- --chaos`: enterprise QA harness with Redis restart recovery check
+- `STRESS_COUNT=10000 STRESS_TIMEOUT_MS=60000 pnpm stress:prod`: production-stack 10K mock pipeline proof
 - `pnpm copy:check`: guards buyer-facing surfaces from risky or misleading acquisition language
 - `pnpm platform:check`: verifies desktop/mobile/SDK clients do not contain queue or sending logic
 - `pnpm submit:pack`: exports final evidence under `code/output/submit-pack`

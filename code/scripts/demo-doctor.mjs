@@ -7,9 +7,12 @@ const root = path.resolve(import.meta.dirname, '..')
 const args = process.argv.slice(2)
 const flags = new Set(args)
 const baseUrlArg = args.find((arg) => arg.startsWith('--base-url='))
+const composeFileArg = args.find((arg) => arg.startsWith('--compose-file='))
 const baseUrl = (baseUrlArg?.slice('--base-url='.length) || process.env.DEMO_BASE_URL || 'http://127.0.0.1:3400').replace(/\/$/, '')
+const composeFile = composeFileArg?.slice('--compose-file='.length) || process.env.DOCTOR_COMPOSE_FILE || 'docker-compose.yml'
 const outputJson = flags.has('--json')
 const skipHttp = flags.has('--skip-http')
+const composeArgs = ['compose', '-f', composeFile]
 
 const demoDefaults = {
   DATABASE_URL: 'postgresql://postgres:password@127.0.0.1:5432/sovereign_engine?sslmode=disable',
@@ -87,7 +90,7 @@ async function checkDb(env) {
   const schemaSql = `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN (${requiredTables
     .map((table) => `'${table}'`)
     .join(',')}) ORDER BY table_name;`
-  const schema = runText('docker', ['compose', 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', dbName, '-tAc', schemaSql])
+  const schema = runText('docker', [...composeArgs, 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', dbName, '-tAc', schemaSql])
   if (!schema.ok) {
     add('Postgres connection', 'fail', schema.output || 'Could not query Postgres.', 'Run docker compose up -d postgres redis and pnpm db:init.')
     return
@@ -97,7 +100,7 @@ async function checkDb(env) {
   add('Postgres schema', missing.length ? 'fail' : 'pass', missing.length ? `Missing tables: ${missing.join(', ')}` : `Required tables present (${found.size} checked).`, 'Run pnpm db:init.')
 
   const user = runText('docker', [
-    'compose',
+    ...composeArgs,
     'exec',
     '-T',
     'postgres',
@@ -118,7 +121,7 @@ async function checkRedis(env) {
     add('Redis ping', 'fail', 'Docker is required for the portable Redis check.', 'Start Docker Desktop or inspect Redis manually.')
     return
   }
-  const ping = runText('docker', ['compose', 'exec', '-T', 'redis', 'redis-cli', 'ping'])
+  const ping = runText('docker', [...composeArgs, 'exec', '-T', 'redis', 'redis-cli', 'ping'])
   add('Redis ping', ping.output.trim() === 'PONG' ? 'pass' : 'fail', `Redis responded: ${ping.output || 'empty'}.`, 'Run docker compose up -d redis and verify REDIS_URL.')
 }
 
@@ -180,7 +183,7 @@ async function main() {
   }
 
   if (commandExists('docker')) {
-    const compose = runText('docker', ['compose', 'ps'])
+    const compose = runText('docker', [...composeArgs, 'ps'])
     const output = compose.output.toLowerCase()
     add('Docker compose', compose.ok ? 'pass' : 'fail', compose.ok ? 'docker compose ps completed.' : compose.output, 'Start Docker Desktop.')
     add('Docker Postgres', output.includes('postgres') && output.includes('healthy') ? 'pass' : 'fail', 'Postgres service should be healthy.', 'Run docker compose up -d postgres redis.')
@@ -200,6 +203,7 @@ async function main() {
     ok: failed.length === 0,
     generatedAt: new Date().toISOString(),
     baseUrl,
+    composeFile,
     passed: checks.filter((check) => check.status === 'pass').length,
     failed: failed.length,
     checks,

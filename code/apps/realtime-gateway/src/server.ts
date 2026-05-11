@@ -57,14 +57,15 @@ server.on('upgrade', (request, socket) => {
   const clientId = url.searchParams.get('client_id')
   const deviceId = url.searchParams.get('device_id')
   const platform = url.searchParams.get('platform') as ClientPlatform | null
-  const token = url.searchParams.get('token')
+  const token = parseTokenFromProtocols(request.headers['sec-websocket-protocol'])
+  const origin = request.headers.origin
 
   if (!clientId || !deviceId || !isSupportedPlatform(platform)) {
     socket.destroy()
     return
   }
 
-  if (!isTokenAllowed(token)) {
+  if (!isOriginAllowed(origin) || !isTokenAllowed(token)) {
     socket.destroy()
     return
   }
@@ -80,6 +81,7 @@ server.on('upgrade', (request, socket) => {
     'Upgrade: websocket',
     'Connection: Upgrade',
     `Sec-WebSocket-Accept: ${acceptKey}`,
+    'Sec-WebSocket-Protocol: sovereign-v1',
     '',
     '',
   ].join('\r\n'))
@@ -162,6 +164,28 @@ function isSupportedPlatform(platform: string | null): platform is ClientPlatfor
 function isTokenAllowed(token: string | null) {
   const requiredToken = process.env.REALTIME_ACCESS_TOKEN
   return !requiredToken || token === requiredToken
+}
+
+function isOriginAllowed(origin: string | undefined) {
+  const allowed = (process.env.REALTIME_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return allowed.length === 0 || Boolean(origin && allowed.includes(origin))
+}
+
+function parseTokenFromProtocols(protocolHeader: string | string[] | undefined) {
+  const value = Array.isArray(protocolHeader) ? protocolHeader.join(',') : protocolHeader ?? ''
+  for (const protocol of value.split(',').map((item) => item.trim())) {
+    if (!protocol.startsWith('sovereign-token.')) continue
+    return base64UrlDecode(protocol.slice('sovereign-token.'.length))
+  }
+  return null
+}
+
+function base64UrlDecode(value: string) {
+  const padded = `${value}${'='.repeat((4 - (value.length % 4)) % 4)}`
+  return Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
 }
 
 function broadcast(payload: string, clientId = '') {

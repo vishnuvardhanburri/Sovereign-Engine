@@ -32,10 +32,12 @@ export class SovereignRealtime {
     wsUrl.searchParams.set('client_id', this.options.clientId)
     wsUrl.searchParams.set('device_id', this.options.device.deviceId)
     wsUrl.searchParams.set('platform', this.options.device.platform)
-    if (tokens?.accessToken) wsUrl.searchParams.set('token', tokens.accessToken)
 
     const SocketCtor = this.options.WebSocketImpl ?? WebSocket
-    this.socket = new SocketCtor(wsUrl.toString())
+    const protocols = tokens?.accessToken
+      ? ['sovereign-v1', `sovereign-token.${base64UrlEncode(tokens.accessToken)}`]
+      : ['sovereign-v1']
+    this.socket = new SocketCtor(wsUrl.toString(), protocols)
     this.socket.onmessage = (message) => this.emit(message.data)
     this.socket.onclose = () => this.scheduleReconnect()
     this.socket.onerror = () => this.scheduleReconnect()
@@ -65,4 +67,21 @@ export class SovereignRealtime {
       void this.connect()
     }, 1500)
   }
+}
+
+function base64UrlEncode(value: string) {
+  const encoded = typeof btoa === 'function'
+    ? btoa(value)
+    : nodeLikeBase64(value)
+  return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function nodeLikeBase64(value: string) {
+  const runtime = globalThis as typeof globalThis & {
+    Buffer?: { from(input: string): { toString(encoding: 'base64'): string } }
+  }
+  if (!runtime.Buffer) {
+    throw new Error('No base64 encoder available for realtime token transport.')
+  }
+  return runtime.Buffer.from(value).toString('base64')
 }
