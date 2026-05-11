@@ -7,6 +7,9 @@
 - `demo.md`: buyer demo video, proof flow, and acquisition walkthrough
 - `demo.html`: clean video page for GitHub Pages-style viewing
 - `compliance/README.md`: SOC2-oriented compliance mapping (not a certification claim)
+- `cross-platform/README.md`: web, desktop, mobile, realtime, SDK, and release architecture
+- `cross-platform/SECURITY_CHECKLIST.md`: device session, signed action, IPC, and mobile hardening checklist
+- `cross-platform/RELEASE_PIPELINE.md`: web, desktop, mobile, SDK, and native packaging release plan
 - `threat-model/README.md`: Threat model summary for due diligence
 - `governance/`: license, security policy, and contribution notes
 - `acquisition/HOMEPAGE_COPY.md`: revenue-protection homepage and founder/CTO narrative
@@ -61,6 +64,7 @@
 - `pnpm doctor:demo`: checks Docker, Postgres, Redis, env, schema, demo user, key pages, PDF/ZIP, and worker heartbeat
 - `pnpm qa:demo`: browser QA with screenshots under `code/output/playwright/demo-qa`
 - `pnpm copy:check`: guards buyer-facing surfaces from risky or misleading acquisition language
+- `pnpm platform:check`: verifies desktop/mobile/SDK clients do not contain queue or sending logic
 - `pnpm submit:pack`: exports final evidence under `code/output/submit-pack`
 
 ## Legacy (historical)

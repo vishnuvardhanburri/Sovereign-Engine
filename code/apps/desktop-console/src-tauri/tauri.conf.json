@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sovereign Engine Console",
+  "version": "0.1.0",
+  "identifier": "com.sovereign.engine.console",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:3400/reputation"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:* ws://localhost:* https: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    },
+    "windows": [
+      {
+        "title": "Sovereign Engine Console",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 1024,
+        "minHeight": 720
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "msi", "deb", "appimage"],
+    "category": "Business",
+    "shortDescription": "Operational control console for Sovereign Engine"
+  }
+}

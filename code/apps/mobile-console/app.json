@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Sovereign Engine",
+    "slug": "sovereign-engine-console",
+    "scheme": "sovereign-engine",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "ios": {
+      "bundleIdentifier": "com.sovereign.engine.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sovereign.engine.mobile"
+    },
+    "extra": {
+      "apiBaseUrl": "https://api.sovereign-engine.example"
+    }
+  }
+}

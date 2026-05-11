@@ -167,6 +167,42 @@ mindmap
       Mock-Safe Proof
 ```
 
+### Cross-Platform Control Plane
+
+```mermaid
+flowchart LR
+  Web["Web Command Center"]
+  Desktop["Tauri Desktop Console"]
+  Mobile["React Native Mobile Console"]
+  SDK["Shared TypeScript SDK"]
+  Realtime["WebSocket Realtime Gateway"]
+  API["Authoritative API Gateway"]
+  Redis[("Redis / BullMQ")]
+  Postgres[("Postgres")]
+  Workers["Centralized Backend Workers"]
+
+  Web --> SDK
+  Desktop --> SDK
+  Mobile --> SDK
+  SDK --> API
+  SDK --> Realtime
+  Realtime --> SDK
+  API --> Redis
+  API --> Postgres
+  Redis --> Workers
+  Workers --> Redis
+  Workers --> Postgres
+```
+
+Sovereign Engine now has the enterprise platform shape buyers expect:
+
+- Web remains the primary Next.js control plane.
+- Desktop consoles are Tauri shells for macOS, Windows, and Linux.
+- Mobile consoles are React Native shells for Android and iOS alerts and approvals.
+- `@sovereign/platform-sdk` gives every client one shared API, auth, and realtime layer.
+- The realtime gateway streams lane, health, worker, and audit-backed operational events.
+- Clients are control consoles only. Redis, BullMQ, Postgres writes, queue shaping, and sending remain centralized in the backend.
+
 ## Acquisition Positioning
 
 ```text
@@ -188,6 +224,7 @@ cd code
 pnpm deploy:production   # start services and verify production-style health
 pnpm demo:investor       # open reputation dashboard, live metrics, and worker proof
 pnpm generate:data-room  # architecture, API docs, scaling proof, screenshots/assets
+pnpm platform:check      # validate web/desktop/mobile consoles stay control-plane only
 ```
 
 Monetization/API signals:

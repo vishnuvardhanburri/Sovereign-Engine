@@ -1,0 +1,14 @@
+{
+  "name": "@sovereign/desktop-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sovereign/platform-sdk": "workspace:*"
+  },
+  "scripts": {
+    "dev": "echo 'Desktop shell scaffold: install Tauri toolchain, then run tauri dev from this package.'",
+    "build": "echo 'Desktop shell scaffold: package with tauri build in release pipeline.'",
+    "check": "node -e \"console.log('desktop console scaffold ok')\""
+  }
+}

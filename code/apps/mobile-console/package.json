@@ -1,0 +1,14 @@
+{
+  "name": "@sovereign/mobile-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sovereign/platform-sdk": "workspace:*"
+  },
+  "scripts": {
+    "dev": "echo 'Mobile shell scaffold: connect this package to Expo or bare React Native release pipeline.'",
+    "build": "echo 'Mobile shell scaffold: build Android/iOS through EAS or native CI lanes.'",
+    "check": "node -e \"console.log('mobile console scaffold ok')\""
+  }
+}

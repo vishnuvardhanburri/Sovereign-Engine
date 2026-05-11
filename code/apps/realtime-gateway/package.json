@@ -1,0 +1,11 @@
+{
+  "name": "@sovereign/realtime-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types src/server.ts",
+    "start": "node --experimental-strip-types src/server.ts",
+    "check": "node --experimental-strip-types --check src/server.ts"
+  }
+}

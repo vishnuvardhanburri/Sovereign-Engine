@@ -280,6 +280,20 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  apps/desktop-console:
+    dependencies:
+      '@sovereign/platform-sdk':
+        specifier: workspace:*
+        version: link:../../libs/platform-sdk
+
+  apps/mobile-console:
+    dependencies:
+      '@sovereign/platform-sdk':
+        specifier: workspace:*
+        version: link:../../libs/platform-sdk
+
+  apps/realtime-gateway: {}
+
   internal:
     dependencies:
       dotenv:
@@ -336,6 +350,12 @@ importers:
       '@types/node':
         specifier: ^22
         version: 22.19.11
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
+  libs/platform-sdk:
+    devDependencies:
       typescript:
         specifier: 5.7.3
         version: 5.7.3
