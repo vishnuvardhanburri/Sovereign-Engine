@@ -11,7 +11,7 @@ services:
     plan: starter
     dockerContext: ./code
     dockerfilePath: ./code/Dockerfile
-    dockerCommand: sh -lc "node scripts/sync-env.mjs && pnpm db:init && if [ -n \"$BOOTSTRAP_ADMIN_EMAIL\" ] && [ -n \"$BOOTSTRAP_ADMIN_PASSWORD\" ]; then pnpm user:create \"$BOOTSTRAP_ADMIN_EMAIL\" \"$BOOTSTRAP_ADMIN_PASSWORD\"; fi && pnpm -C apps/api-gateway start -H 0.0.0.0 -p ${PORT:-3000}"
+    dockerCommand: sh -lc "node scripts/sync-env.mjs && pnpm db:init && if [ -n \"$BOOTSTRAP_ADMIN_EMAIL\" ] && [ -n \"$BOOTSTRAP_ADMIN_PASSWORD\" ]; then pnpm user:create \"$BOOTSTRAP_ADMIN_EMAIL\" \"$BOOTSTRAP_ADMIN_PASSWORD\"; fi && pnpm --dir apps/api-gateway exec tsx scripts/bootstrap-sending-domain.ts && pnpm -C apps/api-gateway start -H 0.0.0.0 -p ${PORT:-3000}"
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     maxShutdownDelaySeconds: 120
@@ -59,6 +59,12 @@ services:
         sync: false
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
+      - key: BOOTSTRAP_SENDING_DOMAIN
+        value: "false"
+      - key: BOOTSTRAP_SENDING_EMAILS
+        sync: false
+      - key: BOOTSTRAP_MARK_DNS_VALID
+        value: "false"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
