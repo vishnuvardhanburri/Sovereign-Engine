@@ -156,18 +156,23 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
               <span className="text-slate-400">{waiting.toLocaleString()} waiting · {active.toLocaleString()} active</span>
             </div>
             <QueueFlow pressure={queuePressure} />
-            <div className="mt-4 grid gap-2 md:grid-cols-4">
+            <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
               {lanes.map((lane) => (
-                <div key={lane.provider} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{lane.label}</span>
-                    <Badge variant="outline" className={laneTone(lane.status)}>{lane.status}</Badge>
+                <div key={lane.provider} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.035] p-3">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <span className="min-w-0 max-w-full truncate text-sm font-medium">{lane.label}</span>
+                    <Badge
+                      variant="outline"
+                      className={cn('shrink-0 whitespace-nowrap px-2 py-0.5 text-[10px] leading-4', laneTone(lane.status))}
+                    >
+                      {lane.status}
+                    </Badge>
                   </div>
                   <div className="mt-3 text-xl font-semibold">{numberFmt(lane.maxPerHour)}/hr</div>
                   <div className="mt-1 text-xs text-slate-400">Def {pct(lane.deferralRate1h)} · Block {pct(lane.blockRate1h)}</div>
                 </div>
               ))}
-              {!lanes.length && <Skeleton className="h-24 md:col-span-4" />}
+              {!lanes.length && <Skeleton className="h-24" />}
             </div>
           </div>
         </div>
