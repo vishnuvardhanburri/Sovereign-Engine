@@ -100,7 +100,9 @@ export function buildCompliantSmtpHeaders(req: SendEmailRequest): BuiltSmtpHeade
 }
 
 function providerMode(): 'smtp' | 'brevo' | 'resend' {
-  const mode = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || 'smtp')
+  const explicitMode = process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER
+  const inferredMode = process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'smtp'
+  const mode = String(explicitMode || inferredMode)
     .trim()
     .toLowerCase()
   return mode === 'brevo' || mode === 'resend' ? mode : 'smtp'

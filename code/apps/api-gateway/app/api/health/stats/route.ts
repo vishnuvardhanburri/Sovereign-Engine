@@ -45,6 +45,26 @@ function redisUrlDiagnostic(raw = process.env.REDIS_URL || '') {
   }
 }
 
+function emailProviderDiagnostic() {
+  const explicitProvider = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '')
+    .trim()
+    .toLowerCase()
+  const inferredProvider = process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'smtp'
+  const selectedProvider =
+    explicitProvider === 'brevo' || explicitProvider === 'resend' || explicitProvider === 'smtp'
+      ? explicitProvider
+      : inferredProvider
+
+  return {
+    selected_provider: selectedProvider,
+    explicit_provider: explicitProvider || null,
+    inferred_provider: inferredProvider,
+    has_brevo_key: Boolean(process.env.BREVO_API_KEY),
+    has_resend_key: Boolean(process.env.RESEND_API_KEY),
+    smtp_from_email_configured: Boolean(process.env.SMTP_FROM_EMAIL),
+  }
+}
+
 async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; latencyMs: number }> {
   const started = performance.now()
   const value = await fn()
@@ -248,6 +268,7 @@ export async function GET(request: NextRequest) {
       security: {
         tls_policy: tlsPolicy,
       },
+      email_delivery: emailProviderDiagnostic(),
     })
   } catch (error) {
     console.error('[api/health/stats] failed', error)
@@ -262,6 +283,7 @@ export async function GET(request: NextRequest) {
           redisUrl: redisUrlDiagnostic(),
           nodeEnv: process.env.NODE_ENV ?? null,
           sendQueue: process.env.SEND_QUEUE ?? 'xv-send-queue',
+          emailDelivery: emailProviderDiagnostic(),
         },
       },
       { status: 500 }
