@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useContacts, useDeleteContact } from '@/lib/hooks'
+import { useApproveContacts, useContacts, useDeleteContact } from '@/lib/hooks'
 import { Contact } from '@/lib/api'
 import { UploadContactsModal } from '@/components/upload-contacts-modal'
 import { AddContactModal } from '@/components/add-contact-modal'
@@ -26,13 +26,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Trash2 } from 'lucide-react'
+import { CheckCircle2, Search, Trash2 } from 'lucide-react'
 
 export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const { data: contacts, isLoading } = useContacts()
   const { mutate: deleteContact } = useDeleteContact()
+  const { mutate: approveContacts, isPending: approving } = useApproveContacts()
 
   const filteredContacts = contacts
     ?.filter((contact: Contact) => {
@@ -56,6 +57,8 @@ export default function ContactsPage() {
     }
   }
 
+  const isApproved = (contact: Contact) => contact.customFields?.send_status === 'approved'
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
@@ -64,6 +67,14 @@ export default function ContactsPage() {
           <p className="text-muted-foreground">Import and manage your prospect database</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => approveContacts({})}
+            disabled={approving}
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            {approving ? 'Approving...' : 'Approve System Recommended'}
+          </Button>
           <AddContactModal />
           <UploadContactsModal />
         </div>
@@ -115,6 +126,7 @@ export default function ContactsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Outreach</TableHead>
                   <TableHead>Added Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -125,7 +137,7 @@ export default function ContactsPage() {
                     .fill(0)
                     .map((_, i) => (
                       <TableRow key={i}>
-                        {Array(6)
+                        {Array(7)
                           .fill(0)
                           .map((_, j) => (
                             <TableCell key={j}>
@@ -146,6 +158,22 @@ export default function ContactsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        {isApproved(contact) ? (
+                          <Badge className="bg-emerald-500/10 text-emerald-500">
+                            approved
+                          </Badge>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => approveContacts({ ids: [contact.id] })}
+                            disabled={approving || contact.status !== 'active'}
+                          >
+                            Approve
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {contact.addedAt.toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
@@ -161,7 +189,7 @@ export default function ContactsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No contacts found
                     </TableCell>
                   </TableRow>

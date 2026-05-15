@@ -143,6 +143,24 @@ export const useDeleteContact = () => {
   })
 }
 
+export const useApproveContacts = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { ids?: string[]; limit?: number }) => api.contacts.approve(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      toast.success(
+        result.approved > 0
+          ? `${result.approved} prospect${result.approved === 1 ? '' : 's'} approved`
+          : 'No reviewable prospects found'
+      )
+    },
+    onError: () => {
+      toast.error('Failed to approve prospects')
+    },
+  })
+}
+
 // Sequences
 export const useSequences = () => {
   return useQuery({

@@ -19,6 +19,9 @@ export interface Contact {
   email: string
   name: string
   company: string
+  title: string
+  source: string
+  customFields: Record<string, unknown>
   status: 'active' | 'replied' | 'bounced' | 'unsubscribed'
   addedAt: Date
 }
@@ -262,6 +265,9 @@ const contactSchema = z.object({
   email: z.string().email(),
   name: z.string().nullable().optional().default(''),
   company: z.string().nullable().optional().default(''),
+  title: z.string().nullable().optional().default(''),
+  source: z.string().nullable().optional().default(''),
+  custom_fields: z.record(z.string(), z.unknown()).nullable().optional().default({}),
   status: z.enum(['active', 'replied', 'bounced', 'unsubscribed']),
   created_at: z.string(),
 })
@@ -538,6 +544,9 @@ function toContact(row: unknown): Contact {
     email: parsed.email,
     name: parsed.name ?? '',
     company: parsed.company ?? '',
+    title: parsed.title ?? '',
+    source: parsed.source ?? '',
+    customFields: parsed.custom_fields ?? {},
     status: parsed.status,
     addedAt: new Date(parsed.created_at),
   }
@@ -696,6 +705,12 @@ export const api = {
     async delete(id: string): Promise<{ success: boolean }> {
       return fetchJson<{ success: boolean }>(`/api/contacts/${id}`, {
         method: 'DELETE',
+      })
+    },
+    async approve(input: { ids?: string[]; limit?: number }): Promise<{ ok: boolean; approved: number; contacts: unknown[]; skipped?: string }> {
+      return fetchJson<{ ok: boolean; approved: number; contacts: unknown[]; skipped?: string }>('/api/contacts/approval', {
+        method: 'POST',
+        body: JSON.stringify(input),
       })
     },
   },
