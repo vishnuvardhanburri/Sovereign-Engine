@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { Queue } from 'bullmq'
 import { appEnv } from '@/lib/env'
+import { query } from '@/lib/db'
 
 type CronLead = {
   email?: string
@@ -13,6 +14,7 @@ type CronLead = {
 }
 
 type PreparedCronLead = {
+  contact_id?: number
   email: string
   first_name: string
   company: string
@@ -77,6 +79,54 @@ function parseLeads(): CronLead[] {
       consent_source: 'legitimate_business_interest',
       reason_to_contact: 'reviewed business outreach list',
     }))
+}
+
+async function loadApprovedContacts(clientId: number, limit: number): Promise<PreparedCronLead[]> {
+  const result = await query<{
+    id: string
+    email: string
+    first_name: string | null
+    company: string | null
+    reason_to_contact: string | null
+  }>(
+    `SELECT
+       c.id::text,
+       c.email,
+       COALESCE(NULLIF(c.name, ''), split_part(c.email, '@', 1)) AS first_name,
+       COALESCE(NULLIF(c.company, ''), c.company_domain, c.email_domain, 'your team') AS company,
+       COALESCE(c.custom_fields->>'reason_to_contact', 'reviewed approved business prospect') AS reason_to_contact
+     FROM contacts c
+     WHERE c.client_id = $1
+       AND c.status = 'active'
+       AND c.bounced_at IS NULL
+       AND c.unsubscribed_at IS NULL
+       AND COALESCE(c.custom_fields->>'send_status', 'not_approved') = 'approved'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM suppression_list s
+         WHERE s.client_id = c.client_id
+           AND LOWER(s.email) = LOWER(c.email)
+       )
+     ORDER BY
+       CASE
+         WHEN COALESCE(c.custom_fields->>'fit_score', '') ~ '^[0-9]+$'
+         THEN (c.custom_fields->>'fit_score')::int
+         ELSE 0
+       END DESC,
+       c.updated_at ASC,
+       c.created_at ASC
+     LIMIT $2`,
+    [clientId, limit]
+  )
+
+  return result.rows.map((row) => ({
+    contact_id: Number(row.id),
+    email: row.email,
+    first_name: row.first_name || row.email.split('@')[0] || 'there',
+    company: row.company || row.email.split('@')[1] || 'your team',
+    consent_source: 'operator_approved_business_outreach',
+    reason_to_contact: row.reason_to_contact || 'reviewed approved business prospect',
+  }))
 }
 
 function fillTemplate(template: string, lead: PreparedCronLead, physicalAddress: string): string {
@@ -146,7 +196,9 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const seen = new Set<string>()
 
-    const leads = parseLeads()
+    const configuredLeads = parseLeads()
+    const leads = (configuredLeads.length > 0
+      ? configuredLeads
       .map((lead) => {
         const email = String(lead.email || '').trim().toLowerCase()
         return {
@@ -164,6 +216,7 @@ export async function GET(request: NextRequest) {
         return Boolean(lead.consent_source || lead.reason_to_contact)
       })
       .slice(0, limit)
+      : await loadApprovedContacts(clientId, limit))
 
     if (leads.length === 0) {
       return NextResponse.json({ ok: true, enabled: true, queued: 0, skipped: 'no_approved_leads' })
@@ -195,6 +248,25 @@ export async function GET(request: NextRequest) {
     })
 
     const added = await queue.addBulk(jobs)
+    const contactIds = leads
+      .map((lead) => lead.contact_id)
+      .filter((id): id is number => Number.isSafeInteger(id))
+
+    if (contactIds.length > 0 && added.length > 0) {
+      await query(
+        `UPDATE contacts
+         SET custom_fields = COALESCE(custom_fields, '{}'::jsonb)
+           || jsonb_build_object(
+             'send_status', 'queued',
+             'queued_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+           ),
+           updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1
+           AND id = ANY($2::bigint[])`,
+        [clientId, contactIds]
+      )
+    }
+
     return NextResponse.json({
       ok: true,
       enabled: true,
