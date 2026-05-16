@@ -144,25 +144,20 @@ function fillTemplate(template: string, lead: PreparedCronLead, physicalAddress:
 function defaultBody(): string {
   return `Hi {{first_name}},
 
-I came across {{company}} while researching teams with outbound or sales-led growth workflows.
+I came across {{company}} while researching teams that depend on outbound, sales-led growth, or agency pipeline.
 
-Quick question: are domain reputation, Gmail/Outlook throttling, or follow-up reliability things your team watches today?
+A lot of teams only notice deliverability problems after volume increases:
 
-I built Sovereign Engine at Xavira Tech Labs as outbound revenue infrastructure, not a basic email tool.
+- inbox placement drops
+- Gmail/Outlook throttling starts
+- follow-ups become inconsistent
+- domains get harder to recover
 
-It is designed to help teams run outbound through one controlled system:
+I built Sovereign Engine at Xavira Tech Labs to help teams monitor domain reputation, control sending pressure, and catch outbound risk before it damages pipeline.
 
-- lead validation and suppression safety
-- provider-aware sending lanes
-- queue and worker monitoring
-- autonomous follow-up sequencing
-- reply and bounce visibility
-- reputation controls before domains burn
-- production architecture designed for 100k+ emails/day with the right SMTP/ESP and domain setup
+I am offering a short infrastructure review for a few outbound-heavy teams this week.
 
-I am offering a short walkthrough for a few outbound-heavy teams this week.
-
-Would a short 5-minute walkthrough be useful?
+Would a 5-minute walkthrough be useful?
 
 Best,
 Vishnu
@@ -193,7 +188,7 @@ export async function GET(request: NextRequest) {
   let queue: Queue | null = null
   try {
     const clientId = appEnv.defaultClientId()
-    const subject = process.env.OUTBOUND_CRON_SUBJECT || 'quick question on outbound scale'
+    const subject = process.env.OUTBOUND_CRON_SUBJECT || 'quick question on outbound reliability'
     const physicalAddress = process.env.SENDER_PHYSICAL_ADDRESS || 'Xavira Tech Labs, India'
     const template = process.env.OUTBOUND_CRON_BODY || defaultBody()
     const limit = safeLimit(request.nextUrl.searchParams.get('limit'))
