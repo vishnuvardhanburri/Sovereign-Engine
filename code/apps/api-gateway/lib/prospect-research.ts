@@ -25,6 +25,18 @@ export type ProspectResearchDecision = {
   source: string | null
 }
 
+type PublicEvidenceResponse = {
+  ok: boolean
+  text: () => Promise<string>
+}
+
+export type PublicEmailEvidenceResult = {
+  contact: ProspectResearchContact
+  checked: boolean
+  matched: boolean
+  reason?: string
+}
+
 const PERSONAL_EMAIL_DOMAINS = new Set([
   'aol.com',
   'gmail.com',
@@ -95,6 +107,15 @@ const VALIDATION_REQUIRED_PREFIXES = new Set([
   'mail',
   'marketing',
   'team',
+])
+
+const RISKY_GUESSED_ROLE_PREFIXES = new Set([
+  'founder',
+  'founders',
+  'partner',
+  'partners',
+  'partnership',
+  'partnerships',
 ])
 
 const SAFE_SOURCE_TYPES = new Set([
@@ -172,6 +193,142 @@ function scoreNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function pageContainsExactEmail(pageText: string, email: string): boolean {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!isEmail(normalizedEmail)) return false
+
+  const haystack = pageText
+    .toLowerCase()
+    .replace(/&commat;/g, '@')
+    .replace(/&#64;/g, '@')
+    .replace(/&period;/g, '.')
+    .replace(/&#46;/g, '.')
+
+  if (haystack.includes(normalizedEmail)) return true
+
+  const [local, domain] = normalizedEmail.split('@')
+  const domainParts = domain.split('.').filter(Boolean)
+  if (!local || domainParts.length < 2) return false
+
+  const atPattern = String.raw`\s*(?:@|\[\s*at\s*\]|\(\s*at\s*\)|\s+at\s+)\s*`
+  const dotPattern = String.raw`\s*(?:\.|\[\s*dot\s*\]|\(\s*dot\s*\)|\s+dot\s+)\s*`
+  const pattern = `${escapeRegex(local)}${atPattern}${domainParts
+    .map(escapeRegex)
+    .join(dotPattern)}`
+
+  return new RegExp(pattern, 'i').test(haystack)
+}
+
+export function hasExactPublicEmailEvidence(value: unknown): boolean {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return [
+    'exact_public_email',
+    'public_page_email_match',
+    'public_mailto_match',
+    'provider_validated',
+  ].includes(normalized)
+}
+
+export function prospectNeedsExactPublicEmailEvidence(
+  contact: ProspectResearchContact
+): boolean {
+  const email = contact.email.trim().toLowerCase()
+  const [prefix = ''] = email.split('@')
+  const verificationStatus = String(contact.verification_status ?? 'pending')
+  const customFields = contact.custom_fields ?? {}
+
+  return (
+    RISKY_GUESSED_ROLE_PREFIXES.has(prefix) &&
+    verificationStatus !== 'valid' &&
+    !hasExactPublicEmailEvidence(customFields.email_evidence)
+  )
+}
+
+export async function enrichProspectWithPublicEmailEvidence(
+  contact: ProspectResearchContact,
+  options?: {
+    fetchPage?: (url: string) => Promise<PublicEvidenceResponse>
+    now?: () => Date
+    maxBytes?: number
+  }
+): Promise<PublicEmailEvidenceResult> {
+  const customFields = contact.custom_fields ?? {}
+  if (!prospectNeedsExactPublicEmailEvidence(contact)) {
+    return {
+      contact,
+      checked: false,
+      matched: hasExactPublicEmailEvidence(customFields.email_evidence),
+      reason: 'exact_evidence_not_required',
+    }
+  }
+
+  const evidenceUrl = asString(customFields.public_evidence_url) || asString(customFields.source_url)
+  if (!evidenceUrl) {
+    return {
+      contact,
+      checked: false,
+      matched: false,
+      reason: 'missing_public_evidence_url',
+    }
+  }
+
+  try {
+    const response = options?.fetchPage
+      ? await options.fetchPage(evidenceUrl)
+      : await fetch(evidenceUrl, {
+          cache: 'no-store',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(6_000),
+        })
+
+    if (!response.ok) {
+      return {
+        contact,
+        checked: true,
+        matched: false,
+        reason: 'public_evidence_fetch_failed',
+      }
+    }
+
+    const maxBytes = Math.max(10_000, Math.min(options?.maxBytes ?? 250_000, 1_000_000))
+    const pageText = (await response.text()).slice(0, maxBytes)
+    const matched = pageContainsExactEmail(pageText, contact.email)
+
+    if (!matched) {
+      return {
+        contact,
+        checked: true,
+        matched: false,
+        reason: 'exact_email_not_found_on_evidence_page',
+      }
+    }
+
+    return {
+      contact: {
+        ...contact,
+        custom_fields: {
+          ...customFields,
+          email_evidence: 'public_page_email_match',
+          email_evidence_checked_at: (options?.now?.() ?? new Date()).toISOString(),
+        },
+      },
+      checked: true,
+      matched: true,
+    }
+  } catch {
+    return {
+      contact,
+      checked: true,
+      matched: false,
+      reason: 'public_evidence_fetch_error',
+    }
+  }
+}
+
 export function scoreProspectForResearchApproval(
   contact: ProspectResearchContact,
   options?: { threshold?: number }
@@ -223,6 +380,10 @@ export function scoreProspectForResearchApproval(
 
   if (VALIDATION_REQUIRED_PREFIXES.has(prefix) && verificationStatus !== 'valid') {
     blockers.push('generic_inbox_requires_email_validation')
+  }
+
+  if (prospectNeedsExactPublicEmailEvidence(contact)) {
+    blockers.push('risky_role_requires_exact_public_email_evidence')
   }
 
   if (source && !SAFE_SOURCE_TYPES.has(source) && !asBool(customFields.lead_scout) && !asBool(customFields.sheet_import)) {

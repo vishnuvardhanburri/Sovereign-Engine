@@ -8,6 +8,8 @@ import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
+  enrichProspectWithPublicEmailEvidence,
+  prospectNeedsExactPublicEmailEvidence,
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
 } from '@/lib/prospect-research'
@@ -73,6 +75,10 @@ function getNumericField(data: unknown, key: string): number {
   const value = (data as Record<string, unknown>)[key]
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 async function runSheetImport(input: {
@@ -197,7 +203,27 @@ async function runResearchApproval(input: {
   try {
     const threshold = clampThreshold(process.env.DAILY_OUTBOUND_APPROVAL_THRESHOLD)
     const pool = await getResearchPool(input.clientId)
-    const decisions = pool.map((contact) =>
+    const evidenceFetchLimit = Math.max(
+      0,
+      Math.min(Number(process.env.DAILY_OUTBOUND_EVIDENCE_FETCH_LIMIT ?? 40) || 40, 100)
+    )
+    let evidenceFetches = 0
+    let evidenceMatches = 0
+    const enrichedPool: ProspectResearchContact[] = []
+
+    for (const contact of pool) {
+      if (prospectNeedsExactPublicEmailEvidence(contact) && evidenceFetches < evidenceFetchLimit) {
+        evidenceFetches += 1
+        const result = await enrichProspectWithPublicEmailEvidence(contact)
+        if (result.matched) evidenceMatches += 1
+        enrichedPool.push(result.contact)
+      } else {
+        enrichedPool.push(contact)
+      }
+    }
+
+    const contactById = new Map(enrichedPool.map((contact) => [Number(contact.id), contact]))
+    const decisions = enrichedPool.map((contact) =>
       scoreProspectForResearchApproval(contact, { threshold })
     )
     const approvedCandidates = decisions
@@ -217,6 +243,8 @@ async function runResearchApproval(input: {
         data: {
           dryRun: true,
           scanned: decisions.length,
+          evidenceFetches,
+          evidenceMatches,
           approvalReady: approvedCandidates.length,
           approved: 0,
           candidates: approvedCandidates,
@@ -234,6 +262,8 @@ async function runResearchApproval(input: {
         data: {
           approved: 0,
           scanned: decisions.length,
+          evidenceFetches,
+          evidenceMatches,
           skipped: 'no_research_verified_prospects',
           blocked,
         },
@@ -251,12 +281,13 @@ async function runResearchApproval(input: {
            'approval_batch', 'daily_research_verified_best',
            'research_score', scores.score,
            'research_reasons', scores.reasons,
-           'research_evidence_url', scores.evidence_url
+           'research_evidence_url', scores.evidence_url,
+           'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
          ),
          updated_at = CURRENT_TIMESTAMP
        FROM (
          SELECT *
-         FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text)
+         FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text, email_evidence text)
        ) AS scores
        WHERE contacts.client_id = $1
          AND contacts.id = ANY($2::bigint[])
@@ -274,6 +305,7 @@ async function runResearchApproval(input: {
             score: candidate.score,
             reasons: candidate.reasons,
             evidence_url: candidate.evidenceUrl,
+            email_evidence: asString(contactById.get(candidate.id)?.custom_fields?.email_evidence),
           }))
         ),
       ]
@@ -293,6 +325,8 @@ async function runResearchApproval(input: {
       data: {
         approved,
         scanned: decisions.length,
+        evidenceFetches,
+        evidenceMatches,
         contacts: result.rows,
         blocked,
       },

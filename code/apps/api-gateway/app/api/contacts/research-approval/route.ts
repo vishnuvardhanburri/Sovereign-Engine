@@ -3,6 +3,8 @@ import { query } from '@/lib/db'
 import { resolveClientId } from '@/lib/client-context'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import {
+  enrichProspectWithPublicEmailEvidence,
+  prospectNeedsExactPublicEmailEvidence,
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
 } from '@/lib/prospect-research'
@@ -18,6 +20,10 @@ function clampThreshold(value: unknown): number {
   const parsed = Number(value ?? 72)
   if (!Number.isFinite(parsed)) return 72
   return Math.max(50, Math.min(Math.trunc(parsed), 95))
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 async function getResearchPool(clientId: number) {
@@ -69,7 +75,33 @@ async function researchApproval(request: NextRequest, apply: boolean) {
   )
   const threshold = clampThreshold((body as any).threshold ?? request.nextUrl.searchParams.get('threshold'))
   const pool = await getResearchPool(clientId)
-  const decisions = pool.map((contact) => scoreProspectForResearchApproval(contact, { threshold }))
+  const evidenceFetchLimit = Math.max(
+    0,
+    Math.min(
+      Number((body as any).evidenceFetchLimit ?? request.nextUrl.searchParams.get('evidenceFetchLimit') ?? 40) ||
+        40,
+      100
+    )
+  )
+  let evidenceFetches = 0
+  let evidenceMatches = 0
+  const enrichedPool: ProspectResearchContact[] = []
+
+  for (const contact of pool) {
+    if (prospectNeedsExactPublicEmailEvidence(contact) && evidenceFetches < evidenceFetchLimit) {
+      evidenceFetches += 1
+      const result = await enrichProspectWithPublicEmailEvidence(contact)
+      if (result.matched) evidenceMatches += 1
+      enrichedPool.push(result.contact)
+    } else {
+      enrichedPool.push(contact)
+    }
+  }
+
+  const contactById = new Map(enrichedPool.map((contact) => [Number(contact.id), contact]))
+  const decisions = enrichedPool.map((contact) =>
+    scoreProspectForResearchApproval(contact, { threshold })
+  )
   const approvedCandidates = decisions
     .filter((decision) => decision.approved)
     .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
@@ -87,6 +119,8 @@ async function researchApproval(request: NextRequest, apply: boolean) {
       threshold,
       systemApprovalWindow: approvalWindow,
       scanned: decisions.length,
+      evidenceFetches,
+      evidenceMatches,
       approvalReady: approvedCandidates.length,
       candidates: approvedCandidates,
       blocked,
@@ -108,6 +142,8 @@ async function researchApproval(request: NextRequest, apply: boolean) {
       clientId,
       approved: 0,
       scanned: decisions.length,
+      evidenceFetches,
+      evidenceMatches,
       blocked,
       skipped: 'no_research_verified_prospects',
       systemApprovalWindow: approvalWindow,
@@ -125,12 +161,13 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          'approval_batch', 'research_verified_best',
          'research_score', scores.score,
          'research_reasons', scores.reasons,
-         'research_evidence_url', scores.evidence_url
+         'research_evidence_url', scores.evidence_url,
+         'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
        ),
        updated_at = CURRENT_TIMESTAMP
      FROM (
        SELECT *
-       FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text)
+       FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text, email_evidence text)
      ) AS scores
      WHERE contacts.client_id = $1
        AND contacts.id = ANY($2::bigint[])
@@ -148,6 +185,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
           score: candidate.score,
           reasons: candidate.reasons,
           evidence_url: candidate.evidenceUrl,
+          email_evidence: asString(contactById.get(candidate.id)?.custom_fields?.email_evidence),
         }))
       ),
     ]
@@ -167,6 +205,8 @@ async function researchApproval(request: NextRequest, apply: boolean) {
     threshold,
     approved,
     scanned: decisions.length,
+    evidenceFetches,
+    evidenceMatches,
     contacts: result.rows,
     blocked,
     systemApprovalWindow: approvalWindow,

@@ -1,5 +1,26 @@
 import assert from 'node:assert/strict'
-import { scoreProspectForResearchApproval } from '../lib/prospect-research'
+import {
+  enrichProspectWithPublicEmailEvidence,
+  pageContainsExactEmail,
+  scoreProspectForResearchApproval,
+} from '../lib/prospect-research'
+
+async function main() {
+assert.equal(
+  pageContainsExactEmail(
+    '<a href="mailto:partnerships@realagency.com">Partner with us</a>',
+    'partnerships@realagency.com'
+  ),
+  true
+)
+assert.equal(
+  pageContainsExactEmail('Email partnerships [at] realagency [dot] com', 'partnerships@realagency.com'),
+  true
+)
+assert.equal(
+  pageContainsExactEmail('Contact sales@realagency.com for growth', 'partnerships@realagency.com'),
+  false
+)
 
 const safe = scoreProspectForResearchApproval({
   id: 1,
@@ -140,4 +161,124 @@ const verifiedGenericInbox = scoreProspectForResearchApproval({
 
 assert.equal(verifiedGenericInbox.approved, true)
 
+const guessedPartnershipsInbox = scoreProspectForResearchApproval({
+  id: 8,
+  email: 'partnerships@realagency.com',
+  email_domain: 'realagency.com',
+  company: 'Real Agency',
+  company_domain: 'realagency.com',
+  source: 'google_sheet_import',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    sheet_import: true,
+    auto_approval_eligible: true,
+    public_evidence_url: 'https://realagency.com/about',
+    reason_to_contact: 'Agency with public growth and demand generation signals.',
+  },
+})
+
+assert.equal(guessedPartnershipsInbox.approved, false)
+assert.ok(
+  guessedPartnershipsInbox.blockers.includes(
+    'risky_role_requires_exact_public_email_evidence'
+  )
+)
+
+const publiclyVerifiedPartnershipsInbox = scoreProspectForResearchApproval({
+  id: 9,
+  email: 'partnerships@realagency.com',
+  email_domain: 'realagency.com',
+  company: 'Real Agency',
+  company_domain: 'realagency.com',
+  source: 'google_sheet_import',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    sheet_import: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_page_email_match',
+    public_evidence_url: 'https://realagency.com/partners',
+    reason_to_contact: 'Agency with public growth and demand generation signals.',
+  },
+})
+
+assert.equal(publiclyVerifiedPartnershipsInbox.approved, true)
+
+const exactEvidenceResult = await enrichProspectWithPublicEmailEvidence(
+  {
+    id: 10,
+    email: 'partnerships@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      sheet_import: true,
+      auto_approval_eligible: true,
+      public_evidence_url: 'https://realagency.com/partners',
+      reason_to_contact: 'Agency with public growth and demand generation signals.',
+    },
+  },
+  {
+    fetchPage: async () => ({
+      ok: true,
+      text: async () => '<a href="mailto:partnerships@realagency.com">Partnerships</a>',
+    }),
+    now: () => new Date('2026-05-18T00:00:00.000Z'),
+  }
+)
+
+assert.equal(exactEvidenceResult.checked, true)
+assert.equal(exactEvidenceResult.matched, true)
+assert.equal(
+  exactEvidenceResult.contact.custom_fields?.email_evidence,
+  'public_page_email_match'
+)
+
+const exactEvidenceScore = scoreProspectForResearchApproval(
+  exactEvidenceResult.contact
+)
+assert.equal(exactEvidenceScore.approved, true)
+
+const missingExactEvidenceResult = await enrichProspectWithPublicEmailEvidence(
+  {
+    id: 11,
+    email: 'partnerships@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      sheet_import: true,
+      auto_approval_eligible: true,
+      public_evidence_url: 'https://realagency.com/partners',
+      reason_to_contact: 'Agency with public growth and demand generation signals.',
+    },
+  },
+  {
+    fetchPage: async () => ({
+      ok: true,
+      text: async () => 'Partner with Real Agency.',
+    }),
+  }
+)
+
+assert.equal(missingExactEvidenceResult.checked, true)
+assert.equal(missingExactEvidenceResult.matched, false)
+assert.equal(
+  missingExactEvidenceResult.contact.custom_fields?.email_evidence,
+  undefined
+)
+
 console.log('prospect research tests passed')
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

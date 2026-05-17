@@ -39,6 +39,46 @@ CREATE TABLE IF NOT EXISTS contacts (
   UNIQUE (client_id, email)
 );
 
+-- Compliant public-contact discovery ledger.
+-- Stores scan decisions and exact source URLs so outbound approval is evidence-backed,
+-- not guessed from role inbox patterns.
+CREATE TABLE IF NOT EXISTS compliant_domain_scans (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  domain_name TEXT NOT NULL,
+  pages_scanned INT NOT NULL DEFAULT 0,
+  scan_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    scan_status IN ('pending', 'completed', 'blocked_by_robots', 'waf_halted', 'skipped_or_blocked', 'failed')
+  ),
+  guardrails JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, domain_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_compliant_domain_scans_client_status
+  ON compliant_domain_scans (client_id, scan_status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS public_email_evidence (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  domain_name TEXT NOT NULL,
+  email_address TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  evidence_type TEXT NOT NULL DEFAULT 'public_page_email_match',
+  confidence_score NUMERIC(3,2) NOT NULL DEFAULT 0.95,
+  approval_status TEXT NOT NULL DEFAULT 'pending_review' CHECK (
+    approval_status IN ('approved', 'rejected', 'pending_review')
+  ),
+  discovered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, email_address, source_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_email_evidence_client_status
+  ON public_email_evidence (client_id, approval_status, discovered_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_public_email_evidence_domain
+  ON public_email_evidence (client_id, domain_name, discovered_at DESC);
+
 CREATE TABLE IF NOT EXISTS sequences (
   id BIGSERIAL PRIMARY KEY,
   client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
