@@ -48,6 +48,9 @@ type TelegramNotification =
       source?: string | null
       queue?: string | null
       limit?: number | null
+      estimatedPipelineValueUsd?: number | null
+      agencyQueued?: number | null
+      directQueued?: number | null
     }
   | {
       type: 'queue_skipped'
@@ -60,6 +63,9 @@ type TelegramNotification =
       imported?: number
       approved?: number
       queued?: number
+      estimatedPipelineValueUsd?: number
+      agencyQueued?: number
+      directQueued?: number
       sendLimit?: number
       approveLimit?: number
       failures?: number
@@ -160,6 +166,12 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       input.source ? `Source: ${input.source}` : null,
       input.queue ? `Queue: ${input.queue}` : null,
       input.limit ? `Limit: ${input.limit}` : null,
+      input.estimatedPipelineValueUsd
+        ? `Pipeline value: $${input.estimatedPipelineValueUsd.toLocaleString('en-US')}`
+        : null,
+      input.agencyQueued || input.directQueued
+        ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
+        : null,
     ].filter(Boolean).join('\n')
   }
 
@@ -170,6 +182,12 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `Imported: ${input.imported ?? 0}`,
       `Approved: ${input.approved ?? 0}`,
       `Queued: ${input.queued ?? 0}`,
+      input.estimatedPipelineValueUsd
+        ? `Pipeline value: $${input.estimatedPipelineValueUsd.toLocaleString('en-US')}`
+        : null,
+      input.agencyQueued || input.directQueued
+        ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
+        : null,
       `Approval limit: ${input.approveLimit ?? 0}`,
       `Send limit: ${input.sendLimit ?? 0}`,
       `Stage failures: ${input.failures ?? 0}`,

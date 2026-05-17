@@ -1,6 +1,8 @@
 import {
   inferSovereignOfferType,
+  rankSovereignLeads,
   renderSovereignTemplate,
+  sovereignDealValueUsd,
   sovereignBodyForLead,
   sovereignSubjectForLead,
 } from '@/lib/outbound-copy'
@@ -29,6 +31,15 @@ const agencyLead = {
 
 assert(inferSovereignOfferType(directLead) === 'direct', 'direct lead should use $25k copy')
 assert(inferSovereignOfferType(agencyLead) === 'agency', 'agency lead should use master-license copy')
+assert(sovereignDealValueUsd(directLead) === 25000, 'direct lead should be valued at $25k')
+assert(sovereignDealValueUsd(agencyLead) === 100000, 'agency lead should be valued at $100k')
+assert(
+  rankSovereignLeads([
+    { ...directLead, customFields: { fit_score: 100 } },
+    { ...agencyLead, customFields: { fit_score: 70 } },
+  ])[0]?.company === agencyLead.company,
+  'agency master-license leads should outrank direct leads even with lower fit score'
+)
 assert(
   sovereignSubjectForLead(directLead).includes('outbound deliverability'),
   'direct subject should use requested copy'

@@ -38,4 +38,20 @@ assert.match(importMessage, /Google Sheet import/)
 assert.match(importMessage, /Imported: 12/)
 assert.match(importMessage, /Evidence-backed: 9/)
 
+const dailyMessage = formatTelegramNotification({
+  type: 'daily_outbound',
+  imported: 100,
+  approved: 12,
+  queued: 5,
+  estimatedPipelineValueUsd: 425000,
+  agencyQueued: 4,
+  directQueued: 1,
+  sendLimit: 5,
+  approveLimit: 25,
+  failures: 0,
+})
+
+assert.match(dailyMessage, /Pipeline value: \$425,000/)
+assert.match(dailyMessage, /Mix: 4 agency \/ 1 direct/)
+
 console.log('telegram notification tests passed')

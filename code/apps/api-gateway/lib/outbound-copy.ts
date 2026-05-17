@@ -53,6 +53,30 @@ export function inferSovereignOfferType(input: SovereignCopyLead): SovereignOffe
   return 'direct'
 }
 
+function numericFitScore(input: SovereignCopyLead): number {
+  const custom = input.customFields ?? {}
+  const parsed = Number(custom.fit_score ?? custom.fitScore ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function sovereignDealValueUsd(input: SovereignCopyLead): number {
+  return inferSovereignOfferType(input) === 'agency' ? 100000 : 25000
+}
+
+export function rankSovereignLeads<T extends SovereignCopyLead>(leads: T[]): T[] {
+  return [...leads].sort((a, b) => {
+    const valueDelta = sovereignDealValueUsd(b) - sovereignDealValueUsd(a)
+    if (valueDelta !== 0) return valueDelta
+
+    const fitDelta = numericFitScore(b) - numericFitScore(a)
+    if (fitDelta !== 0) return fitDelta
+
+    return String(a.company ?? a.companyDomain ?? '').localeCompare(
+      String(b.company ?? b.companyDomain ?? '')
+    )
+  })
+}
+
 export function sovereignDirectEmail1Body(): string {
   return `Hey {{FirstName}},
 

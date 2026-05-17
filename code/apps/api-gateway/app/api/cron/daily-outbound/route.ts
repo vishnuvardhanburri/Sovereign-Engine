@@ -14,7 +14,9 @@ import {
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
   inferSovereignOfferType,
+  rankSovereignLeads,
   renderSovereignTemplate,
+  sovereignDealValueUsd,
   sovereignBodyForLead,
   sovereignSubjectForLead,
 } from '@/lib/outbound-copy'
@@ -38,6 +40,7 @@ type ApprovedLead = {
   consent_source: string
   reason_to_contact: string
   offer_type: 'direct' | 'agency'
+  deal_value_usd: number
 }
 
 function authorize(request: NextRequest): boolean {
@@ -305,6 +308,7 @@ async function runResearchApproval(input: {
 }
 
 async function loadApprovedContacts(clientId: number, limit: number): Promise<ApprovedLead[]> {
+  const scanLimit = Math.min(Math.max(limit * 5, limit), 500)
   const result = await query<{
     id: string
     email: string
@@ -351,27 +355,36 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
        c.updated_at ASC,
        c.created_at ASC
      LIMIT $2`,
-    [clientId, limit]
+    [clientId, scanLimit]
   )
 
-  return result.rows.map((row) => ({
-    contact_id: Number(row.id),
-    email: row.email,
-    first_name: row.first_name || row.email.split('@')[0] || 'there',
-    company: row.company || row.email.split('@')[1] || 'your team',
-    title: row.title || undefined,
-    company_domain: row.company_domain || undefined,
-    consent_source: 'operator_approved_business_outreach',
-    reason_to_contact: row.reason_to_contact || 'reviewed approved business prospect',
-    offer_type: inferSovereignOfferType({
+  const leads = result.rows.map((row) => {
+    const leadBase = {
       company: row.company,
       companyDomain: row.company_domain,
       title: row.title,
       source: row.source,
       reasonToContact: row.reason_to_contact,
       customFields: row.custom_fields,
-    }),
-  }))
+    }
+    const offerType = inferSovereignOfferType(leadBase)
+
+    return {
+      contact_id: Number(row.id),
+      email: row.email,
+      first_name: row.first_name || row.email.split('@')[0] || 'there',
+      company: row.company || row.email.split('@')[1] || 'your team',
+      title: row.title || undefined,
+      company_domain: row.company_domain || undefined,
+      consent_source: 'operator_approved_business_outreach',
+      reason_to_contact: row.reason_to_contact || 'reviewed approved business prospect',
+      offer_type: offerType,
+      deal_value_usd: sovereignDealValueUsd({ ...leadBase, offerType }),
+      customFields: row.custom_fields,
+    }
+  })
+
+  return rankSovereignLeads(leads).slice(0, limit)
 }
 
 async function runQueue(input: {
@@ -440,6 +453,13 @@ async function runQueue(input: {
     })
 
     const added = await queue.addBulk(jobs)
+    const queuedLeads = leads.slice(0, added.length)
+    const estimatedPipelineValueUsd = queuedLeads.reduce(
+      (sum, lead) => sum + lead.deal_value_usd,
+      0
+    )
+    const agencyQueued = queuedLeads.filter((lead) => lead.offer_type === 'agency').length
+    const directQueued = queuedLeads.length - agencyQueued
     const contactIds = leads
       .map((lead) => lead.contact_id)
       .filter((id): id is number => Number.isSafeInteger(id))
@@ -465,6 +485,9 @@ async function runQueue(input: {
       source: 'daily_approved_contacts',
       queue: queueName,
       limit: input.sendLimit,
+      estimatedPipelineValueUsd,
+      agencyQueued,
+      directQueued,
     })
 
     return {
@@ -475,6 +498,9 @@ async function runQueue(input: {
         queue: queueName,
         queued: added.length,
         limit: input.sendLimit,
+        estimatedPipelineValueUsd,
+        agencyQueued,
+        directQueued,
         firstJobId: added[0]?.id ?? null,
         lastJobId: added.at(-1)?.id ?? null,
       },
@@ -573,6 +599,12 @@ export async function GET(request: NextRequest) {
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
     const queued = getNumericField(queuedStage?.data, 'queued')
+    const estimatedPipelineValueUsd = getNumericField(
+      queuedStage?.data,
+      'estimatedPipelineValueUsd'
+    )
+    const agencyQueued = getNumericField(queuedStage?.data, 'agencyQueued')
+    const directQueued = getNumericField(queuedStage?.data, 'directQueued')
     const approved = getNumericField(approvalStage?.data, 'approved')
     const imported = getNumericField(sheetStage?.data, 'imported')
     const hardFailures = stages.filter(
@@ -585,6 +617,9 @@ export async function GET(request: NextRequest) {
       imported,
       approved,
       queued,
+      estimatedPipelineValueUsd,
+      agencyQueued,
+      directQueued,
       sendLimit: plan.sendLimit,
       approveLimit: plan.approveLimit,
       failures: stages.filter((stage) => !stage.ok).length,
@@ -601,6 +636,9 @@ export async function GET(request: NextRequest) {
         imported,
         approved,
         queued,
+        estimatedPipelineValueUsd,
+        agencyQueued,
+        directQueued,
         hardFailures: hardFailures.length,
       },
       plan,
