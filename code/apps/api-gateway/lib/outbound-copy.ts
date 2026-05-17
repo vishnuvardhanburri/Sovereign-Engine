@@ -214,12 +214,42 @@ export function sovereignBodyForLead(lead: SovereignCopyLead): string {
     : sovereignDirectEmail1Body()
 }
 
+function safeGreetingName(value: string | null | undefined): string {
+  const name = String(value || '').trim()
+  if (!name) return 'there'
+
+  const normalized = name.toLowerCase()
+  const genericInboxNames = new Set([
+    'admin',
+    'business',
+    'contact',
+    'hello',
+    'hi',
+    'info',
+    'mail',
+    'marketing',
+    'office',
+    'opportunity',
+    'ops',
+    'partnership',
+    'partnerships',
+    'sales',
+    'support',
+    'team',
+  ])
+
+  if (genericInboxNames.has(normalized)) return 'there'
+  if (!/^[a-z][a-z' -]{1,40}$/i.test(name)) return 'there'
+
+  return name
+}
+
 export function renderSovereignTemplate(
   template: string,
   lead: SovereignCopyLead,
   physicalAddress: string
 ): string {
-  const firstName = lead.first_name || lead.firstName || 'there'
+  const firstName = safeGreetingName(lead.first_name || lead.firstName)
   const company = lead.company || lead.companyDomain || 'your team'
   const reason =
     lead.reason_to_contact ||

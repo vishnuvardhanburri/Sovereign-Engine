@@ -51,6 +51,14 @@ assert(
 assert(directBody.includes('Example SaaS'), 'direct body should render company')
 assert(!directBody.includes('{{'), 'direct body should render all placeholders')
 
+const genericInboxBody = renderSovereignTemplate(
+  sovereignBodyForLead({ first_name: 'hello', company: 'Inbox Co' }),
+  { first_name: 'hello', company: 'Inbox Co' },
+  'Xavira Tech Labs, India'
+)
+assert(genericInboxBody.startsWith('Hey there,'), 'generic inboxes should not render as names')
+assert(!genericInboxBody.includes('Hey hello,'), 'generic inbox local parts should be suppressed')
+
 const agencyBody = renderSovereignTemplate(
   sovereignBodyForLead(agencyLead),
   agencyLead,
