@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  approvedContactQueueBlockers,
   enrichProspectWithPublicEmailEvidence,
   pageContainsExactEmail,
   scoreProspectForResearchApproval,
@@ -242,6 +243,7 @@ const exactEvidenceScore = scoreProspectForResearchApproval(
   exactEvidenceResult.contact
 )
 assert.equal(exactEvidenceScore.approved, true)
+assert.deepEqual(approvedContactQueueBlockers(exactEvidenceResult.contact), [])
 
 const missingExactEvidenceResult = await enrichProspectWithPublicEmailEvidence(
   {
@@ -273,6 +275,29 @@ assert.equal(missingExactEvidenceResult.matched, false)
 assert.equal(
   missingExactEvidenceResult.contact.custom_fields?.email_evidence,
   undefined
+)
+assert.ok(
+  approvedContactQueueBlockers(missingExactEvidenceResult.contact).includes(
+    'risky_role_requires_exact_public_email_evidence'
+  )
+)
+
+assert.ok(
+  approvedContactQueueBlockers({
+    id: 12,
+    email: 'hello@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      send_status: 'approved',
+      email_evidence: 'public_domain_email',
+      public_evidence_url: 'https://realagency.com/contact',
+    },
+  }).includes('generic_inbox_requires_email_validation')
 )
 
 console.log('prospect research tests passed')

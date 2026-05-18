@@ -4,6 +4,7 @@ import { sendTelegramMessage } from '@/lib/telegram'
 export type TelegramNotificationType =
   | 'email_sent'
   | 'email_failed'
+  | 'lead_scout'
   | 'sheet_import'
   | 'contacts_approved'
   | 'queue_batch'
@@ -28,6 +29,15 @@ type TelegramNotification =
       subject?: string | null
       error?: string | null
       campaign?: string | null
+    }
+  | {
+      type: 'lead_scout'
+      imported: number
+      scanned: number
+      evidenceBacked: number
+      blockedUnverified: number
+      industry?: string | null
+      persona?: string | null
     }
   | {
       type: 'sheet_import'
@@ -98,6 +108,7 @@ export function shouldNotifyTelegram(type: TelegramNotificationType, env: Telegr
   const eventFlags: Record<TelegramNotificationType, string> = {
     email_sent: 'TELEGRAM_NOTIFY_SENT',
     email_failed: 'TELEGRAM_NOTIFY_FAILED',
+    lead_scout: 'TELEGRAM_NOTIFY_IMPORTS',
     sheet_import: 'TELEGRAM_NOTIFY_IMPORTS',
     contacts_approved: 'TELEGRAM_NOTIFY_APPROVALS',
     queue_batch: 'TELEGRAM_NOTIFY_QUEUE',
@@ -145,6 +156,20 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `Filtered: ${input.rejected}`,
       input.sheetUrl ? `Sheet: ${clip(input.sheetUrl, 160)}` : null,
       'Status: review required before sending',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (input.type === 'lead_scout') {
+    return [
+      'Sovereign Engine',
+      'Autonomous lead scout',
+      `Scanned: ${input.scanned}`,
+      `Evidence-backed: ${input.evidenceBacked}`,
+      `Imported: ${input.imported}`,
+      `Blocked unverified: ${input.blockedUnverified}`,
+      input.industry ? `Industry: ${clip(input.industry, 60)}` : null,
+      input.persona ? `Persona: ${clip(input.persona, 60)}` : null,
+      'Status: exact public evidence required before approval',
     ].filter(Boolean).join('\n')
   }
 

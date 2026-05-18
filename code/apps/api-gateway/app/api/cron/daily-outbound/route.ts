@@ -8,11 +8,13 @@ import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
+  approvedContactQueueBlockers,
   enrichProspectWithPublicEmailEvidence,
   prospectNeedsExactPublicEmailEvidence,
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
 } from '@/lib/prospect-research'
+import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidence } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
   inferSovereignOfferType,
@@ -24,7 +26,7 @@ import {
 } from '@/lib/outbound-copy'
 
 type StageResult = {
-  stage: 'sheet_import' | 'research_approval' | 'queue_outbound'
+  stage: 'lead_scout' | 'sheet_import' | 'research_approval' | 'queue_outbound'
   ok: boolean
   status: number
   skipped?: string
@@ -79,6 +81,109 @@ function getNumericField(data: unknown, key: string): number {
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function pickRotatingValue(value: string | undefined, fallback: string): string {
+  const items = String(value || fallback)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  if (items.length <= 1) return items[0] || fallback
+  const day = Math.floor(Date.now() / 86_400_000)
+  return items[day % items.length] || fallback
+}
+
+function compactStage(stage: StageResult): StageResult {
+  if (!stage.data) return stage
+  const data = stage.data
+  return {
+    ...stage,
+    data: {
+      imported: getNumericField(data, 'imported'),
+      prepared: getNumericField(data, 'prepared'),
+      rejected: getNumericField(data, 'rejected'),
+      scanned: getNumericField(data, 'scanned'),
+      evidenceFetches: getNumericField(data, 'evidenceFetches'),
+      evidenceMatches: getNumericField(data, 'evidenceMatches'),
+      approved: getNumericField(data, 'approved'),
+      queued: getNumericField(data, 'queued'),
+      blockedUnverified: getNumericField(data, 'blockedUnverified'),
+      skipped: typeof data.skipped === 'string' ? data.skipped : undefined,
+      queue: typeof data.queue === 'string' ? data.queue : undefined,
+      estimatedPipelineValueUsd: getNumericField(data, 'estimatedPipelineValueUsd'),
+      agencyQueued: getNumericField(data, 'agencyQueued'),
+      directQueued: getNumericField(data, 'directQueued'),
+    },
+  }
+}
+
+async function runLeadScoutStage(input: {
+  clientId: number
+  dryRun: boolean
+  limit: number
+  industry?: string | null
+  persona?: string | null
+  region?: string | null
+}): Promise<StageResult> {
+  try {
+    const day = Math.floor(Date.now() / 86_400_000)
+    const result = scoutOpenLeads({
+      industry:
+        input.industry ||
+        pickRotatingValue(process.env.LEAD_SCOUT_INDUSTRIES || process.env.LEAD_SCOUT_INDUSTRY, 'agency'),
+      persona: input.persona || process.env.LEAD_SCOUT_PERSONA || 'partnerships',
+      region: input.region || process.env.LEAD_SCOUT_REGION || 'global',
+      limit: input.limit,
+      offset: day * input.limit,
+    })
+    const verifiedLeads = await verifyOpenLeadEvidence(result.leads)
+    const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+    const contacts = input.dryRun
+      ? []
+      : await importContacts(input.clientId, {
+          contacts: leadScoutToContacts(importableLeads),
+          verify: false,
+          enrich: false,
+          dedupeByDomain: true,
+        })
+
+    if (!input.dryRun) {
+      void notifyTelegramEvent({
+        type: 'lead_scout',
+        imported: contacts.length,
+        scanned: result.leads.length,
+        evidenceBacked: importableLeads.length,
+        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        industry: result.industry,
+        persona: result.persona,
+      })
+    }
+
+    return {
+      stage: 'lead_scout',
+      ok: true,
+      status: 200,
+      data: {
+        dryRun: input.dryRun,
+        imported: contacts.length,
+        scanned: result.leads.length,
+        evidenceBacked: importableLeads.length,
+        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        industry: result.industry,
+        persona: result.persona,
+        region: result.region,
+        guardrails: result.guardrails,
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'lead_scout',
+      ok: false,
+      status: 0,
+      error: safeError(error),
+    }
+  }
 }
 
 async function runSheetImport(input: {
@@ -346,6 +451,7 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
   const result = await query<{
     id: string
     email: string
+    email_domain: string | null
     first_name: string | null
     company: string | null
     company_domain: string | null
@@ -353,17 +459,26 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
     source: string | null
     reason_to_contact: string | null
     custom_fields: Record<string, unknown> | null
+    verification_status: string | null
+    status: string | null
+    bounced_at: string | null
+    unsubscribed_at: string | null
   }>(
     `SELECT
        c.id::text,
        c.email,
+       c.email_domain,
        COALESCE(NULLIF(c.name, ''), split_part(c.email, '@', 1)) AS first_name,
        COALESCE(NULLIF(c.company, ''), c.company_domain, c.email_domain, 'your team') AS company,
        c.company_domain,
        c.title,
        c.source,
        COALESCE(c.custom_fields->>'reason_to_contact', 'reviewed approved business prospect') AS reason_to_contact,
-       c.custom_fields
+       c.custom_fields,
+       c.verification_status,
+       c.status,
+       c.bounced_at,
+       c.unsubscribed_at
      FROM contacts c
      WHERE c.client_id = $1
        AND c.status = 'active'
@@ -392,7 +507,25 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
     [clientId, scanLimit]
   )
 
-  const leads = result.rows.map((row) => {
+  const eligibleRows = result.rows.filter(
+    (row) =>
+      approvedContactQueueBlockers({
+        id: row.id,
+        email: row.email,
+        email_domain: row.email_domain,
+        company: row.company,
+        company_domain: row.company_domain,
+        title: row.title,
+        source: row.source,
+        custom_fields: row.custom_fields,
+        verification_status: row.verification_status,
+        status: row.status,
+        bounced_at: row.bounced_at,
+        unsubscribed_at: row.unsubscribed_at,
+      }).length === 0
+  )
+
+  const leads = eligibleRows.map((row) => {
     const leadBase = {
       company: row.company,
       companyDomain: row.company_domain,
@@ -568,12 +701,15 @@ export async function GET(request: NextRequest) {
         dryRun: params.get('dryRun') || params.get('preview'),
         sheetUrl: params.get('sheetUrl'),
         sheetLimit: params.get('sheetLimit'),
+        leadScout: params.get('leadScout'),
+        leadScoutLimit: params.get('leadScoutLimit'),
         approveLimit: params.get('approveLimit'),
         sendLimit: params.get('sendLimit'),
         mode: params.get('mode'),
       },
     })
     const stages: StageResult[] = []
+    const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
 
     if (!plan.enabled) {
       return NextResponse.json({
@@ -582,6 +718,26 @@ export async function GET(request: NextRequest) {
         daily: true,
         plan,
         stages,
+      })
+    }
+
+    if (plan.runLeadScout) {
+      stages.push(
+        await runLeadScoutStage({
+          clientId: plan.clientId,
+          dryRun: plan.dryRun,
+          limit: plan.leadScoutLimit,
+          industry: params.get('industry') || params.get('leadScoutIndustry'),
+          persona: params.get('persona') || params.get('leadScoutPersona'),
+          region: params.get('region') || params.get('leadScoutRegion'),
+        })
+      )
+    } else {
+      stages.push({
+        stage: 'lead_scout',
+        ok: true,
+        status: 204,
+        skipped: 'lead_scout_disabled',
       })
     }
 
@@ -632,6 +788,7 @@ export async function GET(request: NextRequest) {
     const queuedStage = stages.find((stage) => stage.stage === 'queue_outbound')
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
+    const leadScoutStage = stages.find((stage) => stage.stage === 'lead_scout')
     const queued = getNumericField(queuedStage?.data, 'queued')
     const estimatedPipelineValueUsd = getNumericField(
       queuedStage?.data,
@@ -641,14 +798,16 @@ export async function GET(request: NextRequest) {
     const directQueued = getNumericField(queuedStage?.data, 'directQueued')
     const approved = getNumericField(approvalStage?.data, 'approved')
     const imported = getNumericField(sheetStage?.data, 'imported')
+    const leadScoutImported = getNumericField(leadScoutStage?.data, 'imported')
+    const leadScoutEvidenceBacked = getNumericField(leadScoutStage?.data, 'evidenceBacked')
     const hardFailures = stages.filter(
-      (stage) => !stage.ok && stage.stage !== 'sheet_import'
+      (stage) => !stage.ok && stage.stage !== 'sheet_import' && stage.stage !== 'lead_scout'
     )
 
     void notifyTelegramEvent({
       type: 'daily_outbound',
       dryRun: plan.dryRun,
-      imported,
+      imported: imported + leadScoutImported,
       approved,
       queued,
       estimatedPipelineValueUsd,
@@ -667,7 +826,10 @@ export async function GET(request: NextRequest) {
       dryRun: plan.dryRun,
       generatedAt: new Date().toISOString(),
       summary: {
-        imported,
+        imported: imported + leadScoutImported,
+        sheetImported: imported,
+        leadScoutImported,
+        leadScoutEvidenceBacked,
         approved,
         queued,
         estimatedPipelineValueUsd,
@@ -675,9 +837,22 @@ export async function GET(request: NextRequest) {
         directQueued,
         hardFailures: hardFailures.length,
       },
-      plan,
-      approvalWindow,
-      stages,
+      plan: verbose ? plan : {
+        mode: plan.mode,
+        sheetImport: plan.runSheetImport,
+        leadScout: plan.runLeadScout,
+        leadScoutLimit: plan.leadScoutLimit,
+        approveLimit: plan.approveLimit,
+        sendLimit: plan.sendLimit,
+      },
+      approvalWindow: verbose ? approvalWindow : {
+        limit: approvalWindow.limit,
+        activeDomains: approvalWindow.activeDomains,
+        remainingCapacity: approvalWindow.remainingCapacity,
+        averageHealthScore: approvalWindow.averageHealthScore,
+        policy: approvalWindow.policy,
+      },
+      stages: verbose ? stages : stages.map(compactStage),
     })
   } catch (error) {
     console.error('[api/cron/daily-outbound] failed', error)

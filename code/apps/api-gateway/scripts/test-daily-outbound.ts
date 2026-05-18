@@ -58,6 +58,7 @@ const noSheetPlan = buildDailyOutboundPlan({
 
 assert.equal(noSheetPlan.enabled, true)
 assert.equal(noSheetPlan.runSheetImport, false)
+assert.equal(noSheetPlan.runLeadScout, false)
 assert.equal(noSheetPlan.runResearchApproval, true)
 assert.equal(noSheetPlan.runQueue, true)
 assert.equal(noSheetPlan.sendLimit, 1)
@@ -67,6 +68,35 @@ assert.ok(
     'If Google Sheet intake fails, the system falls back to existing approved contacts'
   )
 )
+
+const autonomousScoutPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    LEAD_SCOUT_ENABLED: 'true',
+    LEAD_SCOUT_DAILY_LIMIT: '25',
+  },
+  query: {},
+})
+
+assert.equal(autonomousScoutPlan.runLeadScout, true)
+assert.equal(autonomousScoutPlan.leadScoutLimit, 25)
+assert.ok(
+  autonomousScoutPlan.guardrails.includes(
+    'Autonomous lead scout imports only exact public-contact evidence when enabled'
+  )
+)
+
+const disabledAutonomousScoutPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    LEAD_SCOUT_ENABLED: 'true',
+  },
+  query: {
+    leadScout: 'false',
+  },
+})
+
+assert.equal(disabledAutonomousScoutPlan.runLeadScout, false)
 
 const highRequestedPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,

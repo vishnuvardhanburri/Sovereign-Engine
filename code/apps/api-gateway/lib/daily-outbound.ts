@@ -7,9 +7,11 @@ export type DailyOutboundPlan = {
   clientId: number
   sheetUrl: string
   sheetLimit: number
+  leadScoutLimit: number
   approveLimit: number
   sendLimit: number
   runSheetImport: boolean
+  runLeadScout: boolean
   runResearchApproval: boolean
   runQueue: boolean
   guardrails: string[]
@@ -26,6 +28,8 @@ type PlanInput = {
     dryRun?: string | null
     sheetUrl?: string | null
     sheetLimit?: string | null
+    leadScout?: string | null
+    leadScoutLimit?: string | null
     approveLimit?: string | null
     sendLimit?: string | null
     mode?: string | null
@@ -36,6 +40,8 @@ const DEFAULT_CLIENT_ID = 1
 const DEFAULT_SHEET_LIMIT = 150
 const DEFAULT_SEND_LIMIT = 1
 const MAX_SHEET_LIMIT = 500
+const DEFAULT_LEAD_SCOUT_LIMIT = 25
+const MAX_LEAD_SCOUT_LIMIT = 100
 const MAX_APPROVE_LIMIT = 25
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
 const GROWTH_MAX_SEND_LIMIT = 50
@@ -181,6 +187,16 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     1,
     MAX_SHEET_LIMIT
   )
+  const leadScoutLimit = clampInteger(
+    input.query.leadScoutLimit ?? input.env.LEAD_SCOUT_DAILY_LIMIT,
+    DEFAULT_LEAD_SCOUT_LIMIT,
+    1,
+    MAX_LEAD_SCOUT_LIMIT
+  )
+  const runLeadScout = resolveDailyBoolean(
+    input.query.leadScout ?? input.env.DAILY_OUTBOUND_RUN_LEAD_SCOUT,
+    resolveDailyBoolean(input.env.LEAD_SCOUT_ENABLED, false)
+  )
   const guardrails = [
     'Approved contacts only are eligible for queueing',
     'Bounced, unsubscribed, suppressed, and unsafe inboxes stay blocked',
@@ -188,6 +204,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     'Daily queueing is capped by reputation health and domain capacity',
     'If Google Sheet intake fails, the system falls back to existing approved contacts',
   ]
+  if (runLeadScout) {
+    guardrails.push(
+      'Autonomous lead scout imports only exact public-contact evidence when enabled'
+    )
+  }
   const approveLimit = Math.min(
     clampInteger(
       input.query.approveLimit ?? input.env.DAILY_OUTBOUND_APPROVE_LIMIT,
@@ -213,9 +234,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       clientId,
       sheetUrl,
       sheetLimit,
+      leadScoutLimit,
       approveLimit,
       sendLimit: 0,
       runSheetImport: false,
+      runLeadScout: false,
       runResearchApproval: false,
       runQueue: false,
       guardrails,
@@ -229,9 +252,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     clientId,
     sheetUrl,
     sheetLimit,
+    leadScoutLimit,
     approveLimit,
     sendLimit,
     runSheetImport: Boolean(sheetUrl),
+    runLeadScout,
     runResearchApproval: true,
     runQueue: !dryRun && sendLimit > 0,
     guardrails,

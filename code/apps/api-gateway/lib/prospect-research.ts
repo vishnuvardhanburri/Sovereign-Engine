@@ -248,6 +248,38 @@ export function prospectNeedsExactPublicEmailEvidence(
   )
 }
 
+export function approvedContactQueueBlockers(
+  contact: ProspectResearchContact
+): string[] {
+  const blockers: string[] = []
+  const email = contact.email.trim().toLowerCase()
+  const [prefix = ''] = email.split('@')
+  const verificationStatus = String(contact.verification_status ?? 'pending')
+  const customFields = contact.custom_fields ?? {}
+
+  if (contact.status && contact.status !== 'active') blockers.push('inactive_contact')
+  if (contact.bounced_at) blockers.push('previously_bounced')
+  if (contact.unsubscribed_at) blockers.push('unsubscribed')
+  if (['invalid', 'do_not_mail'].includes(verificationStatus)) {
+    blockers.push(`verification_${verificationStatus}`)
+  }
+  if (
+    asBool(customFields.lead_scout) &&
+    !asBool(customFields.auto_approval_eligible) &&
+    verificationStatus !== 'valid'
+  ) {
+    blockers.push('lead_scout_without_public_evidence')
+  }
+  if (VALIDATION_REQUIRED_PREFIXES.has(prefix) && verificationStatus !== 'valid') {
+    blockers.push('generic_inbox_requires_email_validation')
+  }
+  if (prospectNeedsExactPublicEmailEvidence(contact)) {
+    blockers.push('risky_role_requires_exact_public_email_evidence')
+  }
+
+  return Array.from(new Set(blockers))
+}
+
 export async function enrichProspectWithPublicEmailEvidence(
   contact: ProspectResearchContact,
   options?: {
