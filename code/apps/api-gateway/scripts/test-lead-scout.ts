@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict'
+import { performance } from 'node:perf_hooks'
+import { verifyOpenLeadEvidence, type OpenLead } from '@/lib/lead-scout'
+
+const originalFetch = globalThis.fetch
+
+function lead(overrides: Partial<OpenLead> = {}): OpenLead {
+  return {
+    email: 'partnerships@example.com',
+    company: 'Example',
+    companyDomain: 'example.com',
+    title: 'partnerships team',
+    source: 'test',
+    fitScore: 90,
+    reason: 'Relevant test company.',
+    confidence: 'high',
+    ...overrides,
+  }
+}
+
+async function main() {
+  globalThis.fetch = async () =>
+    new Response('<html>Contact partnerships@example.com for partners.</html>', {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    })
+
+  const [verified] = await verifyOpenLeadEvidence([lead()], {
+    deadlineMs: 500,
+    maxPagesPerLead: 2,
+    requestTimeoutMs: 100,
+  })
+
+  assert.equal(verified.autoApprovalEligible, true)
+  assert.equal(verified.emailEvidence, 'public_page_match')
+  assert.equal(verified.publicEvidenceUrl, 'https://example.com/')
+
+  globalThis.fetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal
+      const timer = setTimeout(() => reject(new Error('expected abort')), 5_000)
+      if (signal?.aborted) {
+        clearTimeout(timer)
+        reject(new Error('aborted'))
+        return
+      }
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer)
+          reject(new Error('aborted'))
+        },
+        { once: true }
+      )
+    }) as Promise<Response>
+
+  const startedAt = performance.now()
+  const [timedOut] = await verifyOpenLeadEvidence([lead({ email: 'hello@slow.example' })], {
+    deadlineMs: 250,
+    maxPagesPerLead: 4,
+    requestTimeoutMs: 100,
+  })
+  const elapsedMs = performance.now() - startedAt
+
+  assert.equal(timedOut.autoApprovalEligible, false)
+  assert.equal(timedOut.emailEvidence, 'synthetic_role_pattern')
+  assert.ok(elapsedMs < 1_000, `expected timeboxed verification, got ${elapsedMs}ms`)
+
+}
+
+main()
+  .then(() => {
+    console.log('Lead Scout evidence verification tests passed')
+  })
+  .catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+  .finally(() => {
+    globalThis.fetch = originalFetch
+  })

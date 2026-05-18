@@ -152,7 +152,11 @@ async function runLeadScoutStage(input: {
       limit: input.limit,
       offset: leadScoutOffset(input.limit),
     })
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads)
+    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+      deadlineMs: 6_000,
+      maxPagesPerLead: 3,
+      requestTimeoutMs: 1_200,
+    })
     const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
     const contacts = input.dryRun
       ? []

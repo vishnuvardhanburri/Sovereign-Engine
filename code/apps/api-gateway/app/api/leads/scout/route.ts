@@ -28,7 +28,11 @@ export async function GET(request: NextRequest) {
       offset: Number(searchParams.get('offset') ?? 0),
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads)
+    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+      deadlineMs: 10_000,
+      maxPagesPerLead: 6,
+      requestTimeoutMs: 1_500,
+    })
     const shouldImport = searchParams.get('import') === '1'
     const includeUnverified = searchParams.get('include_unverified') === '1'
     if (!shouldImport) {
@@ -85,7 +89,11 @@ export async function POST(request: NextRequest) {
       offset: body.offset,
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads)
+    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+      deadlineMs: 10_000,
+      maxPagesPerLead: 6,
+      requestTimeoutMs: 1_500,
+    })
     if (!body.importContacts) {
       return NextResponse.json({
         ok: true,

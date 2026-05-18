@@ -68,7 +68,11 @@ export async function GET(request: NextRequest) {
       offset,
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads)
+    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+      deadlineMs: 6_000,
+      maxPagesPerLead: 3,
+      requestTimeoutMs: 1_200,
+    })
     const importUnverified = String(process.env.LEAD_SCOUT_IMPORT_UNVERIFIED || '').toLowerCase() === 'true'
     const importableLeads = importUnverified
       ? verifiedLeads

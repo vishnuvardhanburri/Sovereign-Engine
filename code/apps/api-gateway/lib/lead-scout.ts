@@ -38,6 +38,16 @@ export interface OpenLead {
   autoApprovalEligible?: boolean
 }
 
+export interface VerifyOpenLeadEvidenceOptions {
+  /**
+   * Hard budget for the whole evidence verification batch. Cron must return
+   * even when public websites are slow, offline, or blocking bots.
+   */
+  deadlineMs?: number
+  maxPagesPerLead?: number
+  requestTimeoutMs?: number
+}
+
 interface CompanySeed {
   company: string
   domain: string
@@ -315,14 +325,14 @@ function extractEvidenceLinks(html: string, domain: string): string[] {
   return Array.from(urls).slice(0, 8)
 }
 
-async function fetchEvidencePage(url: string): Promise<string | null> {
+async function fetchEvidencePage(url: string, timeoutMs: number): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: {
         Accept: 'text/html,application/xhtml+xml',
         'User-Agent': 'SovereignEngineLeadVerifier/1.0',
       },
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(timeoutMs),
     })
 
     if (!response.ok) return null
@@ -334,59 +344,89 @@ async function fetchEvidencePage(url: string): Promise<string | null> {
   }
 }
 
-export async function verifyOpenLeadEvidence(leads: OpenLead[]): Promise<OpenLead[]> {
-  return Promise.all(
-    leads.map(async (lead) => {
-      const persona = personaFromTitle(lead.title)
-      const inferredEmail = lead.email.toLowerCase()
+async function verifySingleOpenLeadEvidence(
+  lead: OpenLead,
+  input: {
+    deadlineAt: number
+    maxPagesPerLead: number
+    requestTimeoutMs: number
+  }
+): Promise<OpenLead> {
+  const persona = personaFromTitle(lead.title)
+  const inferredEmail = lead.email.toLowerCase()
 
-      const urls = PUBLIC_EVIDENCE_PATHS.map((path) => publicUrl(lead.companyDomain, path))
-      const visited = new Set<string>()
+  const urls = PUBLIC_EVIDENCE_PATHS.map((path) => publicUrl(lead.companyDomain, path))
+  const visited = new Set<string>()
 
-      for (let index = 0; index < urls.length && index < 20; index += 1) {
-        const url = urls[index]
-        if (visited.has(url)) continue
-        visited.add(url)
+  for (let index = 0; index < urls.length && index < input.maxPagesPerLead; index += 1) {
+    if (Date.now() >= input.deadlineAt) break
 
-        const html = await fetchEvidencePage(url)
-        if (!html) continue
+    const url = urls[index]
+    if (visited.has(url)) continue
+    visited.add(url)
 
-        if (url === publicUrl(lead.companyDomain, '/')) {
-          for (const discoveredUrl of extractEvidenceLinks(html, lead.companyDomain)) {
-            if (!visited.has(discoveredUrl)) urls.push(discoveredUrl)
-          }
-        }
+    const remainingMs = input.deadlineAt - Date.now()
+    if (remainingMs <= 0) break
 
-        const lowerHtml = html.toLowerCase()
-        if (lowerHtml.includes(inferredEmail)) {
-          return {
-            ...lead,
-            emailEvidence: 'public_page_match',
-            publicEvidenceUrl: url,
-            autoApprovalEligible: true,
-            reason: `${lead.reason} Public evidence confirms ${inferredEmail}.`,
-          }
-        }
+    const html = await fetchEvidencePage(url, Math.min(input.requestTimeoutMs, remainingMs))
+    if (!html) continue
 
-        const publicEmail = pickPublicEmail(extractDomainEmails(html, lead.companyDomain), persona)
-        if (publicEmail) {
-          return {
-            ...lead,
-            email: publicEmail,
-            emailEvidence: 'public_domain_email',
-            publicEvidenceUrl: url,
-            autoApprovalEligible: true,
-            reason: `${lead.reason} Public contact evidence found on ${url}.`,
-          }
+    if (url === publicUrl(lead.companyDomain, '/')) {
+      for (const discoveredUrl of extractEvidenceLinks(html, lead.companyDomain)) {
+        if (!visited.has(discoveredUrl) && urls.length < input.maxPagesPerLead) {
+          urls.push(discoveredUrl)
         }
       }
+    }
 
+    const lowerHtml = html.toLowerCase()
+    if (lowerHtml.includes(inferredEmail)) {
       return {
         ...lead,
-        emailEvidence: 'synthetic_role_pattern',
-        autoApprovalEligible: false,
+        emailEvidence: 'public_page_match',
+        publicEvidenceUrl: url,
+        autoApprovalEligible: true,
+        reason: `${lead.reason} Public evidence confirms ${inferredEmail}.`,
       }
-    })
+    }
+
+    const publicEmail = pickPublicEmail(extractDomainEmails(html, lead.companyDomain), persona)
+    if (publicEmail) {
+      return {
+        ...lead,
+        email: publicEmail,
+        emailEvidence: 'public_domain_email',
+        publicEvidenceUrl: url,
+        autoApprovalEligible: true,
+        reason: `${lead.reason} Public contact evidence found on ${url}.`,
+      }
+    }
+  }
+
+  return {
+    ...lead,
+    emailEvidence: 'synthetic_role_pattern',
+    autoApprovalEligible: false,
+  }
+}
+
+export async function verifyOpenLeadEvidence(
+  leads: OpenLead[],
+  options: VerifyOpenLeadEvidenceOptions = {}
+): Promise<OpenLead[]> {
+  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 20_000))
+  const maxPagesPerLead = Math.max(1, Math.min(options.maxPagesPerLead ?? 4, 8))
+  const requestTimeoutMs = Math.max(50, Math.min(options.requestTimeoutMs ?? 1_500, 3_000))
+  const deadlineAt = Date.now() + deadlineMs
+
+  return Promise.all(
+    leads.map((lead) =>
+      verifySingleOpenLeadEvidence(lead, {
+        deadlineAt,
+        maxPagesPerLead,
+        requestTimeoutMs,
+      })
+    )
   )
 }
 
