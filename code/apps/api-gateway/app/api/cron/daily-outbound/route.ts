@@ -15,7 +15,7 @@ import {
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
 } from '@/lib/prospect-research'
-import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidence } from '@/lib/lead-scout'
+import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
   inferSovereignOfferType,
@@ -152,7 +152,7 @@ async function runLeadScoutStage(input: {
       limit: input.limit,
       offset: leadScoutOffset(input.limit),
     })
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
       deadlineMs: 6_000,
       maxPagesPerLead: 3,
       requestTimeoutMs: 1_200,

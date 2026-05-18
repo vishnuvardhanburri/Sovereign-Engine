@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
-import { verifyOpenLeadEvidence, type OpenLead } from '@/lib/lead-scout'
+import {
+  verifyOpenLeadEvidence,
+  verifyOpenLeadEvidenceTimeboxed,
+  type OpenLead,
+} from '@/lib/lead-scout'
 
 const originalFetch = globalThis.fetch
 
@@ -65,6 +69,17 @@ async function main() {
   assert.equal(timedOut.emailEvidence, 'synthetic_role_pattern')
   assert.ok(elapsedMs < 1_000, `expected timeboxed verification, got ${elapsedMs}ms`)
 
+  const outerStartedAt = performance.now()
+  const [outerTimedOut] = await verifyOpenLeadEvidenceTimeboxed([lead({ email: 'ops@stuck.example' })], {
+    deadlineMs: 150,
+    maxPagesPerLead: 8,
+    requestTimeoutMs: 3_000,
+  })
+  const outerElapsedMs = performance.now() - outerStartedAt
+
+  assert.equal(outerTimedOut.autoApprovalEligible, false)
+  assert.equal(outerTimedOut.emailEvidence, 'synthetic_role_pattern')
+  assert.ok(outerElapsedMs < 700, `expected route-level timebox, got ${outerElapsedMs}ms`)
 }
 
 main()

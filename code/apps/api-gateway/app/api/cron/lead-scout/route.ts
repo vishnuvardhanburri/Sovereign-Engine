@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { importContacts } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
-import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidence } from '@/lib/lead-scout'
+import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       offset,
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidence(result.leads, {
+    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
       deadlineMs: 6_000,
       maxPagesPerLead: 3,
       requestTimeoutMs: 1_200,

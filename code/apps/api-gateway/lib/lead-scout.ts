@@ -430,6 +430,30 @@ export async function verifyOpenLeadEvidence(
   )
 }
 
+function unverifiedOpenLeads(leads: OpenLead[]): OpenLead[] {
+  return leads.map((lead) => ({
+    ...lead,
+    emailEvidence: 'synthetic_role_pattern',
+    autoApprovalEligible: false,
+  }))
+}
+
+export async function verifyOpenLeadEvidenceTimeboxed(
+  leads: OpenLead[],
+  options: VerifyOpenLeadEvidenceOptions = {}
+): Promise<OpenLead[]> {
+  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 20_000))
+  const fallback = unverifiedOpenLeads(leads)
+  const verification = verifyOpenLeadEvidence(leads, options).catch(() => fallback)
+
+  return Promise.race([
+    verification,
+    new Promise<OpenLead[]>((resolve) => {
+      setTimeout(() => resolve(fallback), deadlineMs + 250)
+    }),
+  ])
+}
+
 export function scoutOpenLeads(input: LeadScoutRequest = {}): {
   industry: LeadScoutIndustry
   persona: LeadScoutPersona
