@@ -4,6 +4,7 @@ import { resolveClientId } from '@/lib/client-context'
 import { appEnv } from '@/lib/env'
 import {
   fetchApifyDatasetItems,
+  fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
 } from '@/lib/maps-lead-source'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
@@ -39,7 +40,7 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
 
   const body = request.method === 'GET' ? {} : await request.json().catch(() => ({}))
   const params = request.nextUrl.searchParams
-  const datasetId = String(
+  const requestedDatasetId = String(
     (body as any).datasetId ??
       params.get('datasetId') ??
       process.env.APIFY_GOOGLE_MAPS_DATASET_ID ??
@@ -61,16 +62,23 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
   const industry = String((body as any).industry ?? params.get('industry') ?? 'agency').trim()
   const region = String((body as any).region ?? params.get('region') ?? 'global').trim()
 
-  if (!datasetId) {
+  if (!token) {
     return NextResponse.json(
-      { ok: false, error: 'datasetId is required. Set APIFY_GOOGLE_MAPS_DATASET_ID or pass ?datasetId=...' },
+      { ok: false, error: 'APIFY_API_TOKEN is not configured in the server environment' },
       { status: 400 }
     )
   }
 
-  if (!token) {
+  const datasetId =
+    requestedDatasetId ||
+    (await fetchLatestApifyDatasetId({
+      token,
+      limit: clampInteger(process.env.APIFY_DATASET_DISCOVERY_LIMIT, 20, 1, 100),
+    }))
+
+  if (!datasetId) {
     return NextResponse.json(
-      { ok: false, error: 'APIFY_API_TOKEN is not configured in the server environment' },
+      { ok: false, error: 'No Apify dataset is available. Run the Google Maps scraper once first.' },
       { status: 400 }
     )
   }

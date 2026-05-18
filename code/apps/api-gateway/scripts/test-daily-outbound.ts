@@ -105,6 +105,18 @@ assert.ok(
   )
 )
 
+const tokenOnlyMapsPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    GOOGLE_MAPS_SOURCE_ENABLED: 'true',
+    APIFY_API_TOKEN: 'token-only',
+  },
+  query: {},
+})
+
+assert.equal(tokenOnlyMapsPlan.runMapsImport, true)
+assert.equal(tokenOnlyMapsPlan.mapsDatasetId, '')
+
 const disabledMapsPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,
   env: {

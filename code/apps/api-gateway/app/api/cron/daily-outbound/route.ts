@@ -6,7 +6,11 @@ import { query } from '@/lib/db'
 import { importContacts } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
-import { fetchApifyDatasetItems, prepareMapsLeadContacts } from '@/lib/maps-lead-source'
+import {
+  fetchApifyDatasetItems,
+  fetchLatestApifyDatasetId,
+  prepareMapsLeadContacts,
+} from '@/lib/maps-lead-source'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
   approvedContactQueueBlockers,
@@ -304,14 +308,21 @@ async function runMapsImport(input: {
       }
     }
 
+    const datasetId =
+      input.datasetId ||
+      (await fetchLatestApifyDatasetId({
+        token,
+        limit: Math.max(1, Math.min(Number(process.env.APIFY_DATASET_DISCOVERY_LIMIT ?? 20), 100)),
+      }))
+
     const items = await fetchApifyDatasetItems({
-      datasetId: input.datasetId,
+      datasetId,
       token,
       limit: input.mapsLimit,
     })
     const prepared = prepareMapsLeadContacts(items, {
       sourceName: 'apify_google_maps',
-      sourceUrl: `apify:dataset:${input.datasetId}`,
+      sourceUrl: `apify:dataset:${datasetId}`,
       limit: input.mapsLimit,
       dedupeByDomain: true,
       industry: input.industry || process.env.GOOGLE_MAPS_INDUSTRY || 'agency',
@@ -333,7 +344,7 @@ async function runMapsImport(input: {
         prepared: prepared.contacts.length,
         rejected: prepared.rejected.length,
         evidenceBacked: prepared.summary.evidenceBacked,
-        datasetId: input.datasetId,
+        datasetId,
         source: 'apify_google_maps',
       })
     }
@@ -349,7 +360,7 @@ async function runMapsImport(input: {
         prepared: prepared.contacts.length,
         rejected: prepared.rejected.length,
         evidenceBacked: prepared.summary.evidenceBacked,
-        datasetId: input.datasetId,
+        datasetId,
       },
     }
   } catch (error) {

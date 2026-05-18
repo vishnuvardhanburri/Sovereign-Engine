@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import {
+  buildApifyDatasetsUrl,
   buildApifyDatasetItemsUrl,
+  fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
 } from '../lib/maps-lead-source'
 
@@ -81,4 +83,50 @@ assert.equal(
   'https://api.apify.com/v2/datasets/abc123/items?clean=true&format=json&limit=25&offset=10&token=secret-token'
 )
 
-console.log('maps lead source tests passed')
+assert.equal(
+  buildApifyDatasetsUrl({
+    token: 'secret-token',
+    limit: 10,
+  }),
+  'https://api.apify.com/v2/datasets?limit=10&desc=1&unnamed=true&token=secret-token'
+)
+
+async function main() {
+  const latestDatasetId = await fetchLatestApifyDatasetId({
+    token: 'secret-token',
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            items: [
+              {
+                id: 'empty-dataset',
+                itemCount: 0,
+                modifiedAt: '2026-05-18T00:00:00.000Z',
+              },
+              {
+                id: 'newest-non-empty',
+                itemCount: 5,
+                modifiedAt: '2026-05-18T01:00:00.000Z',
+              },
+              {
+                id: 'older-non-empty',
+                itemCount: 10,
+                modifiedAt: '2026-05-17T01:00:00.000Z',
+              },
+            ],
+          },
+        }),
+        { status: 200 }
+      ),
+  })
+
+  assert.equal(latestDatasetId, 'newest-non-empty')
+
+  console.log('maps lead source tests passed')
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

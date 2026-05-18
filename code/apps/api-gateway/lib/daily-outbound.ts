@@ -290,7 +290,9 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     approveLimit,
     sendLimit,
     runSheetImport: Boolean(sheetUrl),
-    runMapsImport: Boolean(runMapsImport && mapsDatasetId),
+    runMapsImport: Boolean(
+      runMapsImport && (mapsDatasetId || input.env.APIFY_API_TOKEN)
+    ),
     runLeadScout,
     runResearchApproval: true,
     runQueue: !dryRun && sendLimit > 0,

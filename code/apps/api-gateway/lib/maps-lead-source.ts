@@ -19,6 +19,14 @@ export type PreparedMapsLeadImport = {
 
 export type MapsLeadItem = Record<string, unknown>
 
+type ApifyDatasetSummary = {
+  id?: string
+  name?: string
+  itemCount?: number
+  modifiedAt?: string
+  createdAt?: string
+}
+
 const PERSONAL_EMAIL_DOMAINS = new Set([
   'aol.com',
   'gmail.com',
@@ -337,6 +345,65 @@ export function buildApifyDatasetItemsUrl(input: {
   url.searchParams.set('offset', String(offset))
   url.searchParams.set('token', input.token)
   return url.toString()
+}
+
+export function buildApifyDatasetsUrl(input: {
+  token: string
+  limit?: number
+}): string {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 20), 100))
+  const url = new URL('https://api.apify.com/v2/datasets')
+  url.searchParams.set('limit', String(limit))
+  url.searchParams.set('desc', '1')
+  url.searchParams.set('unnamed', 'true')
+  url.searchParams.set('token', input.token)
+  return url.toString()
+}
+
+function extractDatasets(data: unknown): ApifyDatasetSummary[] {
+  if (Array.isArray(data)) return data as ApifyDatasetSummary[]
+  if (
+    data &&
+    typeof data === 'object' &&
+    'data' in data &&
+    (data as { data?: unknown }).data &&
+    typeof (data as { data?: unknown }).data === 'object'
+  ) {
+    const nested = (data as { data: { items?: unknown } }).data.items
+    if (Array.isArray(nested)) return nested as ApifyDatasetSummary[]
+  }
+  return []
+}
+
+export async function fetchLatestApifyDatasetId(input: {
+  token: string
+  limit?: number
+  fetchImpl?: typeof fetch
+}): Promise<string> {
+  const fetcher = input.fetchImpl ?? fetch
+  const response = await fetcher(buildApifyDatasetsUrl(input), {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(20_000),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Apify datasets list returned HTTP ${response.status}`)
+  }
+
+  const datasets = extractDatasets(await response.json())
+    .filter((dataset) => dataset.id && Number(dataset.itemCount ?? 0) > 0)
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.modifiedAt || left.createdAt || '')
+      const rightTime = Date.parse(right.modifiedAt || right.createdAt || '')
+      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+    })
+
+  const latest = datasets[0]?.id
+  if (!latest) {
+    throw new Error('No non-empty Apify dataset found. Run the Google Maps scraper once first.')
+  }
+
+  return latest
 }
 
 export async function fetchApifyDatasetItems(input: {
