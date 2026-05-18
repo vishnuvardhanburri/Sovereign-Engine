@@ -28,20 +28,36 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
     average_health_score: string
     max_bounce_rate: string
   }>(
-    `WITH domain_signal AS (
+    `WITH domain_base AS (
+       SELECT
+         d.*,
+         GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8)))) AS computed_health_score,
+         CASE
+           WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100
+           ELSE 0
+         END AS raw_bounce_rate
+       FROM domains d
+       WHERE d.client_id = $1
+         AND d.status = 'active'
+         AND d.paused = false
+     ),
+     domain_rows AS (
+       SELECT
+         *,
+         (((COALESCE(sent_count, 0) >= 20) OR (COALESCE(bounce_count, 0) >= 3)) AND raw_bounce_rate > 5) AS proven_bounce_pressure
+       FROM domain_base
+     ),
+     domain_signal AS (
        SELECT
          COUNT(*)::text AS active_domains,
          COUNT(*) FILTER (
-           WHERE health_score >= 30
-             AND COALESCE(bounce_rate, 0) <= 5
+           WHERE computed_health_score >= 30
+             AND NOT proven_bounce_pressure
          )::text AS healthy_domains,
          COALESCE(SUM(GREATEST(COALESCE(daily_cap, daily_limit) - sent_today, 0)), 0)::text AS remaining_capacity,
-         COALESCE(AVG(health_score), 100)::text AS average_health_score,
-         COALESCE(MAX(bounce_rate), 0)::text AS max_bounce_rate
-       FROM domains
-       WHERE client_id = $1
-         AND status = 'active'
-         AND paused = false
+         COALESCE(AVG(computed_health_score), 100)::text AS average_health_score,
+         COALESCE(MAX(raw_bounce_rate), 0)::text AS max_bounce_rate
+       FROM domain_rows
      ),
      sender_signal AS (
        SELECT
@@ -55,14 +71,11 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
            ),
            0
          )::text AS sender_remaining_capacity
-       FROM domains d
+       FROM domain_rows d
        JOIN identities i ON i.domain_id = d.id AND i.client_id = d.client_id
-       WHERE d.client_id = $1
-         AND d.status = 'active'
-         AND d.paused = false
-         AND i.status = 'active'
-         AND d.health_score >= 30
-         AND COALESCE(d.bounce_rate, 0) <= 5
+       WHERE i.status = 'active'
+         AND d.computed_health_score >= 30
+         AND NOT d.proven_bounce_pressure
          AND i.sent_today < i.daily_limit
          AND d.sent_today < COALESCE(d.daily_cap, d.daily_limit)
      )

@@ -9,18 +9,24 @@ export interface SendingDeps {
 export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lane): Promise<SendIdentitySelection | null> {
   // Adapter-mode implementation: reuse the exact SQL selection policy we already used in api-gateway/lib/delivery/load-balancer.ts,
   // but keep this service independent of apps/*.
+  const computedHealthSql = `GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8))))`
+  const rawBounceSql = `CASE WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100 ELSE 0 END`
+  const provenBounceBlock = `NOT (((COALESCE(d.sent_count, 0) >= 20) OR (COALESCE(d.bounce_count, 0) >= 3)) AND ${rawBounceSql} > 5)`
   const extraDomainFilters =
     lane === 'low_risk'
       ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE
-         AND d.health_score >= 80
-         AND d.bounce_rate <= 1.5
+         AND ${computedHealthSql} >= 80
+         AND ${rawBounceSql} <= 1.5
+         AND ${provenBounceBlock}
          AND d.spam_rate <= 0.0200`
       : lane === 'slow'
         ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE
-           AND d.health_score >= 85
-           AND d.bounce_rate <= 1.0
+           AND ${computedHealthSql} >= 85
+           AND ${rawBounceSql} <= 1.0
+           AND ${provenBounceBlock}
            AND d.spam_rate <= 0.0150`
-        : `AND d.health_score >= 30`
+        : `AND ${computedHealthSql} >= 30
+           AND ${provenBounceBlock}`
 
   const res = await deps.db<any>(
     `
@@ -35,8 +41,8 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
       AND d.status = 'active'
       ${extraDomainFilters}
     ORDER BY
-      d.health_score DESC,
-      d.bounce_rate ASC,
+      ${computedHealthSql} DESC,
+      ${rawBounceSql} ASC,
       i.sent_today ASC,
       COALESCE(i.last_sent_at, '1970-01-01'::timestamp) ASC
     LIMIT 50

@@ -11,6 +11,53 @@ export interface DomainScore {
   bounceRate: number // percentage
 }
 
+export interface DomainHealthPolicyInput {
+  sentCount: number
+  bounceCount: number
+  currentStatus?: string
+}
+
+export interface DomainHealthPolicy {
+  rawBounceRate: number
+  effectiveBounceRate: number
+  healthScore: number
+  shouldPause: boolean
+  nextStatus: string
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function roundPct(n: number) {
+  return Number(n.toFixed(2))
+}
+
+export function calculateDomainHealthPolicy(input: DomainHealthPolicyInput): DomainHealthPolicy {
+  const sentCount = Math.max(0, Number(input.sentCount) || 0)
+  const bounceCount = Math.max(0, Number(input.bounceCount) || 0)
+  const currentStatus = input.currentStatus || 'active'
+
+  const rawBounceRate = sentCount > 0 ? roundPct((bounceCount / sentCount) * 100) : 0
+
+  // Small samples are noisy. A single bad address must slow the lane, not brick the domain.
+  const smoothingSends = 25
+  const effectiveBounceRate = sentCount > 0 ? roundPct((bounceCount / (sentCount + smoothingSends)) * 100) : 0
+  const healthScore = clamp(Math.round(100 - effectiveBounceRate * 8), 0, 100)
+
+  const enoughEvidenceToPause = sentCount >= 20 || bounceCount >= 3
+  const shouldPause = enoughEvidenceToPause && rawBounceRate > 5
+  const nextStatus = shouldPause ? 'paused' : currentStatus === 'paused' && rawBounceRate <= 5 ? 'active' : currentStatus
+
+  return {
+    rawBounceRate,
+    effectiveBounceRate,
+    healthScore,
+    shouldPause,
+    nextStatus,
+  }
+}
+
 export async function getDomainScore(deps: ReputationDeps, clientId: number, domainId: number): Promise<DomainScore | null> {
   const res = await deps.db<{
     id: number
@@ -50,9 +97,8 @@ export async function shouldPauseDomain(deps: ReputationDeps, clientId: number, 
   if (!row) return false
   const bounceRate = Number(row.bounce_rate ?? 0)
   const healthScore = Number(row.health_score ?? 0)
-  if (!row.spf_valid || !row.dkim_valid || !row.dmarc_valid) return true
-  if (bounceRate > 5) return true
-  if (healthScore < 30) return true
+  if (bounceRate > 12) return true
+  if (bounceRate > 5 && healthScore < 30) return true
   return false
 }
 
@@ -85,11 +131,11 @@ export async function updateDomainStats(deps: ReputationDeps, event: TrackingIng
   const row = rowRes.rows[0]
   if (!row) return
 
-  const sentCount = Number(row.sent_count ?? 0)
-  const bounceCount = Number(row.bounce_count ?? 0)
-  const bounceRate = sentCount > 0 ? Number(((bounceCount / sentCount) * 100).toFixed(2)) : 0
-  const healthScore = Math.min(Math.max(Math.round(100 - bounceRate * 8), 0), 100)
-  const nextStatus = bounceRate > 5 ? 'paused' : row.status
+  const policy = calculateDomainHealthPolicy({
+    sentCount: Number(row.sent_count ?? 0),
+    bounceCount: Number(row.bounce_count ?? 0),
+    currentStatus: row.status,
+  })
 
   await deps.db(
     `UPDATE domains
@@ -98,7 +144,6 @@ export async function updateDomainStats(deps: ReputationDeps, event: TrackingIng
          status = $5,
          updated_at = CURRENT_TIMESTAMP
      WHERE client_id = $1 AND id = $2`,
-    [event.clientId, event.domainId, bounceRate, healthScore, nextStatus]
+    [event.clientId, event.domainId, policy.rawBounceRate, policy.healthScore, policy.nextStatus]
   )
 }
-

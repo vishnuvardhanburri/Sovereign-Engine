@@ -1,14 +1,15 @@
 import { query, queryOne } from '@/lib/db'
 import { Domain } from '@/lib/db/types'
+import { calculateDomainHealthPolicy } from '@sovereign/reputation-engine'
 
 export type DomainRiskDecision = 'pause' | 'cooldown' | 'normal'
 
 export function assessDomainRisk(domain: Domain): DomainRiskDecision {
   if (!domain.spf_valid || !domain.dkim_valid || !domain.dmarc_valid) {
-    return 'pause'
+    return 'cooldown'
   }
 
-  if (domain.bounce_rate > 5) {
+  if (domain.bounce_rate > 12 || (domain.bounce_rate > 5 && domain.health_score < 30)) {
     return 'pause'
   }
 
@@ -34,12 +35,11 @@ export async function recalculateDomainHealth(
     return null
   }
 
-  const bounceRate =
-    domain.sent_count > 0
-      ? Number(((domain.bounce_count / domain.sent_count) * 100).toFixed(2))
-      : 0
-  const healthScore = Math.min(Math.max(Math.round(100 - bounceRate * 8), 0), 100)
-  const nextStatus = bounceRate > 5 ? 'paused' : domain.status
+  const policy = calculateDomainHealthPolicy({
+    sentCount: domain.sent_count,
+    bounceCount: domain.bounce_count,
+    currentStatus: domain.status,
+  })
 
   return queryOne<Domain>(
     `UPDATE domains
@@ -49,7 +49,7 @@ export async function recalculateDomainHealth(
          updated_at = CURRENT_TIMESTAMP
      WHERE client_id = $1 AND id = $2
      RETURNING *`,
-    [clientId, domainId, bounceRate, healthScore, nextStatus]
+    [clientId, domainId, policy.rawBounceRate, policy.healthScore, policy.nextStatus]
   )
 }
 
@@ -92,12 +92,6 @@ export async function refreshDomainRiskLimits(clientId?: number) {
            warmup_stage = CASE
              WHEN status = 'warming' AND bounce_rate <= 2 THEN LEAST(warmup_stage + 1, 7)
              ELSE warmup_stage
-           END,
-           status = CASE
-             WHEN NOT (spf_valid AND dkim_valid AND dmarc_valid) THEN 'paused'
-             WHEN bounce_rate > 5 THEN 'paused'
-             WHEN status = 'paused' AND bounce_rate <= 5 THEN 'active'
-             ELSE status
            END,
            updated_at = CURRENT_TIMESTAMP
        WHERE client_id = $1 AND id = $2`,

@@ -1504,7 +1504,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       selection = await rotateInboxForSend(job.clientId, lane)
     }
 
-    if (!selection) throw new Error('no_sender_identity_available')
+    if (!selection) throw new Error('retry_later:no_sender_identity_available')
     selectedDomainId = selection.domain.id
 
     const caps = enforceCaps(selection, lane)
@@ -2027,20 +2027,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
     }
 
     // Only emit FAILED tracking for real SMTP execution failures (not our own throttles).
-    const isInternalThrottle =
-      isCapacityPressure ||
-      msg.startsWith('retry_later:db_capacity') ||
-      msg.startsWith('retry_later:provider_lane_paused') ||
-      msg.startsWith('retry_later:adaptive_lane_bucket') ||
-      msg.startsWith('retry_later:adaptive_throttle') ||
-      msg.startsWith('retry_later:global_cap') ||
-      msg.startsWith('retry_later:global_shaper') ||
-      msg.startsWith('retry_later:domain_concurrency_cap') ||
-      msg.startsWith('retry_later:inflight_lock') ||
-      msg.startsWith('retry_later:recent_failure') ||
-      msg.startsWith('retry_later:worker_rotation_draining') ||
-      msg.startsWith('retry_later:license_lockdown') ||
-      msg.startsWith('retry_later:validator_unknown')
+    const isInternalThrottle = isCapacityPressure || msg.startsWith('retry_later:')
 
     if (!isInternalThrottle) {
       const { smtpClass, responseCode } = classifySmtpFailure(err)
