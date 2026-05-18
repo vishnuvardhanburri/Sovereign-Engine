@@ -6,6 +6,7 @@ import { query } from '@/lib/db'
 import { importContacts } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
+import { fetchApifyDatasetItems, prepareMapsLeadContacts } from '@/lib/maps-lead-source'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
   approvedContactQueueBlockers,
@@ -27,7 +28,7 @@ import {
 } from '@/lib/outbound-copy'
 
 type StageResult = {
-  stage: 'lead_scout' | 'sheet_import' | 'research_approval' | 'queue_outbound'
+  stage: 'lead_scout' | 'maps_import' | 'sheet_import' | 'research_approval' | 'queue_outbound'
   ok: boolean
   status: number
   skipped?: string
@@ -284,6 +285,83 @@ async function runSheetImport(input: {
   }
 }
 
+async function runMapsImport(input: {
+  clientId: number
+  dryRun: boolean
+  datasetId: string
+  mapsLimit: number
+  industry?: string | null
+  region?: string | null
+}): Promise<StageResult> {
+  try {
+    const token = process.env.APIFY_API_TOKEN || ''
+    if (!token) {
+      return {
+        stage: 'maps_import',
+        ok: false,
+        status: 400,
+        error: 'APIFY_API_TOKEN is not configured',
+      }
+    }
+
+    const items = await fetchApifyDatasetItems({
+      datasetId: input.datasetId,
+      token,
+      limit: input.mapsLimit,
+    })
+    const prepared = prepareMapsLeadContacts(items, {
+      sourceName: 'apify_google_maps',
+      sourceUrl: `apify:dataset:${input.datasetId}`,
+      limit: input.mapsLimit,
+      dedupeByDomain: true,
+      industry: input.industry || process.env.GOOGLE_MAPS_INDUSTRY || 'agency',
+      region: input.region || process.env.GOOGLE_MAPS_REGION || 'global',
+    })
+    const imported = input.dryRun
+      ? []
+      : await importContacts(input.clientId, {
+          contacts: prepared.contacts,
+          verify: false,
+          enrich: false,
+          dedupeByDomain: true,
+        })
+
+    if (!input.dryRun) {
+      void notifyTelegramEvent({
+        type: 'maps_import',
+        imported: imported.length,
+        prepared: prepared.contacts.length,
+        rejected: prepared.rejected.length,
+        evidenceBacked: prepared.summary.evidenceBacked,
+        datasetId: input.datasetId,
+        source: 'apify_google_maps',
+      })
+    }
+
+    return {
+      stage: 'maps_import',
+      ok: true,
+      status: 200,
+      data: {
+        dryRun: input.dryRun,
+        imported: imported.length,
+        scanned: items.length,
+        prepared: prepared.contacts.length,
+        rejected: prepared.rejected.length,
+        evidenceBacked: prepared.summary.evidenceBacked,
+        datasetId: input.datasetId,
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'maps_import',
+      ok: false,
+      status: 0,
+      error: safeError(error),
+    }
+  }
+}
+
 async function getResearchPool(clientId: number) {
   const result = await query<ProspectResearchContact & { created_at: string }>(
     `SELECT
@@ -307,8 +385,9 @@ async function getResearchPool(clientId: number) {
        AND unsubscribed_at IS NULL
        AND COALESCE(custom_fields->>'send_status', 'not_approved') <> 'approved'
        AND (
-         source IN ('google_sheet_import', 'open_lead_graph', 'owned_open_lead_graph')
+         source IN ('google_sheet_import', 'google_maps_apify', 'open_lead_graph', 'owned_open_lead_graph')
          OR COALESCE(custom_fields->>'sheet_import', 'false') = 'true'
+         OR COALESCE(custom_fields->>'maps_import', 'false') = 'true'
          OR COALESCE(custom_fields->>'lead_scout', 'false') = 'true'
        )
      ORDER BY created_at ASC
@@ -787,6 +866,9 @@ export async function GET(request: NextRequest) {
         dryRun: params.get('dryRun') || params.get('preview'),
         sheetUrl: params.get('sheetUrl'),
         sheetLimit: params.get('sheetLimit'),
+        mapsDatasetId: params.get('mapsDatasetId') || params.get('datasetId'),
+        mapsLimit: params.get('mapsLimit'),
+        mapsImport: params.get('mapsImport'),
         leadScout: params.get('leadScout'),
         leadScoutLimit: params.get('leadScoutLimit'),
         approveLimit: params.get('approveLimit'),
@@ -824,6 +906,26 @@ export async function GET(request: NextRequest) {
         ok: true,
         status: 204,
         skipped: 'lead_scout_disabled',
+      })
+    }
+
+    if (plan.runMapsImport) {
+      stages.push(
+        await runMapsImport({
+          clientId: plan.clientId,
+          dryRun: plan.dryRun,
+          datasetId: plan.mapsDatasetId,
+          mapsLimit: plan.mapsLimit,
+          industry: params.get('mapsIndustry') || params.get('industry'),
+          region: params.get('mapsRegion') || params.get('region'),
+        })
+      )
+    } else {
+      stages.push({
+        stage: 'maps_import',
+        ok: true,
+        status: 204,
+        skipped: 'maps_import_disabled_or_no_dataset',
       })
     }
 
@@ -880,6 +982,7 @@ export async function GET(request: NextRequest) {
     const queuedStage = stages.find((stage) => stage.stage === 'queue_outbound')
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
+    const mapsStage = stages.find((stage) => stage.stage === 'maps_import')
     const leadScoutStage = stages.find((stage) => stage.stage === 'lead_scout')
     const queued = getNumericField(queuedStage?.data, 'queued')
     const estimatedPipelineValueUsd = getNumericField(
@@ -890,16 +993,23 @@ export async function GET(request: NextRequest) {
     const directQueued = getNumericField(queuedStage?.data, 'directQueued')
     const approved = getNumericField(approvalStage?.data, 'approved')
     const imported = getNumericField(sheetStage?.data, 'imported')
+    const mapsImported = getNumericField(mapsStage?.data, 'imported')
+    const mapsPrepared = getNumericField(mapsStage?.data, 'prepared')
+    const mapsEvidenceBacked = getNumericField(mapsStage?.data, 'evidenceBacked')
     const leadScoutImported = getNumericField(leadScoutStage?.data, 'imported')
     const leadScoutEvidenceBacked = getNumericField(leadScoutStage?.data, 'evidenceBacked')
     const hardFailures = stages.filter(
-      (stage) => !stage.ok && stage.stage !== 'sheet_import' && stage.stage !== 'lead_scout'
+      (stage) =>
+        !stage.ok &&
+        stage.stage !== 'sheet_import' &&
+        stage.stage !== 'maps_import' &&
+        stage.stage !== 'lead_scout'
     )
 
     void notifyTelegramEvent({
       type: 'daily_outbound',
       dryRun: plan.dryRun,
-      imported: imported + leadScoutImported,
+      imported: imported + mapsImported + leadScoutImported,
       approved,
       queued,
       estimatedPipelineValueUsd,
@@ -918,8 +1028,11 @@ export async function GET(request: NextRequest) {
       dryRun: plan.dryRun,
       generatedAt: new Date().toISOString(),
       summary: {
-        imported: imported + leadScoutImported,
+        imported: imported + mapsImported + leadScoutImported,
         sheetImported: imported,
+        mapsImported,
+        mapsPrepared,
+        mapsEvidenceBacked,
         leadScoutImported,
         leadScoutEvidenceBacked,
         approved,
@@ -932,6 +1045,8 @@ export async function GET(request: NextRequest) {
       plan: verbose ? plan : {
         mode: plan.mode,
         sheetImport: plan.runSheetImport,
+        mapsImport: plan.runMapsImport,
+        mapsLimit: plan.mapsLimit,
         leadScout: plan.runLeadScout,
         leadScoutLimit: plan.leadScoutLimit,
         approveLimit: plan.approveLimit,

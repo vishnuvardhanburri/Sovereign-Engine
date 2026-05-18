@@ -7,10 +7,13 @@ export type DailyOutboundPlan = {
   clientId: number
   sheetUrl: string
   sheetLimit: number
+  mapsDatasetId: string
+  mapsLimit: number
   leadScoutLimit: number
   approveLimit: number
   sendLimit: number
   runSheetImport: boolean
+  runMapsImport: boolean
   runLeadScout: boolean
   runResearchApproval: boolean
   runQueue: boolean
@@ -28,6 +31,9 @@ type PlanInput = {
     dryRun?: string | null
     sheetUrl?: string | null
     sheetLimit?: string | null
+    mapsDatasetId?: string | null
+    mapsLimit?: string | null
+    mapsImport?: string | null
     leadScout?: string | null
     leadScoutLimit?: string | null
     approveLimit?: string | null
@@ -38,8 +44,10 @@ type PlanInput = {
 
 const DEFAULT_CLIENT_ID = 1
 const DEFAULT_SHEET_LIMIT = 150
+const DEFAULT_MAPS_LIMIT = 25
 const DEFAULT_SEND_LIMIT = 1
 const MAX_SHEET_LIMIT = 500
+const MAX_MAPS_LIMIT = 100
 const DEFAULT_LEAD_SCOUT_LIMIT = 3
 const MAX_LEAD_SCOUT_LIMIT = 3
 const MAX_APPROVE_LIMIT = 25
@@ -187,6 +195,22 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     1,
     MAX_SHEET_LIMIT
   )
+  const mapsDatasetId = String(
+    input.query.mapsDatasetId ||
+      input.env.APIFY_GOOGLE_MAPS_DATASET_ID ||
+      input.env.GOOGLE_MAPS_DATASET_ID ||
+      ''
+  ).trim()
+  const mapsLimit = clampInteger(
+    input.query.mapsLimit ?? input.env.GOOGLE_MAPS_DAILY_LIMIT,
+    DEFAULT_MAPS_LIMIT,
+    1,
+    MAX_MAPS_LIMIT
+  )
+  const runMapsImport = resolveDailyBoolean(
+    input.query.mapsImport ?? input.env.DAILY_OUTBOUND_RUN_MAPS,
+    resolveDailyBoolean(input.env.GOOGLE_MAPS_SOURCE_ENABLED, false)
+  )
   const leadScoutLimit = clampInteger(
     input.query.leadScoutLimit ?? input.env.LEAD_SCOUT_DAILY_LIMIT,
     DEFAULT_LEAD_SCOUT_LIMIT,
@@ -204,6 +228,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     'Daily queueing is capped by reputation health and domain capacity',
     'If Google Sheet intake fails, the system falls back to existing approved contacts',
   ]
+  if (runMapsImport) {
+    guardrails.push(
+      'Google Maps/Apify intake imports public business leads only after evidence filtering'
+    )
+  }
   if (runLeadScout) {
     guardrails.push(
       'Autonomous lead scout imports only exact public-contact evidence when enabled'
@@ -234,10 +263,13 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       clientId,
       sheetUrl,
       sheetLimit,
+      mapsDatasetId,
+      mapsLimit,
       leadScoutLimit,
       approveLimit,
       sendLimit: 0,
       runSheetImport: false,
+      runMapsImport: false,
       runLeadScout: false,
       runResearchApproval: false,
       runQueue: false,
@@ -252,10 +284,13 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     clientId,
     sheetUrl,
     sheetLimit,
+    mapsDatasetId,
+    mapsLimit,
     leadScoutLimit,
     approveLimit,
     sendLimit,
     runSheetImport: Boolean(sheetUrl),
+    runMapsImport: Boolean(runMapsImport && mapsDatasetId),
     runLeadScout,
     runResearchApproval: true,
     runQueue: !dryRun && sendLimit > 0,

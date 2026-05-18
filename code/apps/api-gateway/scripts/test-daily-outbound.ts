@@ -86,6 +86,38 @@ assert.ok(
   )
 )
 
+const mapsPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    GOOGLE_MAPS_SOURCE_ENABLED: 'true',
+    APIFY_GOOGLE_MAPS_DATASET_ID: 'dataset-123',
+    GOOGLE_MAPS_DAILY_LIMIT: '250',
+  },
+  query: {},
+})
+
+assert.equal(mapsPlan.runMapsImport, true)
+assert.equal(mapsPlan.mapsDatasetId, 'dataset-123')
+assert.equal(mapsPlan.mapsLimit, 100)
+assert.ok(
+  mapsPlan.guardrails.includes(
+    'Google Maps/Apify intake imports public business leads only after evidence filtering'
+  )
+)
+
+const disabledMapsPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    GOOGLE_MAPS_SOURCE_ENABLED: 'true',
+    APIFY_GOOGLE_MAPS_DATASET_ID: 'dataset-123',
+  },
+  query: {
+    mapsImport: 'false',
+  },
+})
+
+assert.equal(disabledMapsPlan.runMapsImport, false)
+
 const disabledAutonomousScoutPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,
   env: {

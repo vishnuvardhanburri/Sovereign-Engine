@@ -6,6 +6,7 @@ export type TelegramNotificationType =
   | 'email_failed'
   | 'lead_scout'
   | 'sheet_import'
+  | 'maps_import'
   | 'contacts_approved'
   | 'queue_batch'
   | 'queue_skipped'
@@ -46,6 +47,15 @@ type TelegramNotification =
       rejected: number
       evidenceBacked: number
       sheetUrl?: string | null
+    }
+  | {
+      type: 'maps_import'
+      imported: number
+      prepared: number
+      rejected: number
+      evidenceBacked: number
+      datasetId?: string | null
+      source?: string | null
     }
   | {
       type: 'contacts_approved'
@@ -110,6 +120,7 @@ export function shouldNotifyTelegram(type: TelegramNotificationType, env: Telegr
     email_failed: 'TELEGRAM_NOTIFY_FAILED',
     lead_scout: 'TELEGRAM_NOTIFY_IMPORTS',
     sheet_import: 'TELEGRAM_NOTIFY_IMPORTS',
+    maps_import: 'TELEGRAM_NOTIFY_IMPORTS',
     contacts_approved: 'TELEGRAM_NOTIFY_APPROVALS',
     queue_batch: 'TELEGRAM_NOTIFY_QUEUE',
     queue_skipped: 'TELEGRAM_NOTIFY_QUEUE',
@@ -156,6 +167,20 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `Filtered: ${input.rejected}`,
       input.sheetUrl ? `Sheet: ${clip(input.sheetUrl, 160)}` : null,
       'Status: review required before sending',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (input.type === 'maps_import') {
+    return [
+      'Sovereign Engine',
+      'Google Maps lead intake',
+      `Imported: ${input.imported}`,
+      `Prepared: ${input.prepared}`,
+      `Evidence-backed: ${input.evidenceBacked}`,
+      `Filtered: ${input.rejected}`,
+      input.source ? `Source: ${clip(input.source, 80)}` : null,
+      input.datasetId ? `Dataset: ${clip(input.datasetId, 80)}` : null,
+      'Status: review + approval gate required before sending',
     ].filter(Boolean).join('\n')
   }
 

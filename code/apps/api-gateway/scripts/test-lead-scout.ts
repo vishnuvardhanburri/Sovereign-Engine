@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
 import {
+  scoutOpenLeads,
   verifyOpenLeadEvidence,
   verifyOpenLeadEvidenceTimeboxed,
   type OpenLead,
@@ -23,6 +24,22 @@ function lead(overrides: Partial<OpenLead> = {}): OpenLead {
 }
 
 async function main() {
+  const automotive = scoutOpenLeads({
+    industry: 'automotive',
+    persona: 'partnerships',
+    region: 'us',
+    limit: 3,
+  })
+
+  assert.equal(automotive.industry, 'automotive')
+  assert.equal(automotive.leads.length, 3)
+  assert.ok(automotive.leads.every((item) => item.companyDomain))
+  assert.ok(
+    automotive.leads.some((item) =>
+      /dealer|automotive|vehicle|repair|fleet/i.test(item.reason)
+    )
+  )
+
   globalThis.fetch = async () =>
     new Response('<html>Contact partnerships@example.com for partners.</html>', {
       headers: { 'content-type': 'text/html; charset=utf-8' },

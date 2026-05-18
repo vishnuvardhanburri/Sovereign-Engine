@@ -8,6 +8,7 @@ export type LeadScoutIndustry =
   | 'devtools'
   | 'ecommerce'
   | 'fintech'
+  | 'automotive'
 
 export type LeadScoutPersona =
   | 'founder'
@@ -77,6 +78,14 @@ const INDUSTRY_ALIASES: Record<string, LeadScoutIndustry> = {
   retail: 'ecommerce',
   finance: 'fintech',
   payments: 'fintech',
+  auto: 'automotive',
+  automotive: 'automotive',
+  car: 'automotive',
+  cars: 'automotive',
+  dealer: 'automotive',
+  dealership: 'automotive',
+  dealerships: 'automotive',
+  fleet: 'automotive',
 }
 
 const COMPANY_SEEDS: CompanySeed[] = [
@@ -142,6 +151,12 @@ const COMPANY_SEEDS: CompanySeed[] = [
   { company: 'Razorpay', domain: 'razorpay.com', industries: ['fintech'], region: 'india', signals: ['payments', 'india businesses'] },
   { company: 'Brex', domain: 'brex.com', industries: ['fintech', 'saas'], region: 'us', signals: ['spend management', 'startup finance'] },
   { company: 'Mercury', domain: 'mercury.com', industries: ['fintech'], region: 'us', signals: ['startup banking', 'founder operations'] },
+  { company: 'DealerOn', domain: 'dealeron.com', industries: ['automotive', 'saas'], region: 'us', signals: ['dealer websites', 'automotive marketing'] },
+  { company: 'Dealer Inspire', domain: 'dealerinspire.com', industries: ['automotive', 'agency'], region: 'us', signals: ['automotive digital retail', 'dealer marketing'] },
+  { company: 'Cox Automotive', domain: 'coxautoinc.com', industries: ['automotive'], region: 'us', signals: ['vehicle marketplaces', 'dealer operations'] },
+  { company: 'Cars Commerce', domain: 'carscommerce.inc', industries: ['automotive', 'saas'], region: 'us', signals: ['automotive commerce', 'dealer growth'] },
+  { company: 'AutoLeadStar', domain: 'autoleadstar.com', industries: ['automotive', 'agency'], region: 'global', signals: ['automotive lead generation', 'dealer advertising'] },
+  { company: 'Tekion', domain: 'tekion.com', industries: ['automotive', 'saas'], region: 'us', signals: ['dealer management systems', 'automotive cloud'] },
 ]
 
 const PERSONA_MAILBOXES: Record<LeadScoutPersona, string[]> = {
@@ -205,7 +220,7 @@ const BLOCKED_PUBLIC_EMAIL_PREFIXES = new Set([
 function normalizeIndustry(input?: string): LeadScoutIndustry {
   const value = String(input || 'saas').trim().toLowerCase()
   if (value in INDUSTRY_ALIASES) return INDUSTRY_ALIASES[value]
-  if (['saas', 'agency', 'cybersecurity', 'ai', 'devtools', 'ecommerce', 'fintech'].includes(value)) {
+  if (['saas', 'agency', 'cybersecurity', 'ai', 'devtools', 'ecommerce', 'fintech', 'automotive'].includes(value)) {
     return value as LeadScoutIndustry
   }
   return 'saas'

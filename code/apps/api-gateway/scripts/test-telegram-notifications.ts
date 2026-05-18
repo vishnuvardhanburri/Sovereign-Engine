@@ -38,6 +38,20 @@ assert.match(importMessage, /Google Sheet import/)
 assert.match(importMessage, /Imported: 12/)
 assert.match(importMessage, /Evidence-backed: 9/)
 
+const mapsMessage = formatTelegramNotification({
+  type: 'maps_import',
+  imported: 7,
+  prepared: 12,
+  rejected: 5,
+  evidenceBacked: 7,
+  datasetId: 'dataset_123',
+  source: 'apify_google_maps',
+})
+
+assert.match(mapsMessage, /Google Maps lead intake/)
+assert.match(mapsMessage, /Imported: 7/)
+assert.match(mapsMessage, /Dataset: dataset_123/)
+
 const dailyMessage = formatTelegramNotification({
   type: 'daily_outbound',
   imported: 100,
