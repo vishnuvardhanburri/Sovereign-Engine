@@ -139,6 +139,7 @@ const SAFE_SOURCE_TYPES = new Set([
   'google_maps_apify',
   'google_maps_scraper_export',
   'google_sheet_import',
+  'hunter_domain_search',
   'open_lead_graph',
   'owned_open_lead_graph',
   'operator_google_sheet',
@@ -246,6 +247,7 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   const normalized = String(value ?? '').trim().toLowerCase()
   return [
     'exact_public_email',
+    'hunter_domain_search',
     'public_page_email_match',
     'public_mailto_match',
     'provider_validated',

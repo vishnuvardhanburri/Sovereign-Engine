@@ -7,6 +7,7 @@ export type TelegramNotificationType =
   | 'lead_scout'
   | 'sheet_import'
   | 'maps_import'
+  | 'hunter_domain_search'
   | 'contacts_approved'
   | 'queue_batch'
   | 'queue_skipped'
@@ -57,6 +58,13 @@ type TelegramNotification =
       evidenceBacked: number
       datasetId?: string | null
       source?: string | null
+    }
+  | {
+      type: 'hunter_domain_search'
+      imported: number
+      scanned: number
+      rejected: number
+      failures?: number | null
     }
   | {
       type: 'contacts_approved'
@@ -129,6 +137,7 @@ export function shouldNotifyTelegram(type: TelegramNotificationType, env: Telegr
     lead_scout: 'TELEGRAM_NOTIFY_IMPORTS',
     sheet_import: 'TELEGRAM_NOTIFY_IMPORTS',
     maps_import: 'TELEGRAM_NOTIFY_IMPORTS',
+    hunter_domain_search: 'TELEGRAM_NOTIFY_IMPORTS',
     contacts_approved: 'TELEGRAM_NOTIFY_APPROVALS',
     queue_batch: 'TELEGRAM_NOTIFY_QUEUE',
     queue_skipped: 'TELEGRAM_NOTIFY_QUEUE',
@@ -204,6 +213,18 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       input.industry ? `Industry: ${clip(input.industry, 60)}` : null,
       input.persona ? `Persona: ${clip(input.persona, 60)}` : null,
       'Status: exact public evidence required before approval',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (input.type === 'hunter_domain_search') {
+    return [
+      'Sovereign Engine',
+      'Hunter domain search',
+      `Domains searched: ${input.scanned}`,
+      `Imported: ${input.imported}`,
+      `Filtered: ${input.rejected}`,
+      `Provider failures: ${input.failures ?? 0}`,
+      'Status: Hunter-sourced contacts still pass approval and reputation gates',
     ].filter(Boolean).join('\n')
   }
 

@@ -3,9 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Queue } from 'bullmq'
 import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
-import { importContacts } from '@/lib/backend'
+import { importContacts, type ContactInput } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
+import { searchDomainWithHunter, type HunterDomainEmail } from '@/lib/integrations/hunter'
 import {
   buildApifyGoogleMapsActorInput,
   prepareMapsLeadContacts,
@@ -32,7 +33,7 @@ import {
 } from '@/lib/outbound-copy'
 
 type StageResult = {
-  stage: 'lead_scout' | 'maps_import' | 'sheet_import' | 'research_approval' | 'queue_outbound'
+  stage: 'lead_scout' | 'maps_import' | 'sheet_import' | 'hunter_domain_search' | 'research_approval' | 'queue_outbound'
   ok: boolean
   status: number
   skipped?: string
@@ -95,6 +96,92 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function normalizeDomain(value: string | null | undefined): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('?')[0]
+}
+
+function rootDomain(value: string): string {
+  const parts = normalizeDomain(value).split('.').filter(Boolean)
+  if (parts.length <= 2) return parts.join('.')
+  return parts.slice(-2).join('.')
+}
+
+function isSameRootDomain(left: string, right: string): boolean {
+  return Boolean(left && right && rootDomain(left) === rootDomain(right))
+}
+
+const SAFE_HUNTER_MAILBOX_PREFIXES = new Set([
+  'bd',
+  'business',
+  'contact',
+  'growth',
+  'hello',
+  'hi',
+  'info',
+  'marketing',
+  'opportunities',
+  'opportunity',
+  'partner',
+  'partners',
+  'partnership',
+  'partnerships',
+  'sales',
+  'team',
+])
+
+const BLOCKED_HUNTER_MAILBOX_PREFIXES = new Set([
+  'abuse',
+  'admin',
+  'billing',
+  'career',
+  'careers',
+  'compliance',
+  'donotreply',
+  'finance',
+  'hr',
+  'invoice',
+  'invoices',
+  'jobs',
+  'legal',
+  'no-reply',
+  'noreply',
+  'postmaster',
+  'privacy',
+  'security',
+  'support',
+  'webmaster',
+])
+
+function firstHunterSourceUrl(email: HunterDomainEmail): string {
+  return email.sources.find((source) => asString(source.uri))?.uri || ''
+}
+
+function isSafeHunterEmail(input: {
+  email: HunterDomainEmail
+  domain: string
+  minConfidence: number
+}): boolean {
+  const value = input.email.value.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return false
+  const [prefix = '', emailDomain = ''] = value.split('@')
+  if (!isSameRootDomain(emailDomain, input.domain)) return false
+  if (input.email.confidence < input.minConfidence) return false
+  if (BLOCKED_HUNTER_MAILBOX_PREFIXES.has(prefix)) return false
+  if (!SAFE_HUNTER_MAILBOX_PREFIXES.has(prefix)) return false
+  if (!firstHunterSourceUrl(input.email)) return false
+  return true
+}
+
+function hunterName(email: HunterDomainEmail): string | undefined {
+  return [email.firstName, email.lastName].filter(Boolean).join(' ') || undefined
+}
+
 function pickRotatingValue(value: string | undefined, fallback: string): string {
   const items = String(value || fallback)
     .split(',')
@@ -127,6 +214,7 @@ function compactStage(stage: StageResult): StageResult {
       providerValidationChecks: getNumericField(data, 'providerValidationChecks'),
       providerValidationValid: getNumericField(data, 'providerValidationValid'),
       providerValidationInvalid: getNumericField(data, 'providerValidationInvalid'),
+      hunterErrors: getNumericField(data, 'hunterErrors'),
       approved: getNumericField(data, 'approved'),
       queued: getNumericField(data, 'queued'),
       blockedUnverified: getNumericField(data, 'blockedUnverified'),
@@ -389,6 +477,153 @@ async function runMapsImport(input: {
   }
 }
 
+async function loadHunterSearchDomains(clientId: number, limit: number) {
+  const result = await query<{
+    domain: string
+    company: string | null
+    evidence_url: string | null
+  }>(
+    `SELECT
+       LOWER(COALESCE(NULLIF(company_domain, ''), NULLIF(email_domain, ''))) AS domain,
+       MAX(NULLIF(company, '')) AS company,
+       MAX(NULLIF(COALESCE(custom_fields->>'public_evidence_url', custom_fields->>'research_evidence_url', custom_fields->>'source_url'), '')) AS evidence_url
+     FROM contacts
+     WHERE client_id = $1
+       AND status = 'active'
+       AND bounced_at IS NULL
+       AND unsubscribed_at IS NULL
+       AND COALESCE(NULLIF(company_domain, ''), NULLIF(email_domain, '')) IS NOT NULL
+       AND COALESCE(custom_fields->>'send_status', 'not_approved') <> 'queued'
+     GROUP BY LOWER(COALESCE(NULLIF(company_domain, ''), NULLIF(email_domain, '')))
+     HAVING LOWER(COALESCE(NULLIF(company_domain, ''), NULLIF(email_domain, ''))) !~ '(example|localhost|\\.local)$'
+     ORDER BY MAX(updated_at) DESC
+     LIMIT $2`,
+    [clientId, limit]
+  )
+
+  return result.rows
+}
+
+async function runHunterDomainSearch(input: {
+  clientId: number
+  dryRun: boolean
+  domainLimit: number
+  emailsPerDomain: number
+  minConfidence: number
+}): Promise<StageResult> {
+  try {
+    if (!process.env.HUNTER_API_KEY) {
+      return {
+        stage: 'hunter_domain_search',
+        ok: false,
+        status: 400,
+        error: 'HUNTER_API_KEY is not configured',
+      }
+    }
+
+    const domains = await loadHunterSearchDomains(input.clientId, input.domainLimit)
+    const contacts: ContactInput[] = []
+    let searched = 0
+    let rejected = 0
+    let hunterErrors = 0
+
+    for (const row of domains) {
+      const domain = normalizeDomain(row.domain)
+      if (!domain) continue
+      searched += 1
+
+      const result = await searchDomainWithHunter(domain, {
+        limit: input.emailsPerDomain,
+        timeoutMs: 10_000,
+      })
+
+      if (result.error) {
+        hunterErrors += 1
+        continue
+      }
+
+      for (const email of result.emails) {
+        if (!isSafeHunterEmail({ email, domain, minConfidence: input.minConfidence })) {
+          rejected += 1
+          continue
+        }
+
+        const sourceUrl = firstHunterSourceUrl(email)
+        const company = result.organization || row.company || domain
+        contacts.push({
+          email: email.value,
+          name: hunterName(email),
+          company,
+          companyDomain: domain,
+          title: email.position || email.department || 'business team',
+          source: 'hunter_domain_search',
+          customFields: {
+            hunter_domain_search: true,
+            data_source: 'hunter_domain_search',
+            consent_source: 'hunter_public_domain_search',
+            public_evidence_url: sourceUrl,
+            research_evidence_url: sourceUrl,
+            source_url: sourceUrl,
+            email_evidence: 'hunter_domain_search',
+            email_validation_provider: 'hunter_domain_search',
+            email_validation_score: Number((email.confidence / 100).toFixed(2)),
+            email_validation_verdict: 'valid',
+            hunter_confidence: email.confidence,
+            hunter_type: email.type,
+            hunter_department: email.department,
+            hunter_seniority: email.seniority,
+            hunter_linkedin: email.linkedin,
+            auto_approval_eligible: true,
+            fit_score: Math.max(70, Math.min(98, email.confidence)),
+            reason_to_contact: `${company} has public Hunter-sourced business contact evidence and appears relevant to outbound infrastructure or AI security risk review.`,
+          },
+        })
+      }
+    }
+
+    const imported = input.dryRun
+      ? []
+      : await importContacts(input.clientId, {
+          contacts,
+          verify: false,
+          enrich: false,
+          dedupeByDomain: false,
+        })
+
+    if (!input.dryRun) {
+      void notifyTelegramEvent({
+        type: 'hunter_domain_search',
+        imported: imported.length,
+        scanned: searched,
+        rejected,
+        failures: hunterErrors,
+      })
+    }
+
+    return {
+      stage: 'hunter_domain_search',
+      ok: true,
+      status: 200,
+      data: {
+        dryRun: input.dryRun,
+        scanned: searched,
+        prepared: contacts.length,
+        imported: imported.length,
+        rejected,
+        hunterErrors,
+        minConfidence: input.minConfidence,
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'hunter_domain_search',
+      ok: false,
+      status: 0,
+      error: safeError(error),
+    }
+  }
+}
+
 async function getResearchPool(clientId: number) {
   const result = await query<ProspectResearchContact & { created_at: string }>(
     `SELECT
@@ -412,9 +647,10 @@ async function getResearchPool(clientId: number) {
        AND unsubscribed_at IS NULL
        AND COALESCE(custom_fields->>'send_status', 'not_approved') <> 'approved'
        AND (
-         source IN ('google_sheet_import', 'google_maps_apify', 'open_lead_graph', 'owned_open_lead_graph')
+         source IN ('google_sheet_import', 'google_maps_apify', 'hunter_domain_search', 'open_lead_graph', 'owned_open_lead_graph')
          OR COALESCE(custom_fields->>'sheet_import', 'false') = 'true'
          OR COALESCE(custom_fields->>'maps_import', 'false') = 'true'
+         OR COALESCE(custom_fields->>'hunter_domain_search', 'false') = 'true'
          OR COALESCE(custom_fields->>'lead_scout', 'false') = 'true'
        )
      ORDER BY created_at ASC
@@ -905,6 +1141,10 @@ export async function GET(request: NextRequest) {
     })
     const stages: StageResult[] = []
     const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
+    const runHunterSearch = envBool(
+      params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
+      false
+    )
     const mapsActorId =
       params.get('mapsActorId') ||
       params.get('actorId') ||
@@ -999,6 +1239,37 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    if (runHunterSearch) {
+      stages.push(
+        await runHunterDomainSearch({
+          clientId: plan.clientId,
+          dryRun: plan.dryRun,
+          domainLimit: clampLimit(
+            params.get('hunterDomainLimit') || process.env.HUNTER_DOMAIN_SEARCH_DAILY_LIMIT,
+            10,
+            50
+          ),
+          emailsPerDomain: clampLimit(
+            params.get('hunterEmailsPerDomain') || process.env.HUNTER_EMAILS_PER_DOMAIN,
+            5,
+            25
+          ),
+          minConfidence: clampLimit(
+            params.get('hunterMinConfidence') || process.env.HUNTER_MIN_CONFIDENCE,
+            80,
+            100
+          ),
+        })
+      )
+    } else {
+      stages.push({
+        stage: 'hunter_domain_search',
+        ok: true,
+        status: 204,
+        skipped: 'hunter_domain_search_disabled',
+      })
+    }
+
     if (plan.runResearchApproval) {
       stages.push(
         await runResearchApproval({
@@ -1036,6 +1307,7 @@ export async function GET(request: NextRequest) {
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
     const mapsStage = stages.find((stage) => stage.stage === 'maps_import')
     const leadScoutStage = stages.find((stage) => stage.stage === 'lead_scout')
+    const hunterStage = stages.find((stage) => stage.stage === 'hunter_domain_search')
     const queued = getNumericField(queuedStage?.data, 'queued')
     const estimatedPipelineValueUsd = getNumericField(
       queuedStage?.data,
@@ -1050,6 +1322,9 @@ export async function GET(request: NextRequest) {
     const mapsEvidenceBacked = getNumericField(mapsStage?.data, 'evidenceBacked')
     const leadScoutImported = getNumericField(leadScoutStage?.data, 'imported')
     const leadScoutEvidenceBacked = getNumericField(leadScoutStage?.data, 'evidenceBacked')
+    const hunterImported = getNumericField(hunterStage?.data, 'imported')
+    const hunterPrepared = getNumericField(hunterStage?.data, 'prepared')
+    const hunterRejected = getNumericField(hunterStage?.data, 'rejected')
     const hardFailures = stages.filter(
       (stage) =>
         !stage.ok &&
@@ -1061,7 +1336,7 @@ export async function GET(request: NextRequest) {
     void notifyTelegramEvent({
       type: 'daily_outbound',
       dryRun: plan.dryRun,
-      imported: imported + mapsImported + leadScoutImported,
+      imported: imported + mapsImported + leadScoutImported + hunterImported,
       approved,
       queued,
       estimatedPipelineValueUsd,
@@ -1080,13 +1355,16 @@ export async function GET(request: NextRequest) {
       dryRun: plan.dryRun,
       generatedAt: new Date().toISOString(),
       summary: {
-        imported: imported + mapsImported + leadScoutImported,
+        imported: imported + mapsImported + leadScoutImported + hunterImported,
         sheetImported: imported,
         mapsImported,
         mapsPrepared,
         mapsEvidenceBacked,
         leadScoutImported,
         leadScoutEvidenceBacked,
+        hunterImported,
+        hunterPrepared,
+        hunterRejected,
         approved,
         queued,
         estimatedPipelineValueUsd,
