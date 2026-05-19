@@ -117,6 +117,19 @@ const tokenOnlyMapsPlan = buildDailyOutboundPlan({
 assert.equal(tokenOnlyMapsPlan.runMapsImport, true)
 assert.equal(tokenOnlyMapsPlan.mapsDatasetId, '')
 
+const taskOnlyMapsPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    GOOGLE_MAPS_SOURCE_ENABLED: 'true',
+    APIFY_API_TOKEN: 'token-only',
+    APIFY_GOOGLE_MAPS_TASK_ID: 'saved-google-maps-task',
+  },
+  query: {},
+})
+
+assert.equal(taskOnlyMapsPlan.runMapsImport, true)
+assert.equal(taskOnlyMapsPlan.mapsDatasetId, '')
+
 const disabledMapsPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,
   env: {

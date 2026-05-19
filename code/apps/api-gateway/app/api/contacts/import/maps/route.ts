@@ -3,9 +3,8 @@ import { importContacts } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 import { appEnv } from '@/lib/env'
 import {
-  fetchApifyDatasetItems,
-  fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
+  resolveApifyMapsItems,
 } from '@/lib/maps-lead-source'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 
@@ -47,6 +46,13 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
       process.env.GOOGLE_MAPS_DATASET_ID ??
       ''
   ).trim()
+  const taskId = String(
+    (body as any).taskId ??
+      params.get('taskId') ??
+      process.env.APIFY_GOOGLE_MAPS_TASK_ID ??
+      process.env.GOOGLE_MAPS_APIFY_TASK_ID ??
+      ''
+  ).trim()
   const token = process.env.APIFY_API_TOKEN || ''
   const limit = clampInteger(
     (body as any).limit ?? params.get('limit') ?? process.env.GOOGLE_MAPS_IMPORT_LIMIT,
@@ -69,34 +75,23 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
     )
   }
 
-  const datasetId =
-    requestedDatasetId ||
-    (await fetchLatestApifyDatasetId({
-      token,
-      limit: clampInteger(process.env.APIFY_DATASET_DISCOVERY_LIMIT, 20, 1, 100),
-    }))
-
-  if (!datasetId) {
-    return NextResponse.json(
-      { ok: false, error: 'No Apify dataset is available. Run the Google Maps scraper once first.' },
-      { status: 400 }
-    )
-  }
-
   const clientId = await resolveClientId({
     body: body as any,
     headers: request.headers,
     searchParams: params,
   })
-  const items = await fetchApifyDatasetItems({
-    datasetId,
+  const resolved = await resolveApifyMapsItems({
+    requestedDatasetId,
+    taskId,
     token,
     limit,
     offset,
+    datasetDiscoveryLimit: clampInteger(process.env.APIFY_DATASET_DISCOVERY_LIMIT, 20, 1, 100),
+    taskTimeoutSecs: clampInteger(process.env.APIFY_TASK_TIMEOUT_SECONDS, 120, 30, 300),
   })
-  const prepared = prepareMapsLeadContacts(items, {
+  const prepared = prepareMapsLeadContacts(resolved.items, {
     sourceName: 'apify_google_maps',
-    sourceUrl: `apify:dataset:${datasetId}`,
+    sourceUrl: resolved.sourceUrl,
     limit,
     dedupeByDomain,
     industry,
@@ -118,7 +113,7 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
       prepared: prepared.contacts.length,
       rejected: prepared.rejected.length,
       evidenceBacked: prepared.summary.evidenceBacked,
-      datasetId,
+      datasetId: resolved.datasetId || resolved.taskId || null,
       source: 'apify_google_maps',
     })
   }
@@ -127,9 +122,11 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
     ok: true,
     clientId,
     dryRun,
-    datasetId,
+    datasetId: resolved.datasetId || null,
+    taskId: resolved.taskId || null,
+    sourceType: resolved.sourceType,
     offset,
-    scanned: items.length,
+    scanned: resolved.items.length,
     imported: imported.length,
     contacts: imported,
     prepared: prepared.contacts.length,

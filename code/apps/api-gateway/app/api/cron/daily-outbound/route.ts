@@ -7,9 +7,8 @@ import { importContacts } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import {
-  fetchApifyDatasetItems,
-  fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
+  resolveApifyMapsItems,
 } from '@/lib/maps-lead-source'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
@@ -294,6 +293,7 @@ async function runMapsImport(input: {
   dryRun: boolean
   datasetId: string
   mapsLimit: number
+  taskId?: string
   industry?: string | null
   region?: string | null
 }): Promise<StageResult> {
@@ -308,21 +308,21 @@ async function runMapsImport(input: {
       }
     }
 
-    const datasetId =
-      input.datasetId ||
-      (await fetchLatestApifyDatasetId({
-        token,
-        limit: Math.max(1, Math.min(Number(process.env.APIFY_DATASET_DISCOVERY_LIMIT ?? 20), 100)),
-      }))
-
-    const items = await fetchApifyDatasetItems({
-      datasetId,
+    const resolved = await resolveApifyMapsItems({
+      requestedDatasetId: input.datasetId,
+      taskId:
+        input.taskId ||
+        process.env.APIFY_GOOGLE_MAPS_TASK_ID ||
+        process.env.GOOGLE_MAPS_APIFY_TASK_ID ||
+        '',
       token,
       limit: input.mapsLimit,
+      datasetDiscoveryLimit: Math.max(1, Math.min(Number(process.env.APIFY_DATASET_DISCOVERY_LIMIT ?? 20), 100)),
+      taskTimeoutSecs: Math.max(30, Math.min(Number(process.env.APIFY_TASK_TIMEOUT_SECONDS ?? 120), 300)),
     })
-    const prepared = prepareMapsLeadContacts(items, {
+    const prepared = prepareMapsLeadContacts(resolved.items, {
       sourceName: 'apify_google_maps',
-      sourceUrl: `apify:dataset:${datasetId}`,
+      sourceUrl: resolved.sourceUrl,
       limit: input.mapsLimit,
       dedupeByDomain: true,
       industry: input.industry || process.env.GOOGLE_MAPS_INDUSTRY || 'agency',
@@ -344,7 +344,7 @@ async function runMapsImport(input: {
         prepared: prepared.contacts.length,
         rejected: prepared.rejected.length,
         evidenceBacked: prepared.summary.evidenceBacked,
-        datasetId,
+        datasetId: resolved.datasetId || resolved.taskId || null,
         source: 'apify_google_maps',
       })
     }
@@ -356,11 +356,13 @@ async function runMapsImport(input: {
       data: {
         dryRun: input.dryRun,
         imported: imported.length,
-        scanned: items.length,
+        scanned: resolved.items.length,
         prepared: prepared.contacts.length,
         rejected: prepared.rejected.length,
         evidenceBacked: prepared.summary.evidenceBacked,
-        datasetId,
+        datasetId: resolved.datasetId || null,
+        taskId: resolved.taskId || null,
+        sourceType: resolved.sourceType,
       },
     }
   } catch (error) {
@@ -927,6 +929,7 @@ export async function GET(request: NextRequest) {
           dryRun: plan.dryRun,
           datasetId: plan.mapsDatasetId,
           mapsLimit: plan.mapsLimit,
+          taskId: params.get('mapsTaskId') || params.get('taskId') || undefined,
           industry: params.get('mapsIndustry') || params.get('industry'),
           region: params.get('mapsRegion') || params.get('region'),
         })

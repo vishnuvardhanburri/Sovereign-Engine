@@ -27,6 +27,14 @@ type ApifyDatasetSummary = {
   createdAt?: string
 }
 
+export type ResolvedApifyMapsItems = {
+  items: MapsLeadItem[]
+  sourceType: 'apify_dataset' | 'apify_task'
+  sourceUrl: string
+  datasetId?: string
+  taskId?: string
+}
+
 const PERSONAL_EMAIL_DOMAINS = new Set([
   'aol.com',
   'gmail.com',
@@ -360,6 +368,25 @@ export function buildApifyDatasetsUrl(input: {
   return url.toString()
 }
 
+export function buildApifyTaskRunItemsUrl(input: {
+  taskId: string
+  token: string
+  limit?: number
+  timeoutSecs?: number
+}): string {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 500))
+  const timeoutSecs = Math.max(30, Math.min(Number(input.timeoutSecs ?? 120), 300))
+  const url = new URL(
+    `https://api.apify.com/v2/actor-tasks/${encodeURIComponent(input.taskId)}/run-sync-get-dataset-items`
+  )
+  url.searchParams.set('clean', 'true')
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('limit', String(limit))
+  url.searchParams.set('timeout', String(timeoutSecs))
+  url.searchParams.set('token', input.token)
+  return url.toString()
+}
+
 function extractDatasets(data: unknown): ApifyDatasetSummary[] {
   if (Array.isArray(data)) return data as ApifyDatasetSummary[]
   if (
@@ -406,6 +433,40 @@ export async function fetchLatestApifyDatasetId(input: {
   return latest
 }
 
+export async function fetchApifyTaskDatasetItems(input: {
+  taskId: string
+  token: string
+  limit?: number
+  timeoutSecs?: number
+  fetchImpl?: typeof fetch
+}): Promise<MapsLeadItem[]> {
+  const fetcher = input.fetchImpl ?? fetch
+  const response = await fetcher(
+    buildApifyTaskRunItemsUrl({
+      taskId: input.taskId,
+      token: input.token,
+      limit: input.limit,
+      timeoutSecs: input.timeoutSecs,
+    }),
+    {
+      method: 'GET',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(Math.max(35_000, Math.min(Number(input.timeoutSecs ?? 120) * 1000 + 5_000, 305_000))),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`Apify task run returned HTTP ${response.status}`)
+  }
+
+  const data = await response.json()
+  if (!Array.isArray(data)) {
+    throw new Error('Apify task run did not return a dataset item array')
+  }
+
+  return data as MapsLeadItem[]
+}
+
 export async function fetchApifyDatasetItems(input: {
   datasetId: string
   token: string
@@ -437,4 +498,73 @@ export async function fetchApifyDatasetItems(input: {
   }
 
   return data as MapsLeadItem[]
+}
+
+function isNoDatasetError(error: unknown): boolean {
+  return error instanceof Error && /No non-empty Apify dataset found/i.test(error.message)
+}
+
+export async function resolveApifyMapsItems(input: {
+  token: string
+  requestedDatasetId?: string
+  taskId?: string
+  limit?: number
+  offset?: number
+  datasetDiscoveryLimit?: number
+  taskTimeoutSecs?: number
+  fetchImpl?: typeof fetch
+}): Promise<ResolvedApifyMapsItems> {
+  const datasetId = String(input.requestedDatasetId || '').trim()
+  const taskId = String(input.taskId || '').trim()
+
+  if (datasetId) {
+    return {
+      items: await fetchApifyDatasetItems({
+        datasetId,
+        token: input.token,
+        limit: input.limit,
+        offset: input.offset,
+        fetchImpl: input.fetchImpl,
+      }),
+      sourceType: 'apify_dataset',
+      sourceUrl: `apify:dataset:${datasetId}`,
+      datasetId,
+    }
+  }
+
+  try {
+    const latestDatasetId = await fetchLatestApifyDatasetId({
+      token: input.token,
+      limit: input.datasetDiscoveryLimit,
+      fetchImpl: input.fetchImpl,
+    })
+
+    return {
+      items: await fetchApifyDatasetItems({
+        datasetId: latestDatasetId,
+        token: input.token,
+        limit: input.limit,
+        offset: input.offset,
+        fetchImpl: input.fetchImpl,
+      }),
+      sourceType: 'apify_dataset',
+      sourceUrl: `apify:dataset:${latestDatasetId}`,
+      datasetId: latestDatasetId,
+    }
+  } catch (error) {
+    if (!isNoDatasetError(error) || !taskId) throw error
+  }
+
+  return {
+    items: await fetchApifyTaskDatasetItems({
+      taskId,
+      token: input.token,
+      limit: input.limit,
+      timeoutSecs: input.taskTimeoutSecs,
+      fetchImpl: input.fetchImpl,
+    }),
+    sourceType: 'apify_task',
+    sourceUrl: `apify:task:${taskId}`,
+    taskId,
+  }
 }

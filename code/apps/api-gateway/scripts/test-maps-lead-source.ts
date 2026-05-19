@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import {
   buildApifyDatasetsUrl,
   buildApifyDatasetItemsUrl,
+  buildApifyTaskRunItemsUrl,
+  fetchApifyTaskDatasetItems,
   fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
+  resolveApifyMapsItems,
 } from '../lib/maps-lead-source'
 
 const items = [
@@ -91,6 +94,16 @@ assert.equal(
   'https://api.apify.com/v2/datasets?limit=10&desc=1&unnamed=true&token=secret-token'
 )
 
+assert.equal(
+  buildApifyTaskRunItemsUrl({
+    taskId: 'google-maps-task',
+    token: 'secret-token',
+    limit: 25,
+    timeoutSecs: 90,
+  }),
+  'https://api.apify.com/v2/actor-tasks/google-maps-task/run-sync-get-dataset-items?clean=true&format=json&limit=25&timeout=90&token=secret-token'
+)
+
 async function main() {
   const latestDatasetId = await fetchLatestApifyDatasetId({
     token: 'secret-token',
@@ -122,6 +135,42 @@ async function main() {
   })
 
   assert.equal(latestDatasetId, 'newest-non-empty')
+
+  const taskItems = await fetchApifyTaskDatasetItems({
+    taskId: 'google-maps-task',
+    token: 'secret-token',
+    limit: 2,
+    fetchImpl: async (url, init) => {
+      assert.equal(
+        String(url),
+        'https://api.apify.com/v2/actor-tasks/google-maps-task/run-sync-get-dataset-items?clean=true&format=json&limit=2&timeout=120&token=secret-token'
+      )
+      assert.equal(init?.method, 'GET')
+      return new Response(JSON.stringify([{ title: 'Evidence Agency' }]), { status: 200 })
+    },
+  })
+
+  assert.deepEqual(taskItems, [{ title: 'Evidence Agency' }])
+
+  const resolvedTaskRun = await resolveApifyMapsItems({
+    token: 'secret-token',
+    taskId: 'google-maps-task',
+    limit: 2,
+    fetchImpl: async (url) => {
+      const text = String(url)
+      if (text.startsWith('https://api.apify.com/v2/datasets?')) {
+        return new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })
+      }
+      if (text.startsWith('https://api.apify.com/v2/actor-tasks/')) {
+        return new Response(JSON.stringify([{ title: 'Task Run Agency' }]), { status: 200 })
+      }
+      return new Response('unexpected url', { status: 500 })
+    },
+  })
+
+  assert.equal(resolvedTaskRun.sourceType, 'apify_task')
+  assert.equal(resolvedTaskRun.taskId, 'google-maps-task')
+  assert.deepEqual(resolvedTaskRun.items, [{ title: 'Task Run Agency' }])
 
   console.log('maps lead source tests passed')
 }
