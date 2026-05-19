@@ -97,6 +97,12 @@ const SAFE_BUSINESS_MAILBOX_PREFIXES = new Set([
   'team',
 ])
 
+const RELEVANT_BUSINESS_CATEGORY_RE =
+  /\b(?:advertis(?:e|ing)|ai|automation|b2b|brand|business(?:\s+development)?|cloud|consult(?:ant|ing|ancy)?|crm|cyber(?:security)?|data|demand\s+gen(?:eration)?|digital\s+marketing|growth|gtm|information\s+technology|it\s+service|lead\s+gen(?:eration)?|marketing|performance\s+marketing|public\s+relations|revenue|revops|saas|sales|software|technology|web(?:site)?\s+design)\b/i
+
+const IRRELEVANT_AGENCY_CATEGORY_RE =
+  /\b(?:adoption|artist|auto|automotive|booking|bus|car\s+rental|charter|child\s+care|collection|dating|employment|estate|event|government|helicopter|home\s+health|insurance|modeling|news|nursing|real\s+estate|recruit(?:er|ing|ment)?|rental|staffing|tour|travel|wedding)\s+agency\b/i
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -252,6 +258,25 @@ function fitScoreFor(input: {
   return Math.max(50, Math.min(score, 98))
 }
 
+function isRelevantMapsBusiness(input: {
+  company: string
+  categories: string
+  website: string
+  industry?: string
+}): boolean {
+  const haystack = [
+    input.company,
+    input.categories,
+    input.website,
+    input.industry ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  if (IRRELEVANT_AGENCY_CATEGORY_RE.test(haystack)) return false
+  return RELEVANT_BUSINESS_CATEGORY_RE.test(haystack)
+}
+
 export function prepareMapsLeadContacts(
   items: MapsLeadItem[],
   opts?: {
@@ -317,6 +342,11 @@ export function prepareMapsLeadContacts(
 
       if (opts?.dedupeByDomain && seenDomains.has(emailDomain)) {
         rejected.push({ row, email, reason: 'duplicate_domain' })
+        continue
+      }
+
+      if (!isRelevantMapsBusiness({ company, categories, website, industry: opts?.industry })) {
+        rejected.push({ row, email, reason: 'irrelevant_maps_category' })
         continue
       }
 

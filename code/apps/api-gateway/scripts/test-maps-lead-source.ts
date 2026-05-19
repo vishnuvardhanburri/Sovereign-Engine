@@ -79,6 +79,47 @@ assert.ok(prepared.rejected.some((lead) => lead.reason === 'personal_email_domai
 assert.ok(prepared.rejected.some((lead) => lead.reason === 'missing_public_evidence_url'))
 assert.ok(prepared.rejected.some((lead) => lead.reason === 'duplicate_domain'))
 
+const irrelevantMapsLead = prepareMapsLeadContacts(
+  [
+    {
+      title: 'Outbound Heli Adventures | Alaska',
+      website: 'https://outboundheli.com/',
+      emails: ['info@outboundheli.com'],
+      categoryName: 'Helicopter tour agency',
+      additionalCategories: ['Dogsled ride service', 'Helicopter charter', 'Tour operator'],
+    },
+  ],
+  {
+    sourceName: 'apify_google_maps',
+    industry: 'agency',
+    region: 'global',
+  }
+)
+
+assert.equal(irrelevantMapsLead.contacts.length, 0)
+assert.equal(irrelevantMapsLead.rejected.length, 1)
+assert.equal(irrelevantMapsLead.rejected[0]?.reason, 'irrelevant_maps_category')
+
+const securityMapsLead = prepareMapsLeadContacts(
+  [
+    {
+      title: 'Clover Security',
+      website: 'https://clover.security/',
+      emails: ['hello@clover.security'],
+      categoryName: 'Computer security service',
+      additionalCategories: ['Software company'],
+    },
+  ],
+  {
+    sourceName: 'apify_google_maps',
+    industry: 'cybersecurity',
+    region: 'global',
+  }
+)
+
+assert.equal(securityMapsLead.contacts.length, 1)
+assert.equal(securityMapsLead.rejected.length, 0)
+
 assert.equal(
   buildApifyDatasetItemsUrl({
     datasetId: 'abc123',
