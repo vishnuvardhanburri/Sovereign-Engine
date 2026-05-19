@@ -108,13 +108,20 @@ const SAFE_BUSINESS_PREFIXES = new Set([
 ])
 
 const VALIDATION_REQUIRED_PREFIXES = new Set([
+  'bd',
   'business',
   'contact',
+  'growth',
   'hello',
   'hi',
   'info',
+  'inquiries',
+  'inquiry',
   'mail',
   'marketing',
+  'opportunities',
+  'opportunity',
+  'sales',
   'team',
 ])
 
@@ -128,6 +135,9 @@ const RISKY_GUESSED_ROLE_PREFIXES = new Set([
 ])
 
 const SAFE_SOURCE_TYPES = new Set([
+  'apify_google_maps',
+  'google_maps_apify',
+  'google_maps_scraper_export',
   'google_sheet_import',
   'open_lead_graph',
   'owned_open_lead_graph',

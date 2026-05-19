@@ -3,13 +3,20 @@ import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
 
 const VALIDATION_REQUIRED_PREFIXES = [
+  'bd',
   'business',
   'contact',
+  'growth',
   'hello',
   'hi',
   'info',
+  'inquiries',
+  'inquiry',
   'mail',
   'marketing',
+  'opportunities',
+  'opportunity',
+  'sales',
   'team',
 ]
 

@@ -32,7 +32,7 @@ const safe = scoreProspectForResearchApproval({
   company_domain: 'ignitevisibility.com',
   source: 'google_sheet_import',
   status: 'active',
-  verification_status: 'pending',
+  verification_status: 'valid',
   custom_fields: {
     sheet_import: true,
     auto_approval_eligible: true,
@@ -45,6 +45,30 @@ assert.equal(safe.approved, true)
 assert.equal(safe.blockers.length, 0)
 assert.ok(safe.score >= 72)
 assert.ok(safe.reasons.includes('safe_business_inbox'))
+
+const unverifiedOpportunityInbox = scoreProspectForResearchApproval({
+  id: 12,
+  email: 'opportunity@realagency.com',
+  email_domain: 'realagency.com',
+  company: 'Real Agency',
+  company_domain: 'realagency.com',
+  source: 'google_sheet_import',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    sheet_import: true,
+    auto_approval_eligible: true,
+    public_evidence_url: 'https://realagency.com/contact',
+    reason_to_contact: 'Agency with public growth and demand generation signals.',
+  },
+})
+
+assert.equal(unverifiedOpportunityInbox.approved, false)
+assert.ok(
+  unverifiedOpportunityInbox.blockers.includes(
+    'generic_inbox_requires_email_validation'
+  )
+)
 
 const personal = scoreProspectForResearchApproval({
   id: 2,
@@ -142,6 +166,44 @@ const unverifiedGenericInbox = scoreProspectForResearchApproval({
 assert.equal(unverifiedGenericInbox.approved, false)
 assert.ok(
   unverifiedGenericInbox.blockers.includes('generic_inbox_requires_email_validation')
+)
+
+const unverifiedSalesInbox = scoreProspectForResearchApproval({
+  id: 61,
+  email: 'sales@realagency.com',
+  email_domain: 'realagency.com',
+  company: 'Real Agency',
+  company_domain: 'realagency.com',
+  source: 'google_sheet_import',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    sheet_import: true,
+    auto_approval_eligible: true,
+    public_evidence_url: 'https://realagency.com/contact',
+    reason_to_contact: 'Agency with public growth and demand generation signals.',
+  },
+})
+
+assert.equal(unverifiedSalesInbox.approved, false)
+assert.ok(
+  unverifiedSalesInbox.blockers.includes('generic_inbox_requires_email_validation')
+)
+assert.ok(
+  approvedContactQueueBlockers({
+    id: 61,
+    email: 'sales@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      send_status: 'approved',
+      public_evidence_url: 'https://realagency.com/contact',
+    },
+  }).includes('generic_inbox_requires_email_validation')
 )
 
 const verifiedGenericInbox = scoreProspectForResearchApproval({
@@ -319,6 +381,61 @@ assert.equal(providerValidatedGeneric.contact.verification_status, 'valid')
 assert.equal(providerValidatedGeneric.contact.custom_fields?.email_evidence, 'provider_validated')
 assert.equal(scoreProspectForResearchApproval(providerValidatedGeneric.contact).approved, true)
 assert.deepEqual(approvedContactQueueBlockers(providerValidatedGeneric.contact), [])
+
+const providerValidatedSales = await enrichProspectWithProviderValidation(
+  {
+    id: 103,
+    email: 'sales@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      sheet_import: true,
+      auto_approval_eligible: true,
+      public_evidence_url: 'https://realagency.com/contact',
+      reason_to_contact: 'Agency with public growth and demand generation signals.',
+    },
+  },
+  {
+    verifyEmail: async () => ({
+      provider: 'hunter',
+      verdict: 'valid',
+      score: 0.88,
+      catchAll: false,
+      raw: null,
+    }),
+  }
+)
+
+assert.equal(providerValidatedSales.checked, true)
+assert.equal(providerValidatedSales.contact.verification_status, 'valid')
+assert.equal(
+  scoreProspectForResearchApproval(providerValidatedSales.contact).approved,
+  true
+)
+
+const validMapsLead = scoreProspectForResearchApproval({
+  id: 104,
+  email: 'sales@mappedagency.com',
+  email_domain: 'mappedagency.com',
+  company: 'Mapped Agency',
+  company_domain: 'mappedagency.com',
+  source: 'google_maps_apify',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    maps_import: true,
+    auto_approval_eligible: true,
+    public_evidence_url: 'https://mappedagency.com/contact',
+    reason_to_contact: 'Google Maps lead with public agency and outbound service signals.',
+  },
+})
+
+assert.equal(validMapsLead.approved, true)
+assert.ok(validMapsLead.reasons.includes('trusted_source'))
 
 const providerInvalidGeneric = await enrichProspectWithProviderValidation(
   {

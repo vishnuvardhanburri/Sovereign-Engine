@@ -3,13 +3,20 @@ import { query } from '../lib/db'
 const APPLY = process.argv.includes('--apply')
 
 const VALIDATION_REQUIRED_PREFIXES = [
+  'bd',
   'business',
   'contact',
+  'growth',
   'hello',
   'hi',
   'info',
+  'inquiries',
+  'inquiry',
   'mail',
   'marketing',
+  'opportunities',
+  'opportunity',
+  'sales',
   'team',
 ]
 
