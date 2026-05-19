@@ -148,8 +148,8 @@ export function buildApifyGoogleMapsActorInput(input?: {
     locationQuery: asString(input?.location) || 'United States',
     maxCrawledPlacesPerSearch: maxPlaces,
     language: 'en',
+    website: 'withWebsite',
     scrapeContacts: true,
-    scrapeEmails: true,
     skipClosedPlaces: true,
   }
 }

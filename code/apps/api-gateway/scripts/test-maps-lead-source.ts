@@ -128,8 +128,8 @@ assert.deepEqual(
     locationQuery: 'United States',
     maxCrawledPlacesPerSearch: 12,
     language: 'en',
+    website: 'withWebsite',
     scrapeContacts: true,
-    scrapeEmails: true,
     skipClosedPlaces: true,
   }
 )
