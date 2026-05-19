@@ -11,6 +11,7 @@ export type TelegramNotificationType =
   | 'queue_batch'
   | 'queue_skipped'
   | 'daily_outbound'
+  | 'reputation_recovery'
 
 type TelegramEnv = Record<string, string | undefined>
 
@@ -90,6 +91,13 @@ type TelegramNotification =
       approveLimit?: number
       failures?: number
     }
+  | {
+      type: 'reputation_recovery'
+      clientId: number
+      paused: number
+      domains: string[]
+      reason: string
+    }
 
 function envBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value === null || value === '') return fallback
@@ -125,6 +133,7 @@ export function shouldNotifyTelegram(type: TelegramNotificationType, env: Telegr
     queue_batch: 'TELEGRAM_NOTIFY_QUEUE',
     queue_skipped: 'TELEGRAM_NOTIFY_QUEUE',
     daily_outbound: 'TELEGRAM_NOTIFY_QUEUE',
+    reputation_recovery: 'TELEGRAM_NOTIFY_QUEUE',
   }
 
   return envBool(env[eventFlags[type]], true)
@@ -242,6 +251,18 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `Send limit: ${input.sendLimit ?? 0}`,
       `Stage failures: ${input.failures ?? 0}`,
     ].join('\n')
+  }
+
+  if (input.type === 'reputation_recovery') {
+    return [
+      'Sovereign Engine',
+      'Reputation recovery activated',
+      `Client: ${input.clientId}`,
+      `Paused domains: ${input.paused}`,
+      input.domains.length ? `Domains: ${clip(input.domains.join(', '), 180)}` : null,
+      `Reason: ${clip(input.reason, 160)}`,
+      'Status: sending paused until domain health recovers',
+    ].filter(Boolean).join('\n')
   }
 
   return [
