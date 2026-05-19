@@ -18,6 +18,7 @@ export type PreparedMapsLeadImport = {
 }
 
 export type MapsLeadItem = Record<string, unknown>
+export type ApifyActorInput = Record<string, unknown>
 
 type ApifyDatasetSummary = {
   id?: string
@@ -29,10 +30,11 @@ type ApifyDatasetSummary = {
 
 export type ResolvedApifyMapsItems = {
   items: MapsLeadItem[]
-  sourceType: 'apify_dataset' | 'apify_task'
+  sourceType: 'apify_dataset' | 'apify_task' | 'apify_actor'
   sourceUrl: string
   datasetId?: string
   taskId?: string
+  actorId?: string
 }
 
 const PERSONAL_EMAIL_DOMAINS = new Set([
@@ -114,6 +116,42 @@ function asStringArray(value: unknown): string[] {
     .split(/[,\n;]/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+export function buildApifyGoogleMapsActorInput(input?: {
+  searches?: unknown
+  location?: unknown
+  limit?: unknown
+  inputJson?: unknown
+}): ApifyActorInput {
+  if (input?.inputJson && typeof input.inputJson === 'object' && !Array.isArray(input.inputJson)) {
+    return input.inputJson as ApifyActorInput
+  }
+
+  const inputJson = asString(input?.inputJson)
+  if (inputJson) {
+    const parsed = JSON.parse(inputJson)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('APIFY_GOOGLE_MAPS_ACTOR_INPUT_JSON must be a JSON object')
+    }
+    return parsed as ApifyActorInput
+  }
+
+  const searches = asStringArray(
+    input?.searches ||
+      'lead generation agency, outbound agency, RevOps agency, B2B marketing agency'
+  )
+  const maxPlaces = Math.max(1, Math.min(Number(input?.limit ?? 25), 500))
+
+  return {
+    searchStringsArray: searches,
+    locationQuery: asString(input?.location) || 'United States',
+    maxCrawledPlacesPerSearch: maxPlaces,
+    language: 'en',
+    scrapeContacts: true,
+    scrapeEmails: true,
+    skipClosedPlaces: true,
+  }
 }
 
 function isEmail(value: string): boolean {
@@ -387,6 +425,30 @@ export function buildApifyTaskRunItemsUrl(input: {
   return url.toString()
 }
 
+function normalizeApifyActorId(actorId: string): string {
+  return actorId.trim().replace(/\//g, '~')
+}
+
+export function buildApifyActorRunItemsUrl(input: {
+  actorId: string
+  token: string
+  limit?: number
+  timeoutSecs?: number
+}): string {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 100), 500))
+  const timeoutSecs = Math.max(30, Math.min(Number(input.timeoutSecs ?? 120), 300))
+  const actorId = normalizeApifyActorId(input.actorId)
+  const url = new URL(
+    `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items`
+  )
+  url.searchParams.set('clean', 'true')
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('limit', String(limit))
+  url.searchParams.set('timeout', String(timeoutSecs))
+  url.searchParams.set('token', input.token)
+  return url.toString()
+}
+
 function extractDatasets(data: unknown): ApifyDatasetSummary[] {
   if (Array.isArray(data)) return data as ApifyDatasetSummary[]
   if (
@@ -467,6 +529,45 @@ export async function fetchApifyTaskDatasetItems(input: {
   return data as MapsLeadItem[]
 }
 
+export async function fetchApifyActorDatasetItems(input: {
+  actorId: string
+  token: string
+  input?: Record<string, unknown>
+  limit?: number
+  timeoutSecs?: number
+  fetchImpl?: typeof fetch
+}): Promise<MapsLeadItem[]> {
+  const fetcher = input.fetchImpl ?? fetch
+  const response = await fetcher(
+    buildApifyActorRunItemsUrl({
+      actorId: input.actorId,
+      token: input.token,
+      limit: input.limit,
+      timeoutSecs: input.timeoutSecs,
+    }),
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input.input ?? {}),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(Math.max(35_000, Math.min(Number(input.timeoutSecs ?? 120) * 1000 + 5_000, 305_000))),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`Apify actor run returned HTTP ${response.status}`)
+  }
+
+  const data = await response.json()
+  if (!Array.isArray(data)) {
+    throw new Error('Apify actor run did not return a dataset item array')
+  }
+
+  return data as MapsLeadItem[]
+}
+
 export async function fetchApifyDatasetItems(input: {
   datasetId: string
   token: string
@@ -508,6 +609,8 @@ export async function resolveApifyMapsItems(input: {
   token: string
   requestedDatasetId?: string
   taskId?: string
+  actorId?: string
+  actorInput?: Record<string, unknown>
   limit?: number
   offset?: number
   datasetDiscoveryLimit?: number
@@ -516,6 +619,7 @@ export async function resolveApifyMapsItems(input: {
 }): Promise<ResolvedApifyMapsItems> {
   const datasetId = String(input.requestedDatasetId || '').trim()
   const taskId = String(input.taskId || '').trim()
+  const actorId = String(input.actorId || '').trim()
 
   if (datasetId) {
     return {
@@ -553,23 +657,39 @@ export async function resolveApifyMapsItems(input: {
     }
   } catch (error) {
     if (!isNoDatasetError(error)) throw error
-    if (!taskId) {
+    if (!taskId && !actorId) {
       throw new Error(
-        'No non-empty Apify dataset found and no saved Google Maps task is configured. Set APIFY_GOOGLE_MAPS_TASK_ID in Render or pass taskId= in the cron URL.'
+        'No non-empty Apify dataset found and no saved Google Maps task or actor is configured. Set APIFY_GOOGLE_MAPS_TASK_ID or APIFY_GOOGLE_MAPS_ACTOR_ID in Render, or pass taskId=/actorId= in the cron URL.'
       )
     }
   }
 
-  return {
-    items: await fetchApifyTaskDatasetItems({
+  if (taskId) {
+    return {
+      items: await fetchApifyTaskDatasetItems({
+        taskId,
+        token: input.token,
+        limit: input.limit,
+        timeoutSecs: input.taskTimeoutSecs,
+        fetchImpl: input.fetchImpl,
+      }),
+      sourceType: 'apify_task',
+      sourceUrl: `apify:task:${taskId}`,
       taskId,
+    }
+  }
+
+  return {
+    items: await fetchApifyActorDatasetItems({
+      actorId,
       token: input.token,
+      input: input.actorInput,
       limit: input.limit,
       timeoutSecs: input.taskTimeoutSecs,
       fetchImpl: input.fetchImpl,
     }),
-    sourceType: 'apify_task',
-    sourceUrl: `apify:task:${taskId}`,
-    taskId,
+    sourceType: 'apify_actor',
+    sourceUrl: `apify:actor:${actorId}`,
+    actorId,
   }
 }

@@ -130,6 +130,19 @@ const taskOnlyMapsPlan = buildDailyOutboundPlan({
 assert.equal(taskOnlyMapsPlan.runMapsImport, true)
 assert.equal(taskOnlyMapsPlan.mapsDatasetId, '')
 
+const actorOnlyMapsPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    GOOGLE_MAPS_SOURCE_ENABLED: 'true',
+    APIFY_API_TOKEN: 'token-only',
+    APIFY_GOOGLE_MAPS_ACTOR_ID: 'compass/crawler-google-places',
+  },
+  query: {},
+})
+
+assert.equal(actorOnlyMapsPlan.runMapsImport, true)
+assert.equal(actorOnlyMapsPlan.mapsDatasetId, '')
+
 const disabledMapsPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,
   env: {

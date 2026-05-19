@@ -3,6 +3,7 @@ import { importContacts } from '@/lib/backend'
 import { resolveClientId } from '@/lib/client-context'
 import { appEnv } from '@/lib/env'
 import {
+  buildApifyGoogleMapsActorInput,
   prepareMapsLeadContacts,
   resolveApifyMapsItems,
 } from '@/lib/maps-lead-source'
@@ -53,6 +54,13 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
       process.env.GOOGLE_MAPS_APIFY_TASK_ID ??
       ''
   ).trim()
+  const actorId = String(
+    (body as any).actorId ??
+      params.get('actorId') ??
+      process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ??
+      process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ??
+      ''
+  ).trim()
   const token = process.env.APIFY_API_TOKEN || ''
   const limit = clampInteger(
     (body as any).limit ?? params.get('limit') ?? process.env.GOOGLE_MAPS_IMPORT_LIMIT,
@@ -67,6 +75,29 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
       : bool(params.get('dedupeByDomain') ?? 'true')
   const industry = String((body as any).industry ?? params.get('industry') ?? 'agency').trim()
   const region = String((body as any).region ?? params.get('region') ?? 'global').trim()
+  const actorInput = actorId
+    ? buildApifyGoogleMapsActorInput({
+        inputJson:
+          (body as any).actorInput ??
+          (body as any).actorInputJson ??
+          params.get('actorInputJson') ??
+          process.env.APIFY_GOOGLE_MAPS_ACTOR_INPUT_JSON,
+        searches:
+          (body as any).searches ??
+          (body as any).mapsSearches ??
+          params.get('searches') ??
+          params.get('mapsSearches') ??
+          process.env.APIFY_GOOGLE_MAPS_SEARCHES,
+        location:
+          (body as any).location ??
+          (body as any).mapsLocation ??
+          params.get('location') ??
+          params.get('mapsLocation') ??
+          process.env.APIFY_GOOGLE_MAPS_LOCATION ??
+          region,
+        limit,
+      })
+    : undefined
 
   if (!token) {
     return NextResponse.json(
@@ -83,6 +114,8 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
   const resolved = await resolveApifyMapsItems({
     requestedDatasetId,
     taskId,
+    actorId,
+    actorInput,
     token,
     limit,
     offset,
@@ -124,6 +157,7 @@ async function importFromMaps(request: NextRequest, dryRun: boolean) {
     dryRun,
     datasetId: resolved.datasetId || null,
     taskId: resolved.taskId || null,
+    actorId: resolved.actorId || null,
     sourceType: resolved.sourceType,
     offset,
     scanned: resolved.items.length,

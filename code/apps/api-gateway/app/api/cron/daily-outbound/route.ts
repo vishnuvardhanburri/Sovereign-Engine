@@ -7,6 +7,7 @@ import { importContacts } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import {
+  buildApifyGoogleMapsActorInput,
   prepareMapsLeadContacts,
   resolveApifyMapsItems,
 } from '@/lib/maps-lead-source'
@@ -131,6 +132,10 @@ function compactStage(stage: StageResult): StageResult {
       blockedUnverified: getNumericField(data, 'blockedUnverified'),
       skipped: typeof data.skipped === 'string' ? data.skipped : undefined,
       queue: typeof data.queue === 'string' ? data.queue : undefined,
+      datasetId: typeof data.datasetId === 'string' ? data.datasetId : undefined,
+      taskId: typeof data.taskId === 'string' ? data.taskId : undefined,
+      actorId: typeof data.actorId === 'string' ? data.actorId : undefined,
+      sourceType: typeof data.sourceType === 'string' ? data.sourceType : undefined,
       estimatedPipelineValueUsd: getNumericField(data, 'estimatedPipelineValueUsd'),
       agencyQueued: getNumericField(data, 'agencyQueued'),
       directQueued: getNumericField(data, 'directQueued'),
@@ -294,6 +299,8 @@ async function runMapsImport(input: {
   datasetId: string
   mapsLimit: number
   taskId?: string
+  actorId?: string
+  actorInput?: Record<string, unknown>
   industry?: string | null
   region?: string | null
 }): Promise<StageResult> {
@@ -315,6 +322,12 @@ async function runMapsImport(input: {
         process.env.APIFY_GOOGLE_MAPS_TASK_ID ||
         process.env.GOOGLE_MAPS_APIFY_TASK_ID ||
         '',
+      actorId:
+        input.actorId ||
+        process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ||
+        process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ||
+        '',
+      actorInput: input.actorInput,
       token,
       limit: input.mapsLimit,
       datasetDiscoveryLimit: Math.max(1, Math.min(Number(process.env.APIFY_DATASET_DISCOVERY_LIMIT ?? 20), 100)),
@@ -362,6 +375,7 @@ async function runMapsImport(input: {
         evidenceBacked: prepared.summary.evidenceBacked,
         datasetId: resolved.datasetId || null,
         taskId: resolved.taskId || null,
+        actorId: resolved.actorId || null,
         sourceType: resolved.sourceType,
       },
     }
@@ -891,6 +905,12 @@ export async function GET(request: NextRequest) {
     })
     const stages: StageResult[] = []
     const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
+    const mapsActorId =
+      params.get('mapsActorId') ||
+      params.get('actorId') ||
+      process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ||
+      process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ||
+      ''
 
     if (!plan.enabled) {
       return NextResponse.json({
@@ -930,6 +950,24 @@ export async function GET(request: NextRequest) {
           datasetId: plan.mapsDatasetId,
           mapsLimit: plan.mapsLimit,
           taskId: params.get('mapsTaskId') || params.get('taskId') || undefined,
+          actorId: mapsActorId || undefined,
+          actorInput: mapsActorId
+            ? buildApifyGoogleMapsActorInput({
+                inputJson: params.get('actorInputJson') || process.env.APIFY_GOOGLE_MAPS_ACTOR_INPUT_JSON,
+                searches:
+                  params.get('mapsSearches') ||
+                  params.get('searches') ||
+                  process.env.APIFY_GOOGLE_MAPS_SEARCHES,
+                location:
+                  params.get('mapsLocation') ||
+                  params.get('location') ||
+                  process.env.APIFY_GOOGLE_MAPS_LOCATION ||
+                  params.get('mapsRegion') ||
+                  params.get('region') ||
+                  process.env.GOOGLE_MAPS_REGION,
+                limit: plan.mapsLimit,
+              })
+            : undefined,
           industry: params.get('mapsIndustry') || params.get('industry'),
           region: params.get('mapsRegion') || params.get('region'),
         })

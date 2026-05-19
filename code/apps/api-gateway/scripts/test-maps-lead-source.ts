@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {
   buildApifyDatasetsUrl,
   buildApifyDatasetItemsUrl,
+  buildApifyActorRunItemsUrl,
   buildApifyTaskRunItemsUrl,
+  buildApifyGoogleMapsActorInput,
+  fetchApifyActorDatasetItems,
   fetchApifyTaskDatasetItems,
   fetchLatestApifyDatasetId,
   prepareMapsLeadContacts,
@@ -104,6 +107,43 @@ assert.equal(
   'https://api.apify.com/v2/actor-tasks/google-maps-task/run-sync-get-dataset-items?clean=true&format=json&limit=25&timeout=90&token=secret-token'
 )
 
+assert.equal(
+  buildApifyActorRunItemsUrl({
+    actorId: 'compass/crawler-google-places',
+    token: 'secret-token',
+    limit: 25,
+    timeoutSecs: 90,
+  }),
+  'https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items?clean=true&format=json&limit=25&timeout=90&token=secret-token'
+)
+
+assert.deepEqual(
+  buildApifyGoogleMapsActorInput({
+    searches: 'lead generation agency, RevOps agency',
+    location: 'United States',
+    limit: 12,
+  }),
+  {
+    searchStringsArray: ['lead generation agency', 'RevOps agency'],
+    locationQuery: 'United States',
+    maxCrawledPlacesPerSearch: 12,
+    language: 'en',
+    scrapeContacts: true,
+    scrapeEmails: true,
+    skipClosedPlaces: true,
+  }
+)
+
+assert.deepEqual(
+  buildApifyGoogleMapsActorInput({
+    inputJson: '{"searchStringsArray":["custom"],"locationQuery":"India"}',
+  }),
+  {
+    searchStringsArray: ['custom'],
+    locationQuery: 'India',
+  }
+)
+
 async function main() {
   const latestDatasetId = await fetchLatestApifyDatasetId({
     token: 'secret-token',
@@ -152,6 +192,31 @@ async function main() {
 
   assert.deepEqual(taskItems, [{ title: 'Evidence Agency' }])
 
+  const actorItems = await fetchApifyActorDatasetItems({
+    actorId: 'compass/crawler-google-places',
+    token: 'secret-token',
+    limit: 2,
+    input: {
+      searchStringsArray: ['lead generation agency'],
+      locationQuery: 'United States',
+    },
+    fetchImpl: async (url, init) => {
+      assert.equal(
+        String(url),
+        'https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items?clean=true&format=json&limit=2&timeout=120&token=secret-token'
+      )
+      assert.equal(init?.method, 'POST')
+      assert.equal(new Headers(init?.headers).get('content-type'), 'application/json')
+      assert.deepEqual(JSON.parse(String(init?.body)), {
+        searchStringsArray: ['lead generation agency'],
+        locationQuery: 'United States',
+      })
+      return new Response(JSON.stringify([{ title: 'Actor Run Agency' }]), { status: 200 })
+    },
+  })
+
+  assert.deepEqual(actorItems, [{ title: 'Actor Run Agency' }])
+
   const resolvedTaskRun = await resolveApifyMapsItems({
     token: 'secret-token',
     taskId: 'google-maps-task',
@@ -172,13 +237,37 @@ async function main() {
   assert.equal(resolvedTaskRun.taskId, 'google-maps-task')
   assert.deepEqual(resolvedTaskRun.items, [{ title: 'Task Run Agency' }])
 
+  const resolvedActorRun = await resolveApifyMapsItems({
+    token: 'secret-token',
+    actorId: 'compass/crawler-google-places',
+    actorInput: {
+      searchStringsArray: ['revops agency'],
+      locationQuery: 'United States',
+    },
+    limit: 2,
+    fetchImpl: async (url) => {
+      const text = String(url)
+      if (text.startsWith('https://api.apify.com/v2/datasets?')) {
+        return new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })
+      }
+      if (text.startsWith('https://api.apify.com/v2/acts/')) {
+        return new Response(JSON.stringify([{ title: 'Actor Fallback Agency' }]), { status: 200 })
+      }
+      return new Response('unexpected url', { status: 500 })
+    },
+  })
+
+  assert.equal(resolvedActorRun.sourceType, 'apify_actor')
+  assert.equal(resolvedActorRun.actorId, 'compass/crawler-google-places')
+  assert.deepEqual(resolvedActorRun.items, [{ title: 'Actor Fallback Agency' }])
+
   await assert.rejects(
     () =>
       resolveApifyMapsItems({
         token: 'secret-token',
         fetchImpl: async () => new Response(JSON.stringify({ data: { items: [] } }), { status: 200 }),
       }),
-    /APIFY_GOOGLE_MAPS_TASK_ID/
+    /APIFY_GOOGLE_MAPS_TASK_ID.*APIFY_GOOGLE_MAPS_ACTOR_ID/
   )
 
   console.log('maps lead source tests passed')
