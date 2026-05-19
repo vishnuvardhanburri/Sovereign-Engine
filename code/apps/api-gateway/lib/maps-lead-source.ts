@@ -552,7 +552,12 @@ export async function resolveApifyMapsItems(input: {
       datasetId: latestDatasetId,
     }
   } catch (error) {
-    if (!isNoDatasetError(error) || !taskId) throw error
+    if (!isNoDatasetError(error)) throw error
+    if (!taskId) {
+      throw new Error(
+        'No non-empty Apify dataset found and no saved Google Maps task is configured. Set APIFY_GOOGLE_MAPS_TASK_ID in Render or pass taskId= in the cron URL.'
+      )
+    }
   }
 
   return {

@@ -172,6 +172,15 @@ async function main() {
   assert.equal(resolvedTaskRun.taskId, 'google-maps-task')
   assert.deepEqual(resolvedTaskRun.items, [{ title: 'Task Run Agency' }])
 
+  await assert.rejects(
+    () =>
+      resolveApifyMapsItems({
+        token: 'secret-token',
+        fetchImpl: async () => new Response(JSON.stringify({ data: { items: [] } }), { status: 200 }),
+      }),
+    /APIFY_GOOGLE_MAPS_TASK_ID/
+  )
+
   console.log('maps lead source tests passed')
 }
 
