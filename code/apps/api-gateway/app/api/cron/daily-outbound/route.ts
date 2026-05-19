@@ -162,20 +162,29 @@ function firstHunterSourceUrl(email: HunterDomainEmail): string {
   return email.sources.find((source) => asString(source.uri))?.uri || ''
 }
 
-function isSafeHunterEmail(input: {
+function hunterEmailRejectionReason(input: {
   email: HunterDomainEmail
   domain: string
   minConfidence: number
-}): boolean {
+}): string | null {
   const value = input.email.value.trim().toLowerCase()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return false
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'invalid_email'
   const [prefix = '', emailDomain = ''] = value.split('@')
-  if (!isSameRootDomain(emailDomain, input.domain)) return false
-  if (input.email.confidence < input.minConfidence) return false
-  if (BLOCKED_HUNTER_MAILBOX_PREFIXES.has(prefix)) return false
-  if (!SAFE_HUNTER_MAILBOX_PREFIXES.has(prefix)) return false
-  if (!firstHunterSourceUrl(input.email)) return false
-  return true
+  if (!isSameRootDomain(emailDomain, input.domain)) return 'domain_mismatch'
+  if (input.email.confidence < input.minConfidence) return 'low_confidence'
+  if (BLOCKED_HUNTER_MAILBOX_PREFIXES.has(prefix)) return 'blocked_mailbox'
+  if (!firstHunterSourceUrl(input.email)) return 'missing_public_source'
+
+  if (SAFE_HUNTER_MAILBOX_PREFIXES.has(prefix)) return null
+
+  // Hunter can return source-backed named corporate contacts. Permit only
+  // high-confidence named contacts; never guessed/pattern-only addresses.
+  const isNamedCorporate =
+    input.email.type === 'personal' &&
+    Boolean(input.email.firstName && input.email.lastName) &&
+    input.email.confidence >= Math.max(input.minConfidence, 90)
+
+  return isNamedCorporate ? null : 'unsafe_mailbox_role'
 }
 
 function hunterName(email: HunterDomainEmail): string | undefined {
@@ -526,6 +535,12 @@ async function runHunterDomainSearch(input: {
     let searched = 0
     let rejected = 0
     let hunterErrors = 0
+    const errorCounts: Record<string, number> = {}
+    const rejectionCounts: Record<string, number> = {}
+
+    const count = (bucket: Record<string, number>, key: string) => {
+      bucket[key] = (bucket[key] ?? 0) + 1
+    }
 
     for (const row of domains) {
       const domain = normalizeDomain(row.domain)
@@ -539,12 +554,19 @@ async function runHunterDomainSearch(input: {
 
       if (result.error) {
         hunterErrors += 1
+        count(errorCounts, result.error)
         continue
       }
 
       for (const email of result.emails) {
-        if (!isSafeHunterEmail({ email, domain, minConfidence: input.minConfidence })) {
+        const rejectionReason = hunterEmailRejectionReason({
+          email,
+          domain,
+          minConfidence: input.minConfidence,
+        })
+        if (rejectionReason) {
           rejected += 1
+          count(rejectionCounts, rejectionReason)
           continue
         }
 
@@ -611,6 +633,8 @@ async function runHunterDomainSearch(input: {
         imported: imported.length,
         rejected,
         hunterErrors,
+        errorCounts,
+        rejectionCounts,
         minConfidence: input.minConfidence,
       },
     }
