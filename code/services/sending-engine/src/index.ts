@@ -6,12 +6,47 @@ export interface SendingDeps {
   db: DbExecutor
 }
 
+function envFlag(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function envInteger(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(process.env[name])
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(Math.trunc(parsed), max))
+}
+
 export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lane): Promise<SendIdentitySelection | null> {
   // Adapter-mode implementation: reuse the exact SQL selection policy we already used in api-gateway/lib/delivery/load-balancer.ts,
   // but keep this service independent of apps/*.
   const computedHealthSql = `GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8))))`
   const rawBounceSql = `CASE WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100 ELSE 0 END`
-  const provenBounceBlock = `NOT (((COALESCE(d.sent_count, 0) >= 20) OR (COALESCE(d.bounce_count, 0) >= 3)) AND ${rawBounceSql} > 5)`
+  const recoveryCap = envInteger(
+    'DOMAIN_RECOVERY_DAILY_CAP',
+    envInteger('DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT', 1, 0, 3),
+    0,
+    3
+  )
+  const recoveryEnabled =
+    lane === 'normal' &&
+    recoveryCap > 0 &&
+    envFlag(
+      'SENDING_ENGINE_RECOVERY_SENDER_ENABLED',
+      envFlag('DAILY_OUTBOUND_RECOVERY_MODE', Boolean(process.env.ZEROBOUNCE_API_KEY))
+    )
+  const recoveryMinHealth = envInteger('DOMAIN_RECOVERY_MIN_HEALTH', 30, 0, 100)
+  const recoveryMaxBounceRate = envInteger('DOMAIN_RECOVERY_MAX_BOUNCE_RATE', 35, 0, 100)
+  const recoveryBounceException = recoveryEnabled
+    ? ` OR (
+             /* reputation recovery trickle: only tiny capped domains may send verified contacts */
+             COALESCE(d.daily_cap, d.daily_limit) BETWEEN 1 AND ${recoveryCap}
+             AND ${computedHealthSql} >= ${recoveryMinHealth}
+             AND ${rawBounceSql} <= ${recoveryMaxBounceRate}
+           )`
+    : ''
+  const provenBounceBlock = `(NOT (((COALESCE(d.sent_count, 0) >= 20) OR (COALESCE(d.bounce_count, 0) >= 3)) AND ${rawBounceSql} > 5)${recoveryBounceException})`
   const extraDomainFilters =
     lane === 'low_risk'
       ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE

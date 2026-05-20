@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Queue } from 'bullmq'
 import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
-import { importContacts, type ContactInput } from '@/lib/backend'
+import { importContacts, runDailyMaintenance, type ContactInput } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import { searchDomainWithHunter, type HunterDomainEmail } from '@/lib/integrations/hunter'
@@ -238,6 +238,41 @@ function pickRotatingValue(value: string | undefined, fallback: string): string 
   if (items.length <= 1) return items[0] || fallback
   const day = Math.floor(Date.now() / 86_400_000)
   return items[day % items.length] || fallback
+}
+
+async function maybeRunDailyMaintenance(clientId: number): Promise<{
+  ran: boolean
+  reason: string
+  lastResetAt: string | null
+  domainsProcessed?: number
+}> {
+  if (!envBool(process.env.DAILY_OUTBOUND_AUTO_MAINTENANCE, true)) {
+    return { ran: false, reason: 'auto_maintenance_disabled', lastResetAt: null }
+  }
+
+  const row = await query<{ last_reset_at: string | null }>(
+    `SELECT MAX(last_reset_at)::text AS last_reset_at
+     FROM domains
+     WHERE client_id = $1`,
+    [clientId]
+  )
+  const lastResetAt = row.rows[0]?.last_reset_at ?? null
+  const now = new Date()
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const lastResetTime = lastResetAt ? new Date(lastResetAt).getTime() : 0
+
+  if (lastResetAt && Number.isFinite(lastResetTime) && lastResetTime >= todayUtc) {
+    return { ran: false, reason: 'already_reset_today', lastResetAt }
+  }
+
+  const result = await runDailyMaintenance(clientId)
+
+  return {
+    ran: true,
+    reason: lastResetAt ? 'stale_daily_reset' : 'missing_daily_reset',
+    lastResetAt,
+    domainsProcessed: result.domainsProcessed,
+  }
 }
 
 function leadScoutOffset(limit: number): number {
@@ -1333,6 +1368,7 @@ export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams
     const clientId = Number(params.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
+    const maintenance = await maybeRunDailyMaintenance(clientId)
     const approvalWindow = await resolveSystemApprovalWindow(clientId)
     const plan = buildDailyOutboundPlan({
       approvalWindow,
@@ -1619,6 +1655,7 @@ export async function GET(request: NextRequest) {
         averageHealthScore: approvalWindow.averageHealthScore,
         policy: approvalWindow.policy,
       },
+      maintenance,
       stages: verbose ? stages : stages.map(compactStage),
     })
   } catch (error) {

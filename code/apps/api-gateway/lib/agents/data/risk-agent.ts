@@ -2,6 +2,23 @@ import { query, queryOne } from '@/lib/db'
 import { Domain } from '@/lib/db/types'
 import { calculateDomainHealthPolicy } from '@sovereign/reputation-engine'
 
+type DomainRecoveryRow = Domain & {
+  daily_cap?: number | string | null
+  paused?: boolean | null
+}
+
+function envFlag(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function envInteger(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(process.env[name])
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(Math.trunc(parsed), max))
+}
+
 export type DomainRiskDecision = 'pause' | 'cooldown' | 'normal'
 
 export function assessDomainRisk(domain: Domain): DomainRiskDecision {
@@ -56,6 +73,20 @@ export async function recalculateDomainHealth(
 export async function refreshDomainRiskLimits(clientId?: number) {
   const params: unknown[] = []
   let where = ''
+  const recoveryCap = envInteger(
+    'DOMAIN_RECOVERY_DAILY_CAP',
+    envInteger('DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT', 1, 0, 3),
+    0,
+    3
+  )
+  const recoveryEnabled =
+    recoveryCap > 0 &&
+    envFlag(
+      'DOMAIN_RECOVERY_CAP_ENABLED',
+      envFlag('DAILY_OUTBOUND_RECOVERY_MODE', Boolean(process.env.ZEROBOUNCE_API_KEY))
+    )
+  const recoveryMinHealth = envInteger('DOMAIN_RECOVERY_MIN_HEALTH', 30, 0, 100)
+  const recoveryMaxBounceRate = envInteger('DOMAIN_RECOVERY_MAX_BOUNCE_RATE', 35, 0, 100)
 
   if (clientId) {
     params.push(clientId)
@@ -98,7 +129,26 @@ export async function refreshDomainRiskLimits(clientId?: number) {
       [domain.client_id, domain.id, domainLimit]
     )
 
-    await recalculateDomainHealth(domain.client_id, domain.id)
+    const recalculated = (await recalculateDomainHealth(
+      domain.client_id,
+      domain.id
+    )) as DomainRecoveryRow | null
+
+    if (recoveryEnabled && recalculated) {
+      await query(
+        `UPDATE domains
+         SET daily_cap = LEAST(daily_limit, $3),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE client_id = $1
+           AND id = $2
+           AND status = 'active'
+           AND paused = FALSE
+           AND COALESCE(daily_cap, 0) = 0
+           AND health_score >= $4
+           AND bounce_rate <= $5`,
+        [domain.client_id, domain.id, recoveryCap, recoveryMinHealth, recoveryMaxBounceRate]
+      )
+    }
   }
 
   return { domainsProcessed: domains.rowCount }
