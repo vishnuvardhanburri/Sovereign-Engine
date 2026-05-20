@@ -169,9 +169,23 @@ function providerModeFromEnv(): 'smtp' | 'brevo' | 'resend' {
   const explicit = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '').trim().toLowerCase()
   if (explicit === 'resend' || explicit.startsWith('re_') || explicit.includes('resend_api_key=')) return 'resend'
   if (explicit === 'brevo' || explicit.startsWith('xsmtpsib-') || explicit.includes('brevo_api_key=')) return 'brevo'
-  if (process.env.BREVO_API_KEY) return 'brevo'
-  if (process.env.RESEND_API_KEY) return 'resend'
+  if (providerSecret('brevo')) return 'brevo'
+  if (providerSecret('resend')) return 'resend'
   return 'smtp'
+}
+
+function providerSecret(provider: 'brevo' | 'resend'): string {
+  const aliases =
+    provider === 'brevo'
+      ? ['BREVO_API_KEY', 'BREVO_KEY', 'SENDINBLUE_API_KEY', 'SENDINBLUE_KEY', 'brevo_api_key', 'brevo']
+      : ['RESEND_API_KEY', 'RESEND_KEY', 'resend_api_key', 'resend']
+
+  for (const alias of aliases) {
+    const value = process.env[alias]
+    if (value && value.trim()) return value.trim()
+  }
+
+  return ''
 }
 
 function firstConfiguredSendingEmail(): string {

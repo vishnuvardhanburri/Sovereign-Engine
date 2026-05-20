@@ -117,8 +117,22 @@ function secretFromMisplacedProviderEnv(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'
   return ''
 }
 
+function providerSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): string {
+  const aliases =
+    name === 'BREVO_API_KEY'
+      ? ['BREVO_API_KEY', 'BREVO_KEY', 'SENDINBLUE_API_KEY', 'SENDINBLUE_KEY', 'brevo_api_key', 'brevo']
+      : ['RESEND_API_KEY', 'RESEND_KEY', 'resend_api_key', 'resend']
+
+  for (const alias of aliases) {
+    const value = process.env[alias]
+    if (value && value.trim()) return value.trim()
+  }
+
+  return secretFromMisplacedProviderEnv(name)
+}
+
 function hasSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): boolean {
-  return Boolean(process.env[name] || secretFromMisplacedProviderEnv(name))
+  return Boolean(providerSecret(name))
 }
 
 function providerMode(): 'smtp' | 'brevo' | 'resend' {
@@ -133,7 +147,7 @@ function providerMode(): 'smtp' | 'brevo' | 'resend' {
 }
 
 function reqSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): string {
-  const value = process.env[name] || secretFromMisplacedProviderEnv(name)
+  const value = providerSecret(name)
   if (!value) throw new Error(`Missing required environment variable: ${name}`)
   return value
 }

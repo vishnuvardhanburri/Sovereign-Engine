@@ -39,6 +39,10 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
       AND d.client_id = $1
       AND i.status = 'active'
       AND d.status = 'active'
+      AND d.paused = FALSE
+      AND i.sent_today < i.daily_limit
+      AND d.sent_today < COALESCE(d.daily_cap, d.daily_limit)
+      AND COALESCE(d.daily_cap, d.daily_limit) > 0
       ${extraDomainFilters}
     ORDER BY
       ${computedHealthSql} DESC,

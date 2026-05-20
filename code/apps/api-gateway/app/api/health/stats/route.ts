@@ -64,6 +64,20 @@ function secretFromMisplacedProviderEnv(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'
   return ''
 }
 
+function providerSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY') {
+  const aliases =
+    name === 'BREVO_API_KEY'
+      ? ['BREVO_API_KEY', 'BREVO_KEY', 'SENDINBLUE_API_KEY', 'SENDINBLUE_KEY', 'brevo_api_key', 'brevo']
+      : ['RESEND_API_KEY', 'RESEND_KEY', 'resend_api_key', 'resend']
+
+  for (const alias of aliases) {
+    const value = process.env[alias]
+    if (value && value.trim()) return value.trim()
+  }
+
+  return secretFromMisplacedProviderEnv(name)
+}
+
 function providerLabel(raw: string) {
   const value = raw.trim().toLowerCase()
   if (!value) return null
@@ -75,8 +89,8 @@ function providerLabel(raw: string) {
 
 function emailProviderDiagnostic() {
   const explicitProvider = providerLabel(String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || ''))
-  const hasBrevoKey = Boolean(process.env.BREVO_API_KEY || secretFromMisplacedProviderEnv('BREVO_API_KEY'))
-  const hasResendKey = Boolean(process.env.RESEND_API_KEY || secretFromMisplacedProviderEnv('RESEND_API_KEY'))
+  const hasBrevoKey = Boolean(providerSecret('BREVO_API_KEY'))
+  const hasResendKey = Boolean(providerSecret('RESEND_API_KEY'))
   const inferredProvider = hasBrevoKey ? 'brevo' : hasResendKey ? 'resend' : 'smtp'
   const selectedProvider =
     explicitProvider === 'brevo' || explicitProvider === 'resend' || explicitProvider === 'smtp'

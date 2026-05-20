@@ -2086,7 +2086,7 @@ export async function listDomains(clientId: number) {
     `SELECT
        d.*,
        COUNT(DISTINCT i.id)::int AS identity_count,
-       GREATEST(d.daily_limit - d.sent_today, 0)::int AS capacity_remaining,
+       GREATEST(COALESCE(d.daily_cap, d.daily_limit) - d.sent_today, 0)::int AS capacity_remaining,
        COUNT(CASE WHEN e.event_type = 'reply' THEN 1 END)::text AS reply_events
      FROM domains d
      LEFT JOIN identities i ON i.domain_id = d.id
@@ -2127,7 +2127,14 @@ export async function updateDomainStatus(
 ) {
   return queryOne<Domain>(
     `UPDATE domains
-     SET status = $3, updated_at = CURRENT_TIMESTAMP
+     SET status = $3,
+         paused = CASE WHEN $3 = 'paused' THEN true WHEN $3 = 'active' THEN false ELSE paused END,
+         daily_cap = CASE
+           WHEN $3 = 'paused' THEN 0
+           WHEN $3 = 'active' AND daily_cap = 0 AND health_score >= 50 AND bounce_rate <= 5 THEN NULL
+           ELSE daily_cap
+         END,
+         updated_at = CURRENT_TIMESTAMP
      WHERE client_id = $1 AND id = $2
      RETURNING *`,
     [clientId, domainId, status]

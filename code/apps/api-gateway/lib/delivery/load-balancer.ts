@@ -74,7 +74,9 @@ export async function selectSenderIdentity(
       AND i.status = 'active'
       AND d.status = 'active'
       AND i.sent_today < LEAST(i.daily_limit, $2)
-      AND d.sent_today < LEAST(d.daily_limit, $3)
+      AND d.paused = FALSE
+      AND d.sent_today < LEAST(COALESCE(d.daily_cap, d.daily_limit), d.daily_limit, $3)
+      AND COALESCE(d.daily_cap, d.daily_limit) > 0
       ${extraDomainFilters}
     ORDER BY
       d.health_score DESC,
