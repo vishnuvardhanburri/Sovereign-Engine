@@ -7,6 +7,13 @@ type DomainRecoveryRow = Domain & {
   paused?: boolean | null
 }
 
+type RecoveryTrickleOptions = {
+  enabled: boolean
+  cap: number
+  minHealth: number
+  maxBounceRate: number
+}
+
 function envFlag(name: string, fallback = false): boolean {
   const value = process.env[name]
   if (value === undefined || value === null || value === '') return fallback
@@ -17,6 +24,11 @@ function envInteger(name: string, fallback: number, min: number, max: number): n
   const parsed = Number(process.env[name])
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(Math.trunc(parsed), max))
+}
+
+function numeric(value: unknown, fallback = 0): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 export type DomainRiskDecision = 'pause' | 'cooldown' | 'normal'
@@ -68,6 +80,19 @@ export async function recalculateDomainHealth(
      RETURNING *`,
     [clientId, domainId, policy.rawBounceRate, policy.healthScore, policy.nextStatus]
   )
+}
+
+export function shouldEnableRecoveryTrickle(
+  domain: DomainRecoveryRow,
+  options: RecoveryTrickleOptions
+): boolean {
+  if (!options.enabled || options.cap <= 0) return false
+  if (domain.paused) return false
+  if (!['active', 'paused'].includes(domain.status)) return false
+  if (numeric(domain.daily_cap) > 0) return false
+  if (numeric(domain.health_score) < options.minHealth) return false
+  if (numeric(domain.bounce_rate) > options.maxBounceRate) return false
+  return true
 }
 
 export async function refreshDomainRiskLimits(clientId?: number) {
@@ -134,19 +159,24 @@ export async function refreshDomainRiskLimits(clientId?: number) {
       domain.id
     )) as DomainRecoveryRow | null
 
-    if (recoveryEnabled && recalculated) {
+    if (
+      recalculated &&
+      shouldEnableRecoveryTrickle(recalculated, {
+        enabled: recoveryEnabled,
+        cap: recoveryCap,
+        minHealth: recoveryMinHealth,
+        maxBounceRate: recoveryMaxBounceRate,
+      })
+    ) {
       await query(
         `UPDATE domains
-         SET daily_cap = LEAST(daily_limit, $3),
+         SET status = 'active',
+             daily_cap = LEAST(daily_limit, $3),
              updated_at = CURRENT_TIMESTAMP
          WHERE client_id = $1
            AND id = $2
-           AND status = 'active'
-           AND paused = FALSE
-           AND COALESCE(daily_cap, 0) = 0
-           AND health_score >= $4
-           AND bounce_rate <= $5`,
-        [domain.client_id, domain.id, recoveryCap, recoveryMinHealth, recoveryMaxBounceRate]
+           AND paused = FALSE`,
+        [domain.client_id, domain.id, recoveryCap]
       )
     }
   }
