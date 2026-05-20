@@ -188,6 +188,33 @@ function providerSecret(provider: 'brevo' | 'resend'): string {
   return ''
 }
 
+function envKeySuffix(value: string): string {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function providerSecretForEmail(provider: 'brevo' | 'resend', email: string): string {
+  const clean = cleanEmail(email)
+  const domain = emailDomain(clean)
+  const suffixes = [envKeySuffix(clean), envKeySuffix(domain)].filter(Boolean)
+  const prefixes =
+    provider === 'brevo'
+      ? ['BREVO_API_KEY', 'BREVO_KEY', 'SENDINBLUE_API_KEY', 'SENDINBLUE_KEY']
+      : ['RESEND_API_KEY', 'RESEND_KEY']
+
+  for (const prefix of prefixes) {
+    for (const suffix of suffixes) {
+      const value = process.env[`${prefix}_${suffix}`]
+      if (value && value.trim()) return value.trim()
+    }
+  }
+
+  return providerSecret(provider)
+}
+
 function firstConfiguredSendingEmail(): string {
   const raw = String(process.env.BOOTSTRAP_SENDING_EMAILS ?? '').trim()
   if (!raw) return ''
@@ -213,13 +240,26 @@ function preferredEspFromAddress(): string {
   )
 }
 
-function selectSenderAccount(idemKey: string): SenderAccount {
+function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): SenderAccount {
   const provider = providerModeFromEnv()
+  const selectedFrom = cleanEmail(selectedIdentityEmail)
+
+  if ((provider === 'resend' || provider === 'brevo') && selectedFrom) {
+    const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === selectedFrom)
+    return {
+      user: selectedFrom,
+      pass: matched?.pass ?? providerSecretForEmail(provider, selectedFrom) ?? process.env.SMTP_PASS ?? '',
+    }
+  }
+
   const preferredFrom = preferredEspFromAddress()
 
   if ((provider === 'resend' || provider === 'brevo') && preferredFrom) {
     const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === preferredFrom)
-    return { user: preferredFrom, pass: matched?.pass ?? process.env.SMTP_PASS ?? '' }
+    return {
+      user: preferredFrom,
+      pass: matched?.pass ?? providerSecretForEmail(provider, preferredFrom) ?? process.env.SMTP_PASS ?? '',
+    }
   }
 
   if ((provider === 'resend' || provider === 'brevo') && SMTP_ACCOUNTS.length > 0) {
@@ -1384,6 +1424,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   let outboundText = job.text
   let outboundHtml = job.html
   let mutationResult: ContentMutationResult | null = null
+  let selectedIdentityEmailForRun = ''
 
   // Back-compat: if older keys exist (pre-region), respect them so we don't re-send.
   const legacyDoneKey = `xv:send:done:${job.clientId}:${idemKey}`
@@ -1592,6 +1633,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
     if (!selection) throw new Error('retry_later:no_sender_identity_available')
     selectedDomainId = selection.domain.id
+    selectedIdentityEmailForRun = cleanEmail(selection.identity.email)
 
     const caps = enforceCaps(selection, lane)
     if (!caps.ok) {
@@ -1897,7 +1939,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             }
           })()
         : await (async () => {
-            const account = selectSenderAccount(idemKey)
+            const account = selectSenderAccount(idemKey, selectedIdentityEmailForRun)
             fromAddress = String(account.user).toLowerCase()
 
             console.log('[sender-worker] smtp send start', {
@@ -1910,7 +1952,14 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
             return Promise.race([
               sendSmtp(
-                { host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, user: account.user, pass: account.pass },
+                {
+                  host: SMTP_HOST,
+                  port: SMTP_PORT,
+                  secure: SMTP_SECURE,
+                  user: account.user,
+                  pass: account.pass,
+                  providerApiKey: account.pass,
+                },
                 {
                   from: account.user,
                   to: job.toEmail,
@@ -2150,7 +2199,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           event_code: smtpClass === 'bounce' ? 'EMAIL_BOUNCED' : 'EMAIL_FAILED',
           idempotency_key: idemKey,
           to_email: String(job.toEmail || '').trim().toLowerCase(),
-          from_email: fromAddress || cleanEmail(selectSenderAccount(idemKey).user),
+          from_email: fromAddress || selectedIdentityEmailForRun || cleanEmail(selectSenderAccount(idemKey).user),
           subject: outboundSubject,
           body_text: truncateText(outboundText, 20_000),
           body_html: truncateText(outboundHtml, 40_000),

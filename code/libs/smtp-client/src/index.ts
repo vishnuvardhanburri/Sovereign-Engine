@@ -7,6 +7,7 @@ export interface SmtpConfig {
   secure?: boolean
   user: string
   pass: string
+  providerApiKey?: string
 }
 
 export interface SendEmailRequest {
@@ -152,12 +153,12 @@ function reqSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): string {
   return value
 }
 
-async function sendBrevo(req: SendEmailRequest, built: BuiltSmtpHeaders): Promise<{ messageId: string }> {
+async function sendBrevo(req: SendEmailRequest, built: BuiltSmtpHeaders, apiKey?: string): Promise<{ messageId: string }> {
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
       accept: 'application/json',
-      'api-key': reqSecret('BREVO_API_KEY'),
+      'api-key': apiKey || reqSecret('BREVO_API_KEY'),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -181,11 +182,11 @@ async function sendBrevo(req: SendEmailRequest, built: BuiltSmtpHeaders): Promis
   return { messageId: body.messageId || built.messageId }
 }
 
-async function sendResend(req: SendEmailRequest, built: BuiltSmtpHeaders): Promise<{ messageId: string }> {
+async function sendResend(req: SendEmailRequest, built: BuiltSmtpHeaders, apiKey?: string): Promise<{ messageId: string }> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${reqSecret('RESEND_API_KEY')}`,
+      authorization: `Bearer ${apiKey || reqSecret('RESEND_API_KEY')}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -211,11 +212,11 @@ export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promi
   const mode = providerMode()
 
   if (mode === 'brevo') {
-    return sendBrevo(req, built)
+    return sendBrevo(req, built, config.providerApiKey || config.pass)
   }
 
   if (mode === 'resend') {
-    return sendResend(req, built)
+    return sendResend(req, built, config.providerApiKey || config.pass)
   }
 
   const transporter = nodemailer.createTransport({
