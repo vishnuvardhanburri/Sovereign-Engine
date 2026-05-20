@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import { query } from '@/lib/db'
 import { resolveClientId } from '@/lib/client-context'
 import { evaluateTlsPolicy } from '@/lib/security/tls-policy'
+import { appEnv } from '@/lib/env'
 
 function reqEnv(name: string) {
   const value = process.env[name]
@@ -101,13 +102,18 @@ function emailProviderDiagnostic() {
 }
 
 function emailValidationDiagnostic() {
-  const hasZeroBounceKey = Boolean(process.env.ZEROBOUNCE_API_KEY)
-  const hasHunterKey = Boolean(process.env.HUNTER_API_KEY)
+  const hasZeroBounceKey = Boolean(appEnv.zeroBounceApiKey())
+  const hasHunterKey = Boolean(appEnv.hunterApiKey())
+  const hasOpenRouterKey = Boolean(appEnv.openRouterApiKey())
 
   return {
     selected_provider: hasZeroBounceKey ? 'zerobounce' : hasHunterKey ? 'hunter' : 'none',
     has_zerobounce_key: hasZeroBounceKey,
     has_hunter_key: hasHunterKey,
+    ai_copy_provider: hasOpenRouterKey ? 'openrouter' : 'template',
+    has_openrouter_key: hasOpenRouterKey,
+    openrouter_copy_enabled:
+      hasOpenRouterKey && String(process.env.OUTBOUND_OPENROUTER_COPY || 'true').toLowerCase() !== 'false',
     guardrail:
       hasZeroBounceKey || hasHunterKey
         ? 'Generic and role inboxes require provider validation before approval.'

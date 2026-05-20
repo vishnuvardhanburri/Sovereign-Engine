@@ -1,3 +1,5 @@
+import { appEnv } from '@/lib/env'
+
 export type OpenRouterSource = 'openrouter' | 'fallback'
 
 export interface OpenRouterJsonResult<T> {
@@ -57,7 +59,7 @@ export function extractJsonObject(text: string): unknown | null {
 export async function tryOpenRouterJson<T>(
   input: TryOpenRouterJsonInput<T>
 ): Promise<OpenRouterJsonResult<T>> {
-  const apiKey = String(input.apiKey ?? process.env.OPENROUTER_API_KEY ?? '').trim()
+  const apiKey = String(input.apiKey ?? appEnv.openRouterApiKey()).trim()
   const model = String(
     input.model ??
       process.env.OPENROUTER_MODEL ??

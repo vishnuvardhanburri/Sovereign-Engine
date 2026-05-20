@@ -55,6 +55,14 @@ const optionalBool = (name: string, fallback: boolean): boolean => {
   return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
 }
 
+const optionalSecret = (...names: string[]): string => {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value && value.trim()) return value.trim()
+  }
+  return ''
+}
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
 
@@ -89,11 +97,28 @@ export const appEnv = {
   unsubscribeSecret: () => process.env.UNSUBSCRIBE_SECRET || process.env.CRON_SECRET || 'sovereign-engine',
   resendWebhookSecret: () => process.env.RESEND_WEBHOOK_SECRET || '',
   telegramBotToken: () => process.env.TELEGRAM_BOT_TOKEN || '',
-  openRouterApiKey: () => process.env.OPENROUTER_API_KEY || '',
+  openRouterApiKey: () =>
+    optionalSecret(
+      'OPENROUTER_API_KEY',
+      'OPEN_ROUTER_API_KEY',
+      'OPENROUTER_KEY',
+      'OPEN_ROUTER_KEY',
+      'openrouter_api_key',
+      'openrouter'
+    ),
   openRouterModel: () => process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
   // Optional validators. Production gates require at least one live validator.
-  zeroBounceApiKey: () => process.env.ZEROBOUNCE_API_KEY || '',
-  hunterApiKey: () => process.env.HUNTER_API_KEY || '',
+  zeroBounceApiKey: () =>
+    optionalSecret(
+      'ZEROBOUNCE_API_KEY',
+      'ZERO_BOUNCE_API_KEY',
+      'ZEROBOUNCE_KEY',
+      'ZERO_BOUNCE_KEY',
+      'ZB_API_KEY',
+      'zero_bounce_api_key',
+      'zerobounce'
+    ),
+  hunterApiKey: () => optionalSecret('HUNTER_API_KEY', 'HUNTER_KEY', 'hunter_api_key', 'hunter'),
   clearbitApiKey: () => process.env.CLEARBIT_API_KEY || '',
   apolloApiKey: () => process.env.APOLLO_API_KEY || '',
   hubspotAccessToken: () => process.env.HUBSPOT_ACCESS_TOKEN || '',

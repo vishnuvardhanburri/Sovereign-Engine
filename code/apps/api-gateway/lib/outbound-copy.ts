@@ -1,4 +1,5 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
+import { appEnv } from '@/lib/env'
 
 export type SovereignOfferType = 'direct' | 'agency'
 
@@ -344,9 +345,10 @@ export async function buildSovereignCopyForLead(
     lead,
     options.physicalAddress
   )
+  const openRouterApiKey = appEnv.openRouterApiKey()
   const shouldUseOpenRouter =
     options.useOpenRouter ??
-    (Boolean(process.env.OPENROUTER_API_KEY) &&
+    (Boolean(openRouterApiKey) &&
       envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true))
 
   if (!shouldUseOpenRouter) {
@@ -414,6 +416,7 @@ export async function buildSovereignCopyForLead(
       body: fallbackText,
       reason: 'fallback_template',
     },
+    apiKey: openRouterApiKey,
     timeoutMs: 5_000,
   })
 
