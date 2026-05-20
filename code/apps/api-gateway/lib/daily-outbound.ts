@@ -39,6 +39,7 @@ type PlanInput = {
     approveLimit?: string | null
     sendLimit?: string | null
     mode?: string | null
+    recoveryMode?: string | null
   }
 }
 
@@ -94,6 +95,7 @@ function resolveSendLimit(input: {
   approvalWindow: SystemApprovalWindow
   guardrails: string[]
   mode: DailyOutboundMode
+  recoveryMode: boolean
 }): number {
   const envLimit = input.env.DAILY_OUTBOUND_SEND_LIMIT
   const maxSendLimit =
@@ -116,9 +118,25 @@ function resolveSendLimit(input: {
     input.approvalWindow.eligibleSenderIdentities ??
     (senderRemainingCapacity > 0 ? 1 : 0)
   const effectiveCapacity = Math.min(input.approvalWindow.remainingCapacity, senderRemainingCapacity)
+  const recoveryTrickleLimit = clampInteger(
+    input.env.DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT,
+    1,
+    0,
+    3
+  )
+  const recoveryTrickleEnabled =
+    input.recoveryMode &&
+    recoveryTrickleLimit > 0 &&
+    input.approvalWindow.activeDomains > 0
 
   if (input.approvalWindow.remainingCapacity <= 0) {
     input.guardrails.push('No remaining domain capacity; queueing is blocked')
+    if (recoveryTrickleEnabled) {
+      input.guardrails.push(
+        'Recovery mode allows a tiny verified-only trickle despite exhausted domain capacity'
+      )
+      return Math.min(baseLimit, recoveryTrickleLimit)
+    }
     return 0
   }
 
@@ -126,11 +144,23 @@ function resolveSendLimit(input: {
     input.guardrails.push(
       'No healthy sender identity is available; queueing is blocked until domain health recovers'
     )
+    if (recoveryTrickleEnabled) {
+      input.guardrails.push(
+        'Recovery mode allows a tiny verified-only trickle while sender health rebuilds'
+      )
+      return Math.min(baseLimit, recoveryTrickleLimit)
+    }
     return 0
   }
 
   if (input.approvalWindow.averageHealthScore <= 30) {
     input.guardrails.push('Severe reputation health risk pauses daily queueing for recovery')
+    if (recoveryTrickleEnabled) {
+      input.guardrails.push(
+        'Severe reputation recovery trickle is capped at verified-only sends'
+      )
+      return Math.min(baseLimit, recoveryTrickleLimit, Math.max(1, effectiveCapacity))
+    }
     return 0
   }
 
@@ -179,6 +209,10 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   const enabled = resolveDailyBoolean(input.env.DAILY_OUTBOUND_ENABLED, true)
   const dryRun = resolveDailyBoolean(input.query.dryRun, false)
   const mode = resolveDailyMode({ requested: input.query.mode, env: input.env })
+  const recoveryMode = resolveDailyBoolean(
+    input.query.recoveryMode ?? input.env.DAILY_OUTBOUND_RECOVERY_MODE,
+    false
+  )
   const clientId = clampInteger(
     input.query.clientId ?? input.env.DEFAULT_CLIENT_ID,
     DEFAULT_CLIENT_ID,
@@ -253,6 +287,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     approvalWindow: input.approvalWindow,
     guardrails,
     mode,
+    recoveryMode,
   })
 
   if (!enabled) {

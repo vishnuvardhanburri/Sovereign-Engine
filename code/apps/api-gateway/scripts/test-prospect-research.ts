@@ -525,6 +525,26 @@ assert.ok(
   }).includes('generic_inbox_requires_email_validation')
 )
 
+assert.deepEqual(
+  approvedContactQueueBlockers({
+    id: 13,
+    email: 'hello@mapsagency.com',
+    email_domain: 'mapsagency.com',
+    company: 'Maps Agency',
+    company_domain: 'mapsagency.com',
+    source: 'google_maps_apify',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      send_status: 'approved',
+      email_evidence: 'maps_public_business_domain_match',
+      public_evidence_url: 'https://mapsagency.com/contact',
+      maps_import: true,
+    },
+  }),
+  []
+)
+
 console.log('prospect research tests passed')
 }
 

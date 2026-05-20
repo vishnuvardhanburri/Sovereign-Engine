@@ -1350,6 +1350,7 @@ export async function GET(request: NextRequest) {
         approveLimit: params.get('approveLimit'),
         sendLimit: params.get('sendLimit'),
         mode: params.get('mode'),
+        recoveryMode: params.get('recoveryMode'),
       },
     })
     const stages: StageResult[] = []

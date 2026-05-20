@@ -29,6 +29,15 @@ const noHealthySenderWindow = {
   senderRemainingCapacity: 0,
 }
 
+const severeRecoveryWindow = {
+  ...healthyWindow,
+  limit: 5,
+  remainingCapacity: 0,
+  averageHealthScore: 24,
+  eligibleSenderIdentities: 0,
+  senderRemainingCapacity: 0,
+}
+
 assert.equal(resolveDailyBoolean(undefined, true), true)
 assert.equal(resolveDailyBoolean('false', true), false)
 assert.equal(resolveDailyBoolean('0', true), false)
@@ -260,6 +269,25 @@ assert.equal(noHealthySenderPlan.runQueue, false)
 assert.ok(
   noHealthySenderPlan.guardrails.includes(
     'No healthy sender identity is available; queueing is blocked until domain health recovers'
+  )
+)
+
+const recoveryTricklePlan = buildDailyOutboundPlan({
+  approvalWindow: severeRecoveryWindow,
+  env: {
+    DAILY_OUTBOUND_MODE: 'growth',
+    DAILY_OUTBOUND_SEND_LIMIT: '10',
+  },
+  query: {
+    recoveryMode: '1',
+  },
+})
+
+assert.equal(recoveryTricklePlan.sendLimit, 1)
+assert.equal(recoveryTricklePlan.runQueue, true)
+assert.ok(
+  recoveryTricklePlan.guardrails.includes(
+    'Recovery mode allows a tiny verified-only trickle despite exhausted domain capacity'
   )
 )
 
