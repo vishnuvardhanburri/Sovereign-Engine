@@ -94,6 +94,11 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function asBool(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
+}
+
 function normalizeDomain(value: string | null | undefined): string {
   return String(value ?? '')
     .trim()
@@ -154,6 +159,24 @@ const BLOCKED_HUNTER_MAILBOX_PREFIXES = new Set([
   'security',
   'support',
   'webmaster',
+])
+
+const VALIDATION_PRIORITY_PREFIXES = new Set([
+  'business',
+  'contact',
+  'growth',
+  'hello',
+  'hi',
+  'info',
+  'marketing',
+  'opportunities',
+  'opportunity',
+  'partner',
+  'partners',
+  'partnership',
+  'partnerships',
+  'sales',
+  'team',
 ])
 
 function firstHunterSourceUrl(email: HunterDomainEmail): string {
@@ -221,6 +244,10 @@ function compactStage(stage: StageResult): StageResult {
       providerValidationChecks: getNumericField(data, 'providerValidationChecks'),
       providerValidationValid: getNumericField(data, 'providerValidationValid'),
       providerValidationInvalid: getNumericField(data, 'providerValidationInvalid'),
+      providerValidationRisky: getNumericField(data, 'providerValidationRisky'),
+      providerValidationUnknown: getNumericField(data, 'providerValidationUnknown'),
+      providerValidationBlocked: getNumericField(data, 'providerValidationBlocked'),
+      staleInvalidBlocked: getNumericField(data, 'staleInvalidBlocked'),
       hunterErrors: getNumericField(data, 'hunterErrors'),
       approved: getNumericField(data, 'approved'),
       queued: getNumericField(data, 'queued'),
@@ -667,7 +694,8 @@ async function getResearchPool(clientId: number) {
        AND status = 'active'
        AND bounced_at IS NULL
        AND unsubscribed_at IS NULL
-       AND COALESCE(custom_fields->>'send_status', 'not_approved') <> 'approved'
+       AND COALESCE(custom_fields->>'send_status', 'not_approved') NOT IN ('approved', 'queued', 'blocked')
+       AND COALESCE(verification_status, 'pending') NOT IN ('invalid', 'do_not_mail')
        AND (
          source IN ('google_sheet_import', 'google_maps_apify', 'hunter_domain_search', 'open_lead_graph', 'owned_open_lead_graph')
          OR COALESCE(custom_fields->>'sheet_import', 'false') = 'true'
@@ -675,12 +703,98 @@ async function getResearchPool(clientId: number) {
          OR COALESCE(custom_fields->>'hunter_domain_search', 'false') = 'true'
          OR COALESCE(custom_fields->>'lead_scout', 'false') = 'true'
        )
-     ORDER BY created_at ASC
+     ORDER BY
+       CASE
+         WHEN verification_status = 'valid' THEN 0
+         WHEN COALESCE(custom_fields->>'email_validation_verdict', '') = 'valid' THEN 1
+         WHEN COALESCE(custom_fields->>'email_evidence', '') IN ('provider_validated', 'hunter_domain_search', 'public_page_email_match') THEN 2
+         ELSE 3
+       END,
+       CASE
+         WHEN COALESCE(custom_fields->>'fit_score', '') ~ '^[0-9]+$'
+         THEN (custom_fields->>'fit_score')::int
+         ELSE 0
+       END DESC,
+       updated_at ASC,
+       created_at ASC
      LIMIT 500`,
     [clientId]
   )
 
   return result.rows
+}
+
+function researchValidationPriority(contact: ProspectResearchContact): number {
+  const customFields = contact.custom_fields ?? {}
+  const email = contact.email.trim().toLowerCase()
+  const [prefix = ''] = email.split('@')
+  const verificationStatus = String(contact.verification_status ?? 'pending').toLowerCase()
+  let score = 0
+
+  if (verificationStatus === 'valid') score += 1_000
+  if (asString(customFields.email_validation_verdict) === 'valid') score += 500
+  if (asString(customFields.email_evidence)) score += 150
+  if (asString(customFields.public_evidence_url) || asString(customFields.research_evidence_url)) {
+    score += 100
+  }
+  if (VALIDATION_PRIORITY_PREFIXES.has(prefix)) score += 80
+  if (asBool(customFields.auto_approval_eligible)) score += 60
+  score += Math.min(Number(customFields.fit_score) || 0, 100)
+
+  return score
+}
+
+function rankResearchPool(pool: ProspectResearchContact[]): ProspectResearchContact[] {
+  return [...pool].sort(
+    (left, right) =>
+      researchValidationPriority(right) - researchValidationPriority(left) ||
+      left.email.localeCompare(right.email)
+  )
+}
+
+function decorateProviderValidationUpdate(contact: ProspectResearchContact): ProspectResearchContact {
+  const verificationStatus = String(contact.verification_status ?? '').toLowerCase()
+  const customFields = contact.custom_fields ?? {}
+
+  if (!['invalid', 'do_not_mail'].includes(verificationStatus)) {
+    return contact
+  }
+
+  return {
+    ...contact,
+    custom_fields: {
+      ...customFields,
+      send_status: 'blocked',
+      approval_required: true,
+      approval_blocked_reason: `provider_verification_${verificationStatus}`,
+      blocked_by: 'daily_provider_validation_gate',
+      blocked_at: new Date().toISOString(),
+    },
+  }
+}
+
+async function blockPreviouslyInvalidContacts(clientId: number): Promise<number> {
+  const result = await query(
+    `UPDATE contacts
+     SET custom_fields = COALESCE(custom_fields, '{}'::jsonb)
+       || jsonb_build_object(
+         'send_status', 'blocked',
+         'approval_required', true,
+         'approval_blocked_reason', 'existing_invalid_verification',
+         'blocked_by', 'daily_provider_validation_gate',
+         'blocked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+       ),
+       updated_at = CURRENT_TIMESTAMP
+     WHERE client_id = $1
+       AND status = 'active'
+       AND COALESCE(verification_status, 'pending') IN ('invalid', 'do_not_mail')
+       AND COALESCE(custom_fields->>'send_status', 'not_approved') NOT IN ('blocked', 'queued')
+       AND bounced_at IS NULL
+       AND unsubscribed_at IS NULL`,
+    [clientId]
+  )
+
+  return result.rowCount ?? 0
 }
 
 async function runResearchApproval(input: {
@@ -689,29 +803,35 @@ async function runResearchApproval(input: {
   approveLimit: number
   evidenceFetchLimit?: number
   providerValidationLimit?: number
+  recoveryMode?: boolean
 }): Promise<StageResult> {
   try {
     const threshold = clampThreshold(process.env.DAILY_OUTBOUND_APPROVAL_THRESHOLD)
-    const pool = await getResearchPool(input.clientId)
+    const recoveryMode = Boolean(input.recoveryMode)
+    const staleInvalidBlocked = input.dryRun ? 0 : await blockPreviouslyInvalidContacts(input.clientId)
+    const pool = rankResearchPool(await getResearchPool(input.clientId))
     const evidenceFetchLimit = clampLimit(
       input.evidenceFetchLimit ??
         (input.dryRun ? 0 : process.env.DAILY_OUTBOUND_EVIDENCE_FETCH_LIMIT),
-      input.dryRun ? 0 : 5,
-      input.dryRun ? 5 : 20
+      input.dryRun ? 0 : recoveryMode ? 10 : 5,
+      input.dryRun ? (recoveryMode ? 20 : 5) : recoveryMode ? 40 : 20
     )
     const providerValidationLimit = clampLimit(
       input.providerValidationLimit ??
         (input.dryRun ? 0 : process.env.DAILY_OUTBOUND_PROVIDER_VALIDATION_LIMIT),
-      input.dryRun ? 0 : 5,
-      input.dryRun ? 5 : 20
+      input.dryRun ? (recoveryMode ? 10 : 0) : recoveryMode ? 50 : 5,
+      input.dryRun ? (recoveryMode ? 25 : 5) : recoveryMode ? 75 : 20
     )
-    const networkDeadlineMs = input.dryRun ? 8_000 : 45_000
+    const networkDeadlineMs = input.dryRun ? (recoveryMode ? 20_000 : 8_000) : 45_000
     const networkDeadlineAt = Date.now() + networkDeadlineMs
     let evidenceFetches = 0
     let evidenceMatches = 0
     let providerValidationChecks = 0
     let providerValidationValid = 0
     let providerValidationInvalid = 0
+    let providerValidationRisky = 0
+    let providerValidationUnknown = 0
+    let providerValidationBlocked = 0
     const enrichedPool: ProspectResearchContact[] = []
     const providerValidationUpdates: ProspectResearchContact[] = []
 
@@ -736,8 +856,15 @@ async function runResearchApproval(input: {
           providerValidationChecks += 1
           if (validation.verdict === 'valid') providerValidationValid += 1
           if (validation.verdict === 'invalid') providerValidationInvalid += 1
+          if (validation.verdict === 'risky') providerValidationRisky += 1
+          if (validation.verdict === 'unknown') providerValidationUnknown += 1
           candidate = validation.contact
-          providerValidationUpdates.push(candidate)
+          const update = decorateProviderValidationUpdate(candidate)
+          if (asString(update.custom_fields?.send_status) === 'blocked') {
+            providerValidationBlocked += 1
+          }
+          providerValidationUpdates.push(update)
+          candidate = update
         }
       }
 
@@ -786,12 +913,18 @@ async function runResearchApproval(input: {
         status: 200,
         data: {
           dryRun: true,
+          recoveryMode,
           scanned: decisions.length,
           evidenceFetches,
           evidenceMatches,
           providerValidationChecks,
           providerValidationValid,
           providerValidationInvalid,
+          providerValidationRisky,
+          providerValidationUnknown,
+          providerValidationBlocked,
+          staleInvalidBlocked,
+          providerValidationLimit,
           approvalReady: approvedCandidates.length,
           approved: 0,
           candidates: approvedCandidates,
@@ -808,12 +941,18 @@ async function runResearchApproval(input: {
         status: 200,
         data: {
           approved: 0,
+          recoveryMode,
           scanned: decisions.length,
           evidenceFetches,
           evidenceMatches,
           providerValidationChecks,
           providerValidationValid,
           providerValidationInvalid,
+          providerValidationRisky,
+          providerValidationUnknown,
+          providerValidationBlocked,
+          staleInvalidBlocked,
+          providerValidationLimit,
           skipped: 'no_research_verified_prospects',
           blocked,
         },
@@ -876,12 +1015,18 @@ async function runResearchApproval(input: {
       status: 200,
       data: {
         approved,
+        recoveryMode,
         scanned: decisions.length,
         evidenceFetches,
         evidenceMatches,
         providerValidationChecks,
         providerValidationValid,
         providerValidationInvalid,
+        providerValidationRisky,
+        providerValidationUnknown,
+        providerValidationBlocked,
+        staleInvalidBlocked,
+        providerValidationLimit,
         contacts: result.rows,
         blocked,
       },
@@ -1172,6 +1317,10 @@ export async function GET(request: NextRequest) {
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
       false
     )
+    const recoveryMode = envBool(
+      params.get('recoveryMode') || process.env.DAILY_OUTBOUND_RECOVERY_MODE,
+      false
+    )
     const mapsActorId =
       params.get('mapsActorId') ||
       params.get('actorId') ||
@@ -1303,11 +1452,12 @@ export async function GET(request: NextRequest) {
           clientId: plan.clientId,
           dryRun: plan.dryRun,
           approveLimit: plan.approveLimit,
+          recoveryMode,
           evidenceFetchLimit: params.has('evidenceFetchLimit')
-            ? clampLimit(params.get('evidenceFetchLimit'), 0, 20)
+            ? clampLimit(params.get('evidenceFetchLimit'), 0, recoveryMode ? 40 : 20)
             : undefined,
           providerValidationLimit: params.has('providerValidationLimit')
-            ? clampLimit(params.get('providerValidationLimit'), 0, 20)
+            ? clampLimit(params.get('providerValidationLimit'), 0, recoveryMode ? 75 : 20)
             : undefined,
         })
       )
@@ -1352,6 +1502,11 @@ export async function GET(request: NextRequest) {
     const hunterImported = getNumericField(hunterStage?.data, 'imported')
     const hunterPrepared = getNumericField(hunterStage?.data, 'prepared')
     const hunterRejected = getNumericField(hunterStage?.data, 'rejected')
+    const providerValidationChecks = getNumericField(approvalStage?.data, 'providerValidationChecks')
+    const providerValidationValid = getNumericField(approvalStage?.data, 'providerValidationValid')
+    const providerValidationInvalid = getNumericField(approvalStage?.data, 'providerValidationInvalid')
+    const providerValidationBlocked = getNumericField(approvalStage?.data, 'providerValidationBlocked')
+    const staleInvalidBlocked = getNumericField(approvalStage?.data, 'staleInvalidBlocked')
     const hardFailures = stages.filter(
       (stage) =>
         !stage.ok &&
@@ -1397,10 +1552,16 @@ export async function GET(request: NextRequest) {
         estimatedPipelineValueUsd,
         agencyQueued,
         directQueued,
+        providerValidationChecks,
+        providerValidationValid,
+        providerValidationInvalid,
+        providerValidationBlocked,
+        staleInvalidBlocked,
         hardFailures: hardFailures.length,
       },
       plan: verbose ? plan : {
         mode: plan.mode,
+        recoveryMode,
         sheetImport: plan.runSheetImport,
         mapsImport: plan.runMapsImport,
         mapsLimit: plan.mapsLimit,
