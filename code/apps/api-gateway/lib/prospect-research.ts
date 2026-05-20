@@ -1,4 +1,5 @@
-import { verifyEmailWithHunter, type HunterVerificationResult } from '@/lib/integrations/hunter'
+import { type HunterVerificationResult } from '@/lib/integrations/hunter'
+import { verifyEmailAddress, type VerificationResult } from '@/lib/integrations/zerobounce'
 
 export type ProspectResearchContact = {
   id: string | number
@@ -44,6 +45,15 @@ export type ProviderValidationResult = {
   checked: boolean
   verdict?: HunterVerificationResult['verdict']
   reason?: string
+}
+
+type ProviderEmailVerificationResult = {
+  provider: string
+  verdict: HunterVerificationResult['verdict']
+  score: number
+  catchAll: boolean
+  raw: Record<string, unknown> | null
+  error?: string
 }
 
 const PERSONAL_EMAIL_DOMAINS = new Set([
@@ -389,7 +399,7 @@ export async function enrichProspectWithPublicEmailEvidence(
 export async function enrichProspectWithProviderValidation(
   contact: ProspectResearchContact,
   options?: {
-    verifyEmail?: (email: string) => Promise<HunterVerificationResult>
+    verifyEmail?: (email: string) => Promise<ProviderEmailVerificationResult>
     now?: () => Date
   }
 ): Promise<ProviderValidationResult> {
@@ -411,7 +421,7 @@ export async function enrichProspectWithProviderValidation(
 
   const result = options?.verifyEmail
     ? await options.verifyEmail(email)
-    : await verifyEmailWithHunter(email)
+    : await verifyEmailWithConfiguredProvider(email)
   const checkedAt = (options?.now?.() ?? new Date()).toISOString()
   const validationFields = {
     ...customFields,
@@ -458,6 +468,58 @@ export async function enrichProspectWithProviderValidation(
     checked: true,
     verdict: result.verdict,
   }
+}
+
+function mapProviderVerificationResult(
+  result: VerificationResult
+): ProviderEmailVerificationResult {
+  if (result.status === 'valid') {
+    return {
+      provider: result.provider,
+      verdict: 'valid',
+      score: result.score,
+      catchAll: false,
+      raw: result.raw,
+      error: result.error,
+    }
+  }
+
+  if (result.status === 'invalid' || result.status === 'do_not_mail') {
+    return {
+      provider: result.provider,
+      verdict: 'invalid',
+      score: result.score,
+      catchAll: false,
+      raw: result.raw,
+      error: result.error,
+    }
+  }
+
+  if (result.status === 'catch_all') {
+    return {
+      provider: result.provider,
+      verdict: 'risky',
+      score: result.score,
+      catchAll: true,
+      raw: result.raw,
+      error: result.error,
+    }
+  }
+
+  return {
+    provider: result.provider,
+    verdict: 'unknown',
+    score: result.score,
+    catchAll: false,
+    raw: result.raw,
+    error: result.error ?? result.subStatus ?? undefined,
+  }
+}
+
+async function verifyEmailWithConfiguredProvider(
+  email: string
+): Promise<ProviderEmailVerificationResult> {
+  return mapProviderVerificationResult(await verifyEmailAddress(email))
 }
 
 export function scoreProspectForResearchApproval(

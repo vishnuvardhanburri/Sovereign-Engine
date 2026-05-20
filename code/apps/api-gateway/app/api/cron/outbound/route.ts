@@ -5,10 +5,8 @@ import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
+  buildSovereignCopyForLead,
   inferSovereignOfferType,
-  renderSovereignTemplate,
-  sovereignBodyForLead,
-  sovereignSubjectForLead,
 } from '@/lib/outbound-copy'
 
 type CronLead = {
@@ -256,26 +254,31 @@ export async function GET(request: NextRequest) {
 
     const queueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
     queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
-    const jobs = leads.map((lead) => {
-      const subject =
-        allowCopyOverride && process.env.OUTBOUND_CRON_SUBJECT
-          ? process.env.OUTBOUND_CRON_SUBJECT
-          : sovereignSubjectForLead(lead)
-      const template =
-        allowCopyOverride && process.env.OUTBOUND_CRON_BODY
-          ? process.env.OUTBOUND_CRON_BODY
-          : sovereignBodyForLead(lead)
+    const jobs = await Promise.all(leads.map(async (lead) => {
+      const copy = await buildSovereignCopyForLead(lead, {
+        physicalAddress,
+        subjectOverride:
+          allowCopyOverride && process.env.OUTBOUND_CRON_SUBJECT
+            ? process.env.OUTBOUND_CRON_SUBJECT
+            : undefined,
+        bodyOverride:
+          allowCopyOverride && process.env.OUTBOUND_CRON_BODY
+            ? process.env.OUTBOUND_CRON_BODY
+            : undefined,
+      })
       const idempotencyKey = crypto
         .createHash('sha256')
-        .update(`cron:${today}:${clientId}:${lead.email}:${subject}`)
+        .update(`cron:${today}:${clientId}:${lead.email}:${copy.subject}`)
         .digest('hex')
       return {
         name: 'cron_outbound_sales',
         data: {
           clientId,
           toEmail: lead.email,
-          subject,
-          text: renderSovereignTemplate(template, lead, physicalAddress),
+          subject: copy.subject,
+          text: copy.text,
+          copySource: copy.source,
+          copyError: copy.error,
           idempotencyKey,
         },
         opts: {
@@ -285,7 +288,7 @@ export async function GET(request: NextRequest) {
           removeOnFail: 1000,
         },
       }
-    })
+    }))
 
     const added = await queue.addBulk(jobs)
     const contactIds = leads

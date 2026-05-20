@@ -24,12 +24,10 @@ import {
 import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
+  buildSovereignCopyForLead,
   inferSovereignOfferType,
   rankSovereignLeads,
-  renderSovereignTemplate,
   sovereignDealValueUsd,
-  sovereignBodyForLead,
-  sovereignSubjectForLead,
 } from '@/lib/outbound-copy'
 
 type StageResult = {
@@ -1039,18 +1037,21 @@ async function runQueue(input: {
     const today = new Date().toISOString().slice(0, 10)
     queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
 
-    const jobs = leads.map((lead) => {
-      const subject =
-        allowCopyOverride && process.env.OUTBOUND_CRON_SUBJECT
-          ? process.env.OUTBOUND_CRON_SUBJECT
-          : sovereignSubjectForLead(lead)
-      const template =
-        allowCopyOverride && process.env.OUTBOUND_CRON_BODY
-          ? process.env.OUTBOUND_CRON_BODY
-          : sovereignBodyForLead(lead)
+    const jobs = await Promise.all(leads.map(async (lead) => {
+      const copy = await buildSovereignCopyForLead(lead, {
+        physicalAddress,
+        subjectOverride:
+          allowCopyOverride && process.env.OUTBOUND_CRON_SUBJECT
+            ? process.env.OUTBOUND_CRON_SUBJECT
+            : undefined,
+        bodyOverride:
+          allowCopyOverride && process.env.OUTBOUND_CRON_BODY
+            ? process.env.OUTBOUND_CRON_BODY
+            : undefined,
+      })
       const idempotencyKey = crypto
         .createHash('sha256')
-        .update(`daily:${today}:${input.clientId}:${lead.email}:${subject}`)
+        .update(`daily:${today}:${input.clientId}:${lead.email}:${copy.subject}`)
         .digest('hex')
 
       return {
@@ -1058,8 +1059,10 @@ async function runQueue(input: {
         data: {
           clientId: input.clientId,
           toEmail: lead.email,
-          subject,
-          text: renderSovereignTemplate(template, lead, physicalAddress),
+          subject: copy.subject,
+          text: copy.text,
+          copySource: copy.source,
+          copyError: copy.error,
           idempotencyKey,
         },
         opts: {
@@ -1069,7 +1072,7 @@ async function runQueue(input: {
           removeOnFail: 1000,
         },
       }
-    })
+    }))
 
     const added = await queue.addBulk(jobs)
     const queuedLeads = leads.slice(0, added.length)

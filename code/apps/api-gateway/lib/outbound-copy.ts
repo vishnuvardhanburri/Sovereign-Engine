@@ -1,3 +1,5 @@
+import { tryOpenRouterJson } from '@/lib/ai/openrouter'
+
 export type SovereignOfferType = 'direct' | 'agency'
 
 export type SovereignCopyLead = {
@@ -19,6 +21,13 @@ export const SOVEREIGN_STACK_DIRECT_SUBJECT =
 
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
   'White-label outbound + AI security product for your agency'
+
+export type SovereignRenderedCopy = {
+  subject: string
+  text: string
+  source: 'template' | 'openrouter'
+  error?: string
+}
 
 export function inferSovereignOfferType(input: SovereignCopyLead): SovereignOfferType {
   const custom = input.customFields ?? {}
@@ -287,4 +296,139 @@ export function renderSovereignTemplate(
     .replaceAll('{{company}}', company)
     .replaceAll('{{reason_to_contact}}', reason)
     .replaceAll('{{physical_address}}', physicalAddress)
+}
+
+function envEnabled(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function cleanSubject(value: unknown, fallback: string): string {
+  const subject = String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!subject || subject.length > 120) return fallback
+  return subject
+}
+
+function cleanBody(value: unknown, fallback: string, physicalAddress: string): string {
+  let body = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (!body || body.length < 120 || body.length > 2_400) return fallback
+  if (!/vishnu/i.test(body)) body += '\n\nBest regards,\nVishnu\nXavira Tech Labs'
+  if (!body.includes(physicalAddress)) body += `\n${physicalAddress}`
+  if (!/reply\s+"?no"?|do not follow up|not relevant/i.test(body)) {
+    body += '\n\nIf this is not relevant, reply "no" and I will not follow up.'
+  }
+
+  return body
+}
+
+export async function buildSovereignCopyForLead(
+  lead: SovereignCopyLead,
+  options: {
+    physicalAddress: string
+    subjectOverride?: string
+    bodyOverride?: string
+    useOpenRouter?: boolean
+  }
+): Promise<SovereignRenderedCopy> {
+  const fallbackSubject = options.subjectOverride || sovereignSubjectForLead(lead)
+  const fallbackTemplate = options.bodyOverride || sovereignBodyForLead(lead)
+  const fallbackText = renderSovereignTemplate(
+    fallbackTemplate,
+    lead,
+    options.physicalAddress
+  )
+  const shouldUseOpenRouter =
+    options.useOpenRouter ??
+    (Boolean(process.env.OPENROUTER_API_KEY) &&
+      envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true))
+
+  if (!shouldUseOpenRouter) {
+    return {
+      subject: fallbackSubject,
+      text: fallbackText,
+      source: 'template',
+    }
+  }
+
+  const offerType = inferSovereignOfferType(lead)
+  const company = lead.company || lead.companyDomain || 'the company'
+  const reason =
+    lead.reason_to_contact ||
+    lead.reasonToContact ||
+    'the company appears relevant to outbound infrastructure or AI security'
+  const firstName = safeGreetingName(lead.first_name || lead.firstName)
+
+  const result = await tryOpenRouterJson<{
+    subject?: string
+    body?: string
+    reason?: string
+  }>({
+    task: 'sovereign_outbound_copy',
+    system:
+      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Keep it plain text, professional, value-first, and under 170 words. Include a polite opt-out line.',
+    user: JSON.stringify({
+      recipient: {
+        firstName,
+        company,
+        title: lead.title || null,
+        companyDomain: lead.companyDomain || null,
+        reasonToContact: reason,
+      },
+      offer:
+        offerType === 'agency'
+          ? {
+              name: 'Sovereign Stack Agency Master License',
+              price: '$100k one-time',
+              positioning:
+                'white-label outbound protection plus private AI governance for agencies',
+              bullets: [
+                'Unlimited white-labeled deployments',
+                'Agency can charge clients $15k-$35k each',
+                'Core licensing and backend updates handled by Xavira Tech Labs',
+              ],
+            }
+          : {
+              name: 'Sovereign Stack',
+              price: '$25,000 one-time license',
+              positioning:
+                'outbound deliverability protection plus private AI security gateway',
+              bullets: [
+                'Adaptive deliverability OS for domain and inbox placement protection',
+                'Private AI Security Gateway for prompt-injection protection and PII masking',
+                'Self-hosted, audit-ready, works above Instantly, Smartlead, Apollo, and similar tools',
+              ],
+            },
+      requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Sovereign Stack'],
+      physicalAddress: options.physicalAddress,
+      fallbackSubject,
+    }),
+    fallback: {
+      subject: fallbackSubject,
+      body: fallbackText,
+      reason: 'fallback_template',
+    },
+    timeoutMs: 5_000,
+  })
+
+  if (result.source !== 'openrouter') {
+    return {
+      subject: fallbackSubject,
+      text: fallbackText,
+      source: 'template',
+      error: result.error,
+    }
+  }
+
+  return {
+    subject: cleanSubject(result.data.subject, fallbackSubject),
+    text: cleanBody(result.data.body, fallbackText, options.physicalAddress),
+    source: 'openrouter',
+  }
 }

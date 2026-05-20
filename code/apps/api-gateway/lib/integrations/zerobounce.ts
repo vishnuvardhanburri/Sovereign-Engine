@@ -5,6 +5,9 @@ import { verifyEmailWithHunter } from '@/lib/integrations/hunter'
 export interface VerificationResult {
   status: VerificationStatus
   subStatus: string | null
+  provider: 'zerobounce' | 'hunter' | 'none'
+  score: number
+  error?: string
   raw: Record<string, unknown> | null
 }
 
@@ -43,6 +46,9 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
       return {
         status,
         subStatus: result.error ?? (result.catchAll ? 'catch_all' : null),
+        provider: 'hunter',
+        score: result.score,
+        error: result.error,
         raw: result.raw
           ? { provider: result.provider, ...result.raw }
           : { provider: result.provider, error: result.error ?? null },
@@ -52,6 +58,8 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
     return {
       status: 'pending',
       subStatus: null,
+      provider: 'none',
+      score: 0,
       raw: null,
     }
   }
@@ -60,26 +68,63 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
   url.searchParams.set('api_key', apiKey)
   url.searchParams.set('email', email)
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-    },
-  })
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(8_000),
+    })
 
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`ZeroBounce verification failed: ${body}`)
-  }
+    if (!response.ok) {
+      return {
+        status: 'unknown',
+        subStatus: `zerobounce_http_${response.status}`,
+        provider: 'zerobounce',
+        score: 0.5,
+        error: `zerobounce_http_${response.status}`,
+        raw: { provider: 'zerobounce', status: response.status },
+      }
+    }
 
-  const payload = (await response.json()) as {
-    status?: string
-    sub_status?: string
-    [key: string]: unknown
-  }
+    const payload = (await response.json()) as {
+      status?: string
+      sub_status?: string
+      [key: string]: unknown
+    }
+    const status = mapZeroBounceStatus(String(payload.status ?? 'pending'))
+    const subStatus = payload.sub_status ? String(payload.sub_status) : null
 
-  return {
-    status: mapZeroBounceStatus(String(payload.status ?? 'pending')),
-    subStatus: payload.sub_status ? String(payload.sub_status) : null,
-    raw: payload,
+    return {
+      status,
+      subStatus,
+      provider: 'zerobounce',
+      score: scoreZeroBounceResult(status, subStatus),
+      raw: { provider: 'zerobounce', ...payload },
+    }
+  } catch (error) {
+    const code = error instanceof Error && error.name === 'AbortError'
+      ? 'zerobounce_timeout'
+      : 'zerobounce_request_failed'
+
+    return {
+      status: 'unknown',
+      subStatus: code,
+      provider: 'zerobounce',
+      score: 0.5,
+      error: code,
+      raw: { provider: 'zerobounce', error: code },
+    }
   }
+}
+
+function scoreZeroBounceResult(
+  status: VerificationStatus,
+  subStatus: string | null
+): number {
+  if (status === 'valid') return subStatus === 'role_based' ? 0.85 : 0.95
+  if (status === 'invalid' || status === 'do_not_mail') return 0.05
+  if (status === 'catch_all') return 0.65
+  if (status === 'unknown') return 0.5
+  return 0
 }

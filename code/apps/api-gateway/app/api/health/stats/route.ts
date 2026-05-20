@@ -100,6 +100,21 @@ function emailProviderDiagnostic() {
   }
 }
 
+function emailValidationDiagnostic() {
+  const hasZeroBounceKey = Boolean(process.env.ZEROBOUNCE_API_KEY)
+  const hasHunterKey = Boolean(process.env.HUNTER_API_KEY)
+
+  return {
+    selected_provider: hasZeroBounceKey ? 'zerobounce' : hasHunterKey ? 'hunter' : 'none',
+    has_zerobounce_key: hasZeroBounceKey,
+    has_hunter_key: hasHunterKey,
+    guardrail:
+      hasZeroBounceKey || hasHunterKey
+        ? 'Generic and role inboxes require provider validation before approval.'
+        : 'No validation provider configured; generic and role inboxes stay blocked.',
+  }
+}
+
 async function timed<T>(fn: () => Promise<T>): Promise<{ value: T; latencyMs: number }> {
   const started = performance.now()
   const value = await fn()
@@ -304,6 +319,7 @@ export async function GET(request: NextRequest) {
         tls_policy: tlsPolicy,
       },
       email_delivery: emailProviderDiagnostic(),
+      email_validation: emailValidationDiagnostic(),
     })
   } catch (error) {
     console.error('[api/health/stats] failed', error)
@@ -319,6 +335,7 @@ export async function GET(request: NextRequest) {
           nodeEnv: process.env.NODE_ENV ?? null,
           sendQueue: process.env.SEND_QUEUE ?? 'xv-send-queue',
           emailDelivery: emailProviderDiagnostic(),
+          emailValidation: emailValidationDiagnostic(),
         },
       },
       { status: 500 }
