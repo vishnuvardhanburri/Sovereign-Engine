@@ -168,6 +168,29 @@ async function main() {
   assert.equal(fallbackValid.score, 0.92)
   assert.equal(fallbackValid.raw?.fallback_from, 'zerobounce')
 
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input))
+    if (url.hostname === 'api.zerobounce.net') {
+      return new Response(JSON.stringify({ status: 'unknown', sub_status: '' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.hostname === 'api.hunter.io') {
+      return new Response(JSON.stringify({ errors: [{ details: 'plan limit reached' }] }), {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    throw new Error(`unexpected test URL: ${url.toString()}`)
+  }) as typeof fetch
+
+  const fallbackRateLimited = await verifyEmailAddress('rate-limited@example.com')
+  assert.equal(fallbackRateLimited.provider, 'zerobounce')
+  assert.equal(fallbackRateLimited.status, 'unknown')
+  assert.equal(fallbackRateLimited.error, 'hunter_http_429')
+  assert.equal(fallbackRateLimited.raw?.hunter_fallback instanceof Object, true)
+
   let hunterCalls = 0
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input))

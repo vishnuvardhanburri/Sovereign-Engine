@@ -100,6 +100,8 @@ function mergeHunterFallback(
 
   return {
     ...original,
+    subStatus: original.subStatus ?? fallback.subStatus,
+    error: original.error ?? fallback.error,
     raw: {
       ...(original.raw ?? {}),
       hunter_fallback: fallback.raw,
