@@ -34,11 +34,11 @@ export async function GET(request: NextRequest) {
       if (!hasEnv(name)) reasons.push(`Missing ${name}`)
     }
 
-    if (!hasEnv('ZEROBOUNCE_API_KEY') && !hasEnv('HUNTER_API_KEY')) {
-      reasons.push('Missing validation provider (ZEROBOUNCE_API_KEY or HUNTER_API_KEY)')
+    if (!hasEnv('ZEROBOUNCE_API_KEY')) {
+      reasons.push('Missing ZEROBOUNCE_API_KEY; owned syntax/MX checks remain active but higher-volume production sending needs validator hygiene')
     }
     if (envValue('MOCK_SMTP') !== 'false') reasons.push('MOCK_SMTP is enabled; production sending remains locked')
-    if (looksPlaceholder(`${envValue('SMTP_HOST')} ${envValue('SMTP_USER')} ${envValue('ZEROBOUNCE_API_KEY')} ${envValue('HUNTER_API_KEY')}`)) {
+    if (looksPlaceholder(`${envValue('SMTP_HOST')} ${envValue('SMTP_USER')} ${envValue('ZEROBOUNCE_API_KEY')}`)) {
       reasons.push('SMTP or validator credentials still look like placeholders')
     }
     if (!hasEnv('SENDER_PHYSICAL_ADDRESS')) reasons.push('SENDER_PHYSICAL_ADDRESS is missing for compliance footer policy')
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       status = 'NEEDS_SMTP'
     } else if (dnsReasons.length) {
       status = 'NEEDS_DNS'
-    } else if (reasons.some((reason) => /ZEROBOUNCE|HUNTER|validator/i.test(reason))) {
+    } else if (reasons.some((reason) => /ZEROBOUNCE|validator/i.test(reason))) {
       status = 'NEEDS_VALIDATOR'
     } else if (report.score >= 70) {
       status = 'DEMO_READY'

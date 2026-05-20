@@ -1,5 +1,6 @@
 import { appEnv } from '@/lib/env'
 import { VerificationStatus } from '@/lib/db/types'
+import { resolveMx } from 'node:dns/promises'
 import {
   HunterVerificationResult,
   verifyEmailWithHunter,
@@ -8,10 +9,111 @@ import {
 export interface VerificationResult {
   status: VerificationStatus
   subStatus: string | null
-  provider: 'zerobounce' | 'hunter' | 'none'
+  provider: 'zerobounce' | 'hunter' | 'owned' | 'none'
   score: number
   error?: string
   raw: Record<string, unknown> | null
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function envFlag(name: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env[name] ?? '').trim().toLowerCase())
+}
+
+export function isHunterFallbackEnabled(): boolean {
+  return envFlag('HUNTER_FALLBACK_ENABLED') || envFlag('EMAIL_VALIDATION_HUNTER_FALLBACK')
+}
+
+function scoreOwnedResult(status: VerificationStatus): number {
+  if (status === 'invalid' || status === 'do_not_mail') return 0.05
+  if (status === 'unknown') return 0.55
+  return 0
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined
+  const timer = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(code)), ms)
+  })
+
+  try {
+    return await Promise.race([promise, timer])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+export async function verifyEmailWithOwnedSignals(email: string): Promise<VerificationResult> {
+  const normalized = email.trim().toLowerCase()
+  if (!EMAIL_PATTERN.test(normalized)) {
+    return {
+      status: 'invalid',
+      subStatus: 'invalid_syntax',
+      provider: 'owned',
+      score: scoreOwnedResult('invalid'),
+      error: 'invalid_syntax',
+      raw: { provider: 'owned', checks: ['syntax'], syntax: false },
+    }
+  }
+
+  const domain = normalized.split('@')[1]
+  if (!domain) {
+    return {
+      status: 'invalid',
+      subStatus: 'missing_domain',
+      provider: 'owned',
+      score: scoreOwnedResult('invalid'),
+      error: 'missing_domain',
+      raw: { provider: 'owned', checks: ['syntax'], syntax: false },
+    }
+  }
+
+  try {
+    const records = await withTimeout(resolveMx(domain), 3_000, 'mx_lookup_timeout')
+    const liveMxRecords = records.filter((record) => !['', '.'].includes(record.exchange.trim()))
+    if (!liveMxRecords.length) {
+      return {
+        status: 'invalid',
+        subStatus: 'mx_not_found',
+        provider: 'owned',
+        score: scoreOwnedResult('invalid'),
+        error: 'mx_not_found',
+        raw: { provider: 'owned', checks: ['syntax', 'mx'], syntax: true, mx: false, domain },
+      }
+    }
+
+    return {
+      status: 'unknown',
+      subStatus: 'mx_present_unverified',
+      provider: 'owned',
+      score: scoreOwnedResult('unknown'),
+      raw: {
+        provider: 'owned',
+        checks: ['syntax', 'mx'],
+        syntax: true,
+        mx: true,
+        domain,
+        mx_hosts: liveMxRecords
+          .sort((a, b) => a.priority - b.priority)
+          .slice(0, 3)
+          .map((record) => record.exchange),
+      },
+    }
+  } catch (error) {
+    const code = error instanceof Error && error.message === 'mx_lookup_timeout'
+      ? 'mx_lookup_timeout'
+      : 'mx_lookup_failed'
+
+    return {
+      status: 'unknown',
+      subStatus: code,
+      provider: 'owned',
+      score: 0.35,
+      error: code,
+      raw: { provider: 'owned', checks: ['syntax', 'mx'], syntax: true, mx: null, domain, error: code },
+    }
+  }
 }
 
 function mapZeroBounceStatus(status: string): VerificationStatus {
@@ -80,6 +182,8 @@ async function verifyWithHunterFallback(
     zeroBounceRaw: Record<string, unknown> | null
   }
 ): Promise<VerificationResult | null> {
+  if (!isHunterFallbackEnabled()) return null
+
   const hunterApiKey = appEnv.hunterApiKey()
   if (!hunterApiKey) return null
 
@@ -117,13 +221,7 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
       return hunterFallback
     }
 
-    return {
-      status: 'pending',
-      subStatus: null,
-      provider: 'none',
-      score: 0,
-      raw: null,
-    }
+    return verifyEmailWithOwnedSignals(email)
   }
 
   const url = new URL('https://api.zerobounce.net/v2/validate')
@@ -139,19 +237,20 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
     })
 
     if (!response.ok) {
+      const ownedFallback = await verifyEmailWithOwnedSignals(email)
       const original: VerificationResult = {
         status: 'unknown',
         subStatus: `zerobounce_http_${response.status}`,
         provider: 'zerobounce',
         score: 0.5,
         error: `zerobounce_http_${response.status}`,
-        raw: { provider: 'zerobounce', status: response.status },
+        raw: { provider: 'zerobounce', status: response.status, owned_fallback: ownedFallback.raw },
       }
       const fallback = await verifyWithHunterFallback(email, {
         reason: original.error ?? 'zerobounce_http_error',
         zeroBounceRaw: original.raw,
       })
-      return mergeHunterFallback(original, fallback)
+      return ownedFallback.status === 'invalid' ? ownedFallback : mergeHunterFallback(original, fallback)
     }
 
     const payload = (await response.json()) as {
@@ -184,19 +283,20 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
       ? 'zerobounce_timeout'
       : 'zerobounce_request_failed'
 
+    const ownedFallback = await verifyEmailWithOwnedSignals(email)
     const original: VerificationResult = {
       status: 'unknown',
       subStatus: code,
       provider: 'zerobounce',
       score: 0.5,
       error: code,
-      raw: { provider: 'zerobounce', error: code },
+      raw: { provider: 'zerobounce', error: code, owned_fallback: ownedFallback.raw },
     }
     const fallback = await verifyWithHunterFallback(email, {
       reason: code,
       zeroBounceRaw: original.raw,
     })
-    return mergeHunterFallback(original, fallback)
+    return ownedFallback.status === 'invalid' ? ownedFallback : mergeHunterFallback(original, fallback)
   }
 }
 

@@ -1,4 +1,3 @@
-import { type HunterVerificationResult } from '@/lib/integrations/hunter'
 import { verifyEmailAddress, type VerificationResult } from '@/lib/integrations/zerobounce'
 
 export type ProspectResearchContact = {
@@ -43,13 +42,15 @@ export type PublicEmailEvidenceResult = {
 export type ProviderValidationResult = {
   contact: ProspectResearchContact
   checked: boolean
-  verdict?: HunterVerificationResult['verdict']
+  verdict?: ProviderVerdict
   reason?: string
 }
 
+type ProviderVerdict = 'valid' | 'risky' | 'invalid' | 'unknown'
+
 type ProviderEmailVerificationResult = {
   provider: string
-  verdict: HunterVerificationResult['verdict']
+  verdict: ProviderVerdict
   score: number
   catchAll: boolean
   raw: Record<string, unknown> | null

@@ -5,12 +5,13 @@ import {
   searchDomainWithHunter,
   verifyEmailWithHunter,
 } from '../lib/integrations/hunter'
-import { verifyEmailAddress } from '../lib/integrations/zerobounce'
+import { verifyEmailAddress, verifyEmailWithOwnedSignals } from '../lib/integrations/zerobounce'
 
 async function main() {
   const originalFetch = globalThis.fetch
   const originalZeroBounceKey = process.env.ZEROBOUNCE_API_KEY
   const originalHunterKey = process.env.HUNTER_API_KEY
+  const originalHunterFallback = process.env.HUNTER_FALLBACK_ENABLED
 
   assert.deepEqual(mapHunterVerification({ result: 'deliverable', score: 97, accept_all: false }), {
     verdict: 'valid',
@@ -138,6 +139,34 @@ async function main() {
 
   process.env.ZEROBOUNCE_API_KEY = 'test-zerobounce-key'
   process.env.HUNTER_API_KEY = 'test-hunter-key'
+  delete process.env.HUNTER_FALLBACK_ENABLED
+
+  const ownedInvalid = await verifyEmailWithOwnedSignals('not-an-email')
+  assert.equal(ownedInvalid.provider, 'owned')
+  assert.equal(ownedInvalid.status, 'invalid')
+  assert.equal(ownedInvalid.error, 'invalid_syntax')
+
+  let defaultHunterCalls = 0
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input))
+    if (url.hostname === 'api.zerobounce.net') {
+      return new Response(JSON.stringify({ status: 'unknown', sub_status: '' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.hostname === 'api.hunter.io') {
+      defaultHunterCalls += 1
+    }
+    throw new Error(`unexpected test URL: ${url.toString()}`)
+  }) as typeof fetch
+
+  const noDefaultFallback = await verifyEmailAddress('hello@example.com')
+  assert.equal(noDefaultFallback.provider, 'zerobounce')
+  assert.equal(noDefaultFallback.status, 'unknown')
+  assert.equal(defaultHunterCalls, 0)
+
+  process.env.HUNTER_FALLBACK_ENABLED = 'true'
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input))
@@ -234,7 +263,7 @@ async function main() {
     throw new Error(`unexpected test URL: ${url.toString()}`)
   }) as typeof fetch
 
-  const fallbackInvalid = await verifyEmailAddress('bad@example.com')
+  const fallbackInvalid = await verifyEmailAddress('bad@gmail.com')
   assert.equal(fallbackInvalid.provider, 'hunter')
   assert.equal(fallbackInvalid.status, 'invalid')
   assert.equal(fallbackInvalid.raw?.fallback_reason, 'zerobounce_http_503')
@@ -249,6 +278,11 @@ async function main() {
     delete process.env.HUNTER_API_KEY
   } else {
     process.env.HUNTER_API_KEY = originalHunterKey
+  }
+  if (originalHunterFallback === undefined) {
+    delete process.env.HUNTER_FALLBACK_ENABLED
+  } else {
+    process.env.HUNTER_FALLBACK_ENABLED = originalHunterFallback
   }
 
   console.log('hunter verification tests passed')
