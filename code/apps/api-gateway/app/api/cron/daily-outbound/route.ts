@@ -84,6 +84,23 @@ function getNumericField(data: unknown, key: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function getRecordCounts(data: unknown, key: string): Record<string, number> | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const value = (data as Record<string, unknown>)[key]
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+
+  const counts: Record<string, number> = {}
+  for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const safeKey = rawKey.replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, 80) || 'unknown'
+    const parsed = Number(rawValue)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      counts[safeKey] = Math.trunc(parsed)
+    }
+  }
+
+  return Object.keys(counts).length > 0 ? counts : undefined
+}
+
 function clampLimit(value: unknown, fallback: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -249,6 +266,10 @@ function compactStage(stage: StageResult): StageResult {
       providerValidationBlocked: getNumericField(data, 'providerValidationBlocked'),
       staleInvalidBlocked: getNumericField(data, 'staleInvalidBlocked'),
       hunterErrors: getNumericField(data, 'hunterErrors'),
+      errorCounts: getRecordCounts(data, 'errorCounts'),
+      rejectionCounts: getRecordCounts(data, 'rejectionCounts'),
+      providerValidationProviderCounts: getRecordCounts(data, 'providerValidationProviderCounts'),
+      providerValidationErrorCounts: getRecordCounts(data, 'providerValidationErrorCounts'),
       approved: getNumericField(data, 'approved'),
       queued: getNumericField(data, 'queued'),
       blockedUnverified: getNumericField(data, 'blockedUnverified'),
@@ -832,8 +853,13 @@ async function runResearchApproval(input: {
     let providerValidationRisky = 0
     let providerValidationUnknown = 0
     let providerValidationBlocked = 0
+    const providerValidationProviderCounts: Record<string, number> = {}
+    const providerValidationErrorCounts: Record<string, number> = {}
     const enrichedPool: ProspectResearchContact[] = []
     const providerValidationUpdates: ProspectResearchContact[] = []
+    const count = (bucket: Record<string, number>, key: string) => {
+      bucket[key] = (bucket[key] ?? 0) + 1
+    }
 
     for (const contact of pool) {
       let candidate: ProspectResearchContact = contact
@@ -859,6 +885,15 @@ async function runResearchApproval(input: {
           if (validation.verdict === 'risky') providerValidationRisky += 1
           if (validation.verdict === 'unknown') providerValidationUnknown += 1
           candidate = validation.contact
+          const validationFields = candidate.custom_fields ?? {}
+          count(
+            providerValidationProviderCounts,
+            asString(validationFields.email_validation_provider) || 'unknown_provider'
+          )
+          const validationError = asString(validationFields.email_validation_error)
+          if (validationError) {
+            count(providerValidationErrorCounts, validationError)
+          }
           const update = decorateProviderValidationUpdate(candidate)
           if (asString(update.custom_fields?.send_status) === 'blocked') {
             providerValidationBlocked += 1
@@ -923,6 +958,8 @@ async function runResearchApproval(input: {
           providerValidationRisky,
           providerValidationUnknown,
           providerValidationBlocked,
+          providerValidationProviderCounts,
+          providerValidationErrorCounts,
           staleInvalidBlocked,
           providerValidationLimit,
           approvalReady: approvedCandidates.length,
@@ -951,6 +988,8 @@ async function runResearchApproval(input: {
           providerValidationRisky,
           providerValidationUnknown,
           providerValidationBlocked,
+          providerValidationProviderCounts,
+          providerValidationErrorCounts,
           staleInvalidBlocked,
           providerValidationLimit,
           skipped: 'no_research_verified_prospects',
@@ -1025,6 +1064,8 @@ async function runResearchApproval(input: {
         providerValidationRisky,
         providerValidationUnknown,
         providerValidationBlocked,
+        providerValidationProviderCounts,
+        providerValidationErrorCounts,
         staleInvalidBlocked,
         providerValidationLimit,
         contacts: result.rows,
