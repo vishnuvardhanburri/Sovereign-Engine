@@ -201,8 +201,27 @@ function explicitProviderMode(): SendProvider | 'auto' | null {
   return envBool('FORCE_EMAIL_PROVIDER', false) ? parsed : 'auto'
 }
 
+// Domains whose SENDER identity must never use Brevo.
+// Configured via BREVO_BLOCKED_SENDER_DOMAINS (comma-separated).
+// Default: vishnuvardhanburri.in — only vishnulabs domain uses Brevo.
+function isBrevoBlockedDomain(senderEmail: string): boolean {
+  const domain = emailDomain(senderEmail)
+  if (!domain) return false
+  const raw = process.env.BREVO_BLOCKED_SENDER_DOMAINS ?? 'vishnuvardhanburri.in'
+  return raw
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean)
+    .some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))
+}
+
 function configuredApiProviders(email: string): ApiSendProvider[] {
-  return API_SEND_PROVIDERS.filter((provider) => providerDailyLimit(provider) > 0 && Boolean(providerSecretForEmail(provider, email)))
+  return API_SEND_PROVIDERS.filter(
+    (provider) =>
+      providerDailyLimit(provider) > 0 &&
+      Boolean(providerSecretForEmail(provider, email)) &&
+      !(provider === 'brevo' && isBrevoBlockedDomain(email))
+  )
 }
 
 function weightedProvider(idemKey: string, providers: ApiSendProvider[]): ApiSendProvider {
