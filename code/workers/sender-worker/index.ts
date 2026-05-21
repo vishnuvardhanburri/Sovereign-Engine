@@ -248,7 +248,7 @@ function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): S
     const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === selectedFrom)
     return {
       user: selectedFrom,
-      pass: matched?.pass ?? providerSecretForEmail(provider, selectedFrom) ?? process.env.SMTP_PASS ?? '',
+      pass: providerSecretForEmail(provider, selectedFrom) || matched?.pass || process.env.SMTP_PASS || '',
     }
   }
 
@@ -258,7 +258,7 @@ function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): S
     const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === preferredFrom)
     return {
       user: preferredFrom,
-      pass: matched?.pass ?? providerSecretForEmail(provider, preferredFrom) ?? process.env.SMTP_PASS ?? '',
+      pass: providerSecretForEmail(provider, preferredFrom) || matched?.pass || process.env.SMTP_PASS || '',
     }
   }
 
@@ -271,7 +271,12 @@ function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): S
     const matched = preferredDomain
       ? SMTP_ACCOUNTS.find((account) => emailDomain(account.user) === preferredDomain)
       : undefined
-    return matched ?? SMTP_ACCOUNTS[0]!
+    const account = matched ?? SMTP_ACCOUNTS[0]!
+    const user = cleanEmail(account.user)
+    return {
+      user: account.user,
+      pass: providerSecretForEmail(provider, user) || account.pass || process.env.SMTP_PASS || '',
+    }
   }
 
   if (SMTP_ACCOUNTS.length > 0) return SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]!
