@@ -34,7 +34,14 @@ import {
 import { getSendingCapacityDiagnosis } from '@/lib/sending-capacity-diagnostics'
 
 type StageResult = {
-  stage: 'lead_scout' | 'maps_import' | 'sheet_import' | 'hunter_domain_search' | 'research_approval' | 'queue_outbound'
+  stage:
+    | 'lead_scout'
+    | 'maps_import'
+    | 'sheet_import'
+    | 'hunter_domain_search'
+    | 'research_approval'
+    | 'queue_outbound'
+    | 'run_followups'
   ok: boolean
   status: number
   skipped?: string
@@ -352,6 +359,10 @@ function compactStage(stage: StageResult): StageResult {
       estimatedPipelineValueUsd: getNumericField(data, 'estimatedPipelineValueUsd'),
       agencyQueued: getNumericField(data, 'agencyQueued'),
       directQueued: getNumericField(data, 'directQueued'),
+      processed: getNumericField(data, 'processed'),
+      emailsSent: getNumericField(data, 'emailsSent'),
+      sequencesCompleted: getNumericField(data, 'sequencesCompleted'),
+      errorsCount: getNumericField(data, 'errorsCount'),
     },
   }
 }
@@ -1408,6 +1419,61 @@ async function runQueue(input: {
   }
 }
 
+async function runFollowupsStage(input: {
+  clientId: number
+  dryRun: boolean
+}): Promise<StageResult> {
+  try {
+    if (input.dryRun) {
+      const dueCountRes = await query<{ cnt: string }>(
+        `SELECT COUNT(*) as cnt
+         FROM sequence_executions
+         WHERE status = 'active'
+           AND next_email_scheduled_at <= NOW()`
+      )
+      const dueCount = Number(dueCountRes.rows[0]?.cnt ?? 0)
+      return {
+        stage: 'run_followups',
+        ok: true,
+        status: 200,
+        data: {
+          processed: 0,
+          emailsSent: 0,
+          sequencesCompleted: 0,
+          errorsCount: 0,
+          skipped: `dry_run: would process ${dueCount} pending followups`,
+        },
+      }
+    }
+
+    const { processAllSequences } = await import('@/lib/sequence-engine')
+    const result = await processAllSequences()
+    return {
+      stage: 'run_followups',
+      ok: result.errors.length === 0,
+      status: 200,
+      data: {
+        processed: result.processed,
+        emailsSent: result.emailsSent,
+        sequencesCompleted: result.sequencesCompleted,
+        errorsCount: result.errors.length,
+        errors: result.errors,
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'run_followups',
+      ok: false,
+      status: 0,
+      error: safeError(error),
+    }
+  }
+}
+
+export async function POST(request: NextRequest) {
+  return GET(request)
+}
+
 export async function GET(request: NextRequest) {
   if (!authorize(request)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
@@ -1608,6 +1674,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Run follow-ups stage
+    stages.push(
+      await runFollowupsStage({
+        clientId: plan.clientId,
+        dryRun: plan.dryRun,
+      })
+    )
+
     const queuedStage = stages.find((stage) => stage.stage === 'queue_outbound')
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
@@ -1636,6 +1710,13 @@ export async function GET(request: NextRequest) {
     const providerValidationInvalid = getNumericField(approvalStage?.data, 'providerValidationInvalid')
     const providerValidationBlocked = getNumericField(approvalStage?.data, 'providerValidationBlocked')
     const staleInvalidBlocked = getNumericField(approvalStage?.data, 'staleInvalidBlocked')
+
+    const followupsStage = stages.find((stage) => stage.stage === 'run_followups')
+    const followupsProcessed = getNumericField(followupsStage?.data, 'processed')
+    const followupsSent = getNumericField(followupsStage?.data, 'emailsSent')
+    const followupsCompleted = getNumericField(followupsStage?.data, 'sequencesCompleted')
+    const followupsErrors = getNumericField(followupsStage?.data, 'errorsCount')
+
     const hardFailures = stages.filter(
       (stage) =>
         !stage.ok &&
@@ -1666,8 +1747,8 @@ export async function GET(request: NextRequest) {
       healthyDomains: capacityDiagnosis.healthyDomains,
       eligibleSenderIdentities: capacityDiagnosis.eligibleSenderIdentities,
       primaryBlocker: capacityDiagnosis.primaryBlocker,
-      nextAction: capacityDiagnosis.nextAction,
       ...digest,
+      nextAction: digest.nextAction || capacityDiagnosis.nextAction,
     })
 
     return NextResponse.json({
@@ -1698,6 +1779,10 @@ export async function GET(request: NextRequest) {
         providerValidationInvalid,
         providerValidationBlocked,
         staleInvalidBlocked,
+        followupsProcessed,
+        followupsSent,
+        followupsCompleted,
+        followupsErrors,
         hardFailures: hardFailures.length,
         targetDailyVolume: capacityDiagnosis.targetDailyVolume,
         capacityRemaining: capacityDiagnosis.currentRemainingCapacity,

@@ -404,6 +404,29 @@ class SequenceEngine {
     emailId?: string
     sequenceCompleted: boolean
   }> {
+    // Global guard: stop sequence if contact has replied, bounced, or unsubscribed
+    const email = execution.contact_email
+    const campaignId = execution.campaign_id
+
+    const { canSendToEmail } = await import('@/lib/unsubscribe-suppression')
+    const isAllowed = await canSendToEmail(email)
+    if (!isAllowed) {
+      await this.completeSequence(execution.id, 'Unsubscribed or suppressed')
+      return { emailSent: false, sequenceCompleted: true }
+    }
+
+    const bounced = await this.hasBounced(email, campaignId)
+    if (bounced) {
+      await this.completeSequence(execution.id, 'Bounced')
+      return { emailSent: false, sequenceCompleted: true }
+    }
+
+    const replied = await this.hasReceivedReply(email, campaignId)
+    if (replied) {
+      await this.completeSequence(execution.id, 'Reply received')
+      return { emailSent: false, sequenceCompleted: true }
+    }
+
     // Get current step
     const stepResult = await query(`
       SELECT * FROM sequence_steps
@@ -528,10 +551,18 @@ class SequenceEngine {
    */
   private async hasReceivedReply(email: string, campaignId: string): Promise<boolean> {
     const result = await query(`
+      SELECT 1 FROM events
+      WHERE (event_type = 'reply' OR event_type = 'replied')
+        AND (
+          metadata->>'from_email' = $1
+          OR metadata->>'contact_email' = $1
+          OR contact_id IN (SELECT id FROM contacts WHERE email = $1)
+        )
+      UNION ALL
       SELECT 1 FROM reply_analysis
-      WHERE contact_email = $1 AND campaign_id = $2
+      WHERE contact_email = $1
       LIMIT 1
-    `, [email, campaignId])
+    `, [email])
 
     return result.rows.length > 0
   }
@@ -567,10 +598,18 @@ class SequenceEngine {
    */
   private async hasBounced(email: string, campaignId: string): Promise<boolean> {
     const result = await query(`
+      SELECT 1 FROM events
+      WHERE (event_type = 'bounce' OR event_type = 'bounced')
+        AND (
+          metadata->>'contact_email' = $1
+          OR metadata->>'to_email' = $1
+          OR contact_id IN (SELECT id FROM contacts WHERE email = $1)
+        )
+      UNION ALL
       SELECT 1 FROM email_events
-      WHERE contact_email = $1 AND campaign_id = $2 AND event_type = 'bounce'
+      WHERE contact_email = $1 AND event_type = 'bounce'
       LIMIT 1
-    `, [email, campaignId])
+    `, [email])
 
     return result.rows.length > 0
   }

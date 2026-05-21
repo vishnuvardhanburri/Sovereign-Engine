@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
            (
              SELECT COALESCE(NULLIF(metadata->>'error',''), NULLIF(metadata->>'reason',''))
              FROM events e2
-             WHERE e2.client_id = events.client_id
+             WHERE e2.client_id = $1
                AND e2.event_type IN ('failed','bounce')
                AND e2.created_at >= NOW() - INTERVAL '24h'
                AND COALESCE(NULLIF(e2.metadata->>'error',''), NULLIF(e2.metadata->>'reason','')) IS NOT NULL
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
            (
              SELECT COALESCE(NULLIF(metadata->>'provider',''), NULLIF(metadata->>'sending_provider',''))
              FROM events e3
-             WHERE e3.client_id = events.client_id
+             WHERE e3.client_id = $1
                AND e3.event_type = 'sent'
                AND e3.created_at >= NOW() - INTERVAL '24h'
                AND COALESCE(NULLIF(e3.metadata->>'provider',''), NULLIF(e3.metadata->>'sending_provider','')) IS NOT NULL

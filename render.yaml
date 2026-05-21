@@ -4,6 +4,9 @@ services:
     region: singapore
     plan: starter
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # API Gateway — Next.js control plane + embedded sender worker
+  # ─────────────────────────────────────────────────────────────────────────────
   - type: web
     name: sovereign-engine-api
     runtime: docker
@@ -35,51 +38,190 @@ services:
         value: json
       - key: MOCK_SMTP
         value: "false"
+
+      # ── Sending identity ─────────────────────────────────────────────────────
+      - key: SMTP_HOST
+        value: smtp.hostinger.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_SECURE
+        value: "true"
+      - key: SMTP_FROM_EMAIL
+        value: hello@vishnulabs.com
+      - key: SMTP_ACCOUNTS
+        sync: false   # set in Render dashboard: [{"user":"hello@vishnulabs.com","pass":"Vishnunani2005@21"},{"user":"hello@vishnuvardhanburri.in","pass":"Vishnunani2005@21"}]
+      - key: SENDER_PHYSICAL_ADDRESS
+        value: "Xavira Tech Labs, India"
+      - key: BOOTSTRAP_SENDING_DOMAIN
+        value: "true"
+      - key: BOOTSTRAP_SENDING_EMAILS
+        value: hello@vishnulabs.com,hello@vishnuvardhanburri.in
+      - key: BOOTSTRAP_MARK_DNS_VALID
+        value: "false"
+      - key: BOOTSTRAP_DOMAIN_DAILY_LIMIT
+        value: "50"
+      - key: BOOTSTRAP_IDENTITY_DAILY_LIMIT
+        value: "25"
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false   # demo@sovereign.local
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false   # Demo1234!
+
+      # ── Provider keys ────────────────────────────────────────────────────────
+      - key: BREVO_API_KEY
+        sync: false   # xkeysib-...
+      - key: BREVO_DAILY_LIMIT
+        value: "600"
+      - key: EMAIL_PROVIDER_VISHNULABS_COM
+        value: brevo
+      - key: RESEND_API_KEY
+        sync: false   # re_g6QfL4jC_...
+      - key: RESEND_API_KEY_VISHNUVARDHANBURRI_IN
+        sync: false   # re_DEjeSbea_...
+      - key: RESEND_DAILY_LIMIT
+        value: "200"
+      - key: RESEND_FROM_EMAIL
+        value: hello@vishnulabs.com
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: BREVO_BLOCKED_SENDER_DOMAINS
+        value: vishnuvardhanburri.in
+      - key: FORCE_EMAIL_PROVIDER
+        value: "false"
+
+      # ── Email validation ──────────────────────────────────────────────────────
+      - key: ZEROBOUNCE_API_KEY
+        sync: false   # 023f7de549bd4764...
+      - key: HUNTER_API_KEY
+        sync: false   # f7690e1b4787937b...
+      - key: HUNTER_FALLBACK_ENABLED
+        value: "true"
       - key: SEND_ALLOW_UNKNOWN_VALIDATION
         value: "false"
+
+      # ── Outbound volume / mode ────────────────────────────────────────────────
+      - key: DAILY_OUTBOUND_ENABLED
+        value: "true"
+      - key: DAILY_OUTBOUND_MODE
+        value: growth
+      - key: DAILY_OUTBOUND_SEND_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_PROVIDER_MAX_SEND_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_APPROVE_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_TARGET_DAILY_VOLUME
+        value: "800"
+      - key: DAILY_OUTBOUND_PROVIDER_VALIDATION_LIMIT
+        value: "1000"
+      - key: DAILY_OUTBOUND_RECOVERY_MODE
+        value: "true"
+      - key: DAILY_OUTBOUND_RUN_HUNTER
+        value: "true"
+      - key: HUNTER_DOMAIN_SEARCH_DAILY_LIMIT
+        value: "20"
+      - key: HUNTER_EMAILS_PER_DOMAIN
+        value: "5"
+      - key: HUNTER_MIN_CONFIDENCE
+        value: "80"
+
+      # ── Rate shaping (safe ramp) ──────────────────────────────────────────────
       - key: GLOBAL_SENDS_PER_MINUTE
-        value: "3"
+        value: "30"
+      - key: GLOBAL_SHAPER_RATE_PER_SEC
+        value: "0.5"
+      - key: GLOBAL_SHAPER_BURST
+        value: "5"
       - key: SENDER_WORKER_CONCURRENCY
-        value: "1"
+        value: "3"
       - key: LEGACY_LOOP_BATCH_SIZE
-        value: "1"
-      - key: INVESTOR_LEAD_VALUE_USD
-        value: "0.75"
-      - key: ROI_INBOX_LEAD_VALUE_USD
-        value: "0.75"
-      - key: ROI_COST_PER_SEND_USD
-        value: "0.002"
+        value: "3"
+      - key: WEB_EMBED_SENDER_WORKER
+        value: "true"
+
+      # ── Lead scout ────────────────────────────────────────────────────────────
+      - key: LEAD_SCOUT_ENABLED
+        value: "true"
+      - key: LEAD_SCOUT_DAILY_LIMIT
+        value: "3"
+      - key: LEAD_SCOUT_INDUSTRIES
+        value: saas,agency,cybersecurity,ai,devtools
+      - key: LEAD_SCOUT_PERSONA
+        value: founder
+      - key: LEAD_SCOUT_REGION
+        value: global
+
+      # ── Google Maps / Apify ───────────────────────────────────────────────────
+      - key: DAILY_OUTBOUND_RUN_MAPS
+        value: "true"
+      - key: GOOGLE_MAPS_DAILY_LIMIT
+        value: "25"
+      - key: GOOGLE_MAPS_SOURCE_ENABLED
+        value: "true"
+      - key: APIFY_API_TOKEN
+        sync: false   # apify_api_mZWQfc...
+      - key: APIFY_GOOGLE_MAPS_ACTOR_ID
+        value: compass/crawler-google-places
+      - key: APIFY_GOOGLE_MAPS_LOCATION
+        value: United States
+      - key: APIFY_GOOGLE_MAPS_SEARCHES
+        value: "lead generation agency,outbound agency,RevOps agency,B2B marketing agency,AI automation agency"
+      - key: APIFY_TASK_TIMEOUT_SECONDS
+        value: "120"
+      - key: APIFY_DATASET_DISCOVERY_LIMIT
+        value: "20"
+
+      # ── AI copy ───────────────────────────────────────────────────────────────
+      - key: OPENROUTER_API_KEY
+        sync: false   # sk-or-v1-fc9f8d031...
+      - key: OPENROUTER_MODEL
+        value: meta-llama/llama-3.1-8b-instruct:free
+      - key: OUTBOUND_OPENROUTER_COPY
+        value: "true"
+
+      # ── Telegram ──────────────────────────────────────────────────────────────
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # 8724100438:AAFHJuAGqsa...
+      - key: TELEGRAM_CHAT_ID
+        sync: false   # 6243293865
+      - key: TELEGRAM_NOTIFICATIONS_ENABLED
+        value: "true"
+      - key: TELEGRAM_NOTIFY_SENT
+        value: "true"
+      - key: TELEGRAM_NOTIFY_FAILED
+        value: "true"
+      - key: TELEGRAM_NOTIFY_IMPORTS
+        value: "true"
+      - key: TELEGRAM_NOTIFY_APPROVALS
+        value: "true"
+      - key: TELEGRAM_NOTIFY_QUEUE
+        value: "true"
+      - key: TELEGRAM_FULL_EMAILS
+        value: "false"
+
+      # ── Security ──────────────────────────────────────────────────────────────
       - key: JWT_SECRET
         generateValue: true
       - key: MASTER_ENCRYPTION_KEY
         generateValue: true
       - key: SECURITY_KILL_SWITCH_TOKEN
         generateValue: true
-      - key: BOOTSTRAP_ADMIN_EMAIL
-        sync: false
-      - key: BOOTSTRAP_ADMIN_PASSWORD
-        sync: false
-      - key: BOOTSTRAP_SENDING_DOMAIN
-        value: "false"
-      - key: BOOTSTRAP_SENDING_EMAILS
-        sync: false
-      - key: BOOTSTRAP_MARK_DNS_VALID
-        value: "false"
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_SECURE
-        sync: false
-      - key: SMTP_FROM_EMAIL
-        sync: false
-      - key: ZEROBOUNCE_API_KEY
-        sync: false
+      - key: CRON_SECRET
+        sync: false   # vishnu-cron-2026-safe-production-outbound-secret-key-32-chars
 
+      # ── ROI / investor ────────────────────────────────────────────────────────
+      - key: INVESTOR_LEAD_VALUE_USD
+        value: "0.75"
+      - key: ROI_INBOX_LEAD_VALUE_USD
+        value: "0.75"
+      - key: ROI_COST_PER_SEND_USD
+        value: "0.002"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Reputation Worker — adaptive brain
+  # ─────────────────────────────────────────────────────────────────────────────
   - type: worker
     name: sovereign-engine-reputation-worker
     runtime: docker
@@ -104,7 +246,18 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_NOTIFICATIONS_ENABLED
+        value: "true"
+      - key: TELEGRAM_NOTIFY_QUEUE
+        value: "true"
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Sender Worker — stateless sending muscle
+  # ─────────────────────────────────────────────────────────────────────────────
   - type: worker
     name: sovereign-engine-sender-worker
     runtime: docker
@@ -134,36 +287,110 @@ services:
       - key: SEND_ALLOW_UNKNOWN_VALIDATION
         value: "false"
       - key: GLOBAL_SENDS_PER_MINUTE
-        value: "3"
+        value: "30"
+      - key: GLOBAL_SHAPER_RATE_PER_SEC
+        value: "0.5"
+      - key: GLOBAL_SHAPER_BURST
+        value: "5"
       - key: SENDER_WORKER_CONCURRENCY
-        value: "1"
+        value: "3"
       - key: LEGACY_LOOP_BATCH_SIZE
-        value: "1"
+        value: "3"
       - key: WORKER_ID
         value: render-sender-1
       - key: SMTP_HOST
-        sync: false
+        value: smtp.hostinger.com
       - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
+        value: "465"
       - key: SMTP_SECURE
-        sync: false
+        value: "true"
       - key: SMTP_FROM_EMAIL
-        sync: false
+        value: hello@vishnulabs.com
       - key: SMTP_ACCOUNTS
         sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_DAILY_LIMIT
+        value: "600"
+      - key: BREVO_BLOCKED_SENDER_DOMAINS
+        value: vishnuvardhanburri.in
+      - key: EMAIL_PROVIDER_VISHNULABS_COM
+        value: brevo
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_API_KEY_VISHNUVARDHANBURRI_IN
+        sync: false
+      - key: RESEND_DAILY_LIMIT
+        value: "200"
+      - key: FORCE_EMAIL_PROVIDER
+        value: "false"
       - key: ZEROBOUNCE_API_KEY
         sync: false
+      - key: HUNTER_API_KEY
+        sync: false
+      - key: SENDER_PHYSICAL_ADDRESS
+        value: "Xavira Tech Labs, India"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_NOTIFICATIONS_ENABLED
+        value: "true"
+      - key: TELEGRAM_NOTIFY_SENT
+        value: "true"
+      - key: TELEGRAM_NOTIFY_FAILED
+        value: "true"
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Inbound Worker — IMAP reply detector → stops follow-ups on reply
+  # ─────────────────────────────────────────────────────────────────────────────
+  - type: worker
+    name: sovereign-engine-inbound-worker
+    runtime: docker
+    region: singapore
+    plan: starter
+    dockerContext: ./code
+    dockerfilePath: ./code/Dockerfile
+    dockerCommand: sh -lc "node scripts/sync-env.mjs && pnpm db:init && pnpm -C workers/inbound-worker start"
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sovereign-engine-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: sovereign-engine-redis
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: LOG_FORMAT
+        value: json
+      - key: IMAP_HOST
+        value: imap.hostinger.com
+      - key: IMAP_PORT
+        value: "993"
+      - key: IMAP_SECURE
+        value: "true"
+      - key: IMAP_POLL_INTERVAL
+        value: "30000"
+      # Poll both sending inboxes for replies
+      - key: IMAP_ACCOUNTS
+        sync: false   # [{"user":"hello@vishnulabs.com","pass":"Vishnunani2005@21"},{"user":"hello@vishnuvardhanburri.in","pass":"Vishnunani2005@21"}]
+      - key: SMTP_ACCOUNTS
+        sync: false   # same JSON — used to identify our own outbound addresses
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Outbound Cron — fires every 30 min, calls daily-outbound API
+  # ─────────────────────────────────────────────────────────────────────────────
   - type: cron
     name: sovereign-engine-outbound-cron
     runtime: docker
     region: singapore
     plan: starter
-    schedule: "*/15 * * * *"
+    schedule: "0 3 * * *"
     dockerContext: ./code
     dockerfilePath: ./code/Dockerfile
     dockerCommand: sh -lc "node scripts/sync-env.mjs && node scripts/cloud-outbound-cron.mjs"
@@ -182,16 +409,47 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
+      # ── Cron gate ─────────────────────────────────────────────────────────────
       - key: OUTBOUND_CRON_ENABLED
-        value: "false"
-      - key: OUTBOUND_CRON_LIMIT
-        value: "5"
-      - key: OUTBOUND_CRON_MAX_LIMIT
-        value: "25"
-      - key: OUTBOUND_LEADS_SOURCE
-        value: docs/acquisition/LEADS_TEMPLATE.csv
-      - key: OUTBOUND_PREPARED_CSV
-        value: docs/acquisition/CLIENTS_TODAY.csv
+        value: "true"
+      - key: CRON_SECRET
+        sync: false   # vishnu-cron-2026-safe-production-outbound-secret-key-32-chars
+      # Target the API service
+      - key: OUTBOUND_CRON_API_URL
+        value: https://sovereign-engine-api.onrender.com
+      # Pass-through all outbound parameters
+      - key: DAILY_OUTBOUND_MODE
+        value: growth
+      - key: DAILY_OUTBOUND_SEND_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_APPROVE_LIMIT
+        value: "800"
+      - key: DAILY_OUTBOUND_TARGET_DAILY_VOLUME
+        value: "800"
+      - key: DAILY_OUTBOUND_RECOVERY_MODE
+        value: "true"
+      - key: DAILY_OUTBOUND_PROVIDER_VALIDATION_LIMIT
+        value: "1000"
+      - key: DAILY_OUTBOUND_RUN_HUNTER
+        value: "true"
+      - key: LEAD_SCOUT_ENABLED
+        value: "true"
+      - key: LEAD_SCOUT_DAILY_LIMIT
+        value: "3"
+      - key: LEAD_SCOUT_INDUSTRIES
+        value: saas,agency,cybersecurity,ai,devtools
+      - key: LEAD_SCOUT_PERSONA
+        value: founder
+      - key: LEAD_SCOUT_REGION
+        value: global
+      - key: DAILY_OUTBOUND_RUN_MAPS
+        value: "true"
+      - key: APIFY_GOOGLE_MAPS_ACTOR_ID
+        value: compass/crawler-google-places
+      - key: APIFY_GOOGLE_MAPS_LOCATION
+        value: United States
+      - key: APIFY_GOOGLE_MAPS_SEARCHES
+        value: "lead generation agency,outbound agency,RevOps agency,B2B marketing agency,AI automation agency"
 
 databases:
   - name: sovereign-engine-postgres

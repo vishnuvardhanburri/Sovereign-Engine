@@ -9,6 +9,8 @@ export type SignalFlags = {
   hiring_sdrs: boolean
   mentions_outbound: boolean
   agency_keyword: boolean
+  /** Signals pointing at SaaS / AI / security / devtools buyers (→ $25k direct offer) */
+  saas_or_tech_keyword: boolean
 }
 
 export type LeadIntelOutput = {
@@ -18,6 +20,12 @@ export type LeadIntelOutput = {
   priority_score: number // 0..1
   allow_send: boolean
   reasons: string[]
+  /**
+   * Offer type routing hint:
+   *   'agency'  → $100k white-label / partner offer
+   *   'direct'  → $25k Sovereign Stack direct offer
+   */
+  offer_type_hint: 'agency' | 'direct'
 }
 
 const ROLE_PREFIXES = [
@@ -65,8 +73,28 @@ export function inferSignals(input: LeadIntelInput): SignalFlags {
   const hay = `${input.company_name ?? ''} ${input.domain ?? ''} ${input.role ?? ''}`.toLowerCase()
   const hiring_sdrs = hay.includes('sdr') || hay.includes('sales development') || hay.includes('hiring')
   const mentions_outbound = hay.includes('outbound') || hay.includes('cold email') || hay.includes('cold outreach') || hay.includes('deliverability')
-  const agency_keyword = hay.includes('agency') || hay.includes('studio') || hay.includes('marketing')
-  return { hiring_sdrs, mentions_outbound, agency_keyword }
+  const agency_keyword =
+    hay.includes('agency') ||
+    hay.includes('studio') ||
+    hay.includes('marketing') ||
+    hay.includes('partner') ||
+    hay.includes('reseller') ||
+    hay.includes('white label') ||
+    hay.includes('whitelabel')
+  const saas_or_tech_keyword =
+    hay.includes('saas') ||
+    hay.includes('software') ||
+    hay.includes('platform') ||
+    hay.includes('ai ') ||
+    hay.includes('automation') ||
+    hay.includes('security') ||
+    hay.includes('devtools') ||
+    hay.includes('developer') ||
+    hay.includes('api') ||
+    hay.includes('revops') ||
+    hay.includes('crm') ||
+    hay.includes('infrastructure')
+  return { hiring_sdrs, mentions_outbound, agency_keyword, saas_or_tech_keyword }
 }
 
 export function scoreLead(input: LeadIntelInput, flags: SignalFlags): { score: number; reasons: string[] } {
@@ -85,6 +113,10 @@ export function scoreLead(input: LeadIntelInput, flags: SignalFlags): { score: n
     score += 0.1
     reasons.push('signal:agency_keyword')
   }
+  if (flags.saas_or_tech_keyword) {
+    score += 0.08
+    reasons.push('signal:saas_or_tech_keyword')
+  }
 
   const role = String(input.role ?? '').toLowerCase()
   if (role.includes('founder') || role.includes('ceo') || role.includes('head') || role.includes('growth')) {
@@ -100,18 +132,28 @@ export function scoreLead(input: LeadIntelInput, flags: SignalFlags): { score: n
   return { score: clamp01(score), reasons }
 }
 
+/** Determine which Sovereign Stack offer to lead with for this prospect. */
+export function inferOfferType(flags: SignalFlags): 'agency' | 'direct' {
+  // Agencies, studios, marketing firms, and resellers → $100k white-label offer
+  if (flags.agency_keyword) return 'agency'
+  // Pure SaaS / tech / AI buyers → $25k Sovereign Stack direct seat
+  return 'direct'
+}
+
 export function enrichLead(input: LeadIntelInput): LeadIntelOutput {
   const normalized_email = normalizeEmail(input.email)
   const reasons: string[] = []
 
   if (isRoleEmail(normalized_email)) {
+    const signal_flags = inferSignals(input)
     return {
       normalized_email,
       company_description: buildCompanyDescription(input),
-      signal_flags: inferSignals(input),
+      signal_flags,
       priority_score: 0,
       allow_send: false,
       reasons: ['blocked:role_email'],
+      offer_type_hint: inferOfferType(signal_flags),
     }
   }
 
@@ -123,6 +165,8 @@ export function enrichLead(input: LeadIntelInput): LeadIntelOutput {
   const allow_send = priority_score >= 0.6
   if (!allow_send) reasons.push('blocked:priority_score_lt_0_6')
 
+  const offer_type_hint = inferOfferType(signal_flags)
+
   return {
     normalized_email,
     company_description: buildCompanyDescription(input),
@@ -130,6 +174,7 @@ export function enrichLead(input: LeadIntelInput): LeadIntelOutput {
     priority_score,
     allow_send,
     reasons,
+    offer_type_hint,
   }
 }
 

@@ -99,8 +99,51 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
   const rows = res.rows as Array<{ identity: any; domain: any }>
   if (!rows.length) return null
 
+  const isBrevoBlockedDomain = (senderEmail: string): boolean => {
+    const email = String(senderEmail ?? '').trim().toLowerCase()
+    const domain = email.split('@')[1] ?? ''
+    if (!domain) return false
+    const raw = process.env.BREVO_BLOCKED_SENDER_DOMAINS ?? 'vishnuvardhanburri.in'
+    return raw
+      .split(',')
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean)
+      .some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))
+  }
+
+  const isIdentitySelectionBlocked = (email: string): boolean => {
+    if (isBrevoBlockedDomain(email)) {
+      const explicit = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '').trim().toLowerCase()
+      const isForceBrevo = explicit === 'brevo' || explicit.startsWith('xsmtpsib-') || explicit.includes('brevo_api_key=')
+      const smtpHost = String(process.env.SMTP_HOST || '').trim().toLowerCase()
+      const isSmtpHostBrevo = smtpHost.includes('brevo') || smtpHost.includes('sendinblue')
+      
+      const clean = String(email ?? '').trim().toLowerCase()
+      const suffixes = [
+        clean.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+        (clean.split('@')[1] ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+      ].filter(Boolean)
+      
+      let hasResend = Boolean(process.env.RESEND_API_KEY)
+      for (const prefix of ['RESEND_API_KEY', 'RESEND_KEY']) {
+        for (const suffix of suffixes) {
+          if (process.env[`${prefix}_${suffix}`]) {
+            hasResend = true
+          }
+        }
+      }
+
+      if (isForceBrevo) return true
+      if (isSmtpHostBrevo && !hasResend) return true
+    }
+    return false
+  }
+
+  const filteredRows = rows.filter((row) => !isIdentitySelectionBlocked(row.identity.email))
+  if (!filteredRows.length) return null
+
   // rotate top 5
-  const top = rows.slice(0, Math.min(5, rows.length))
+  const top = filteredRows.slice(0, Math.min(5, filteredRows.length))
   const pick = top[Math.abs((Date.now() / 60000) | 0) % top.length] ?? top[0]!
   return { identity: pick.identity, domain: pick.domain }
 }

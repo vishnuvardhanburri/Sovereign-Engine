@@ -2078,6 +2078,11 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             const account = selectSenderAccount(idemKey, selectedIdentityEmailForRun)
             fromAddress = String(account.user).toLowerCase()
 
+            const isBrevoHost = SMTP_HOST.toLowerCase().includes('brevo') || SMTP_HOST.toLowerCase().includes('sendinblue')
+            if (isBrevoBlockedDomain(fromAddress) && isBrevoHost) {
+              throw new Error('retry_later:brevo_blocked_for_domain')
+            }
+
             console.log('[sender-worker] smtp send start', {
               from: maskEmail(account.user),
               to: maskEmail(job.toEmail),

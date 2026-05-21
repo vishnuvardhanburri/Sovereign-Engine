@@ -15,6 +15,10 @@ export type OutboundTelegramDigest = {
   followUpsSent24h: number
   followUpsStopped24h: number
   queuedNow: number
+  /** Most frequent failure error string in the last 24h, or null if no failures */
+  topFailureReason: string | null
+  /** Heuristic next-action recommendation based on current system state */
+  nextAction: string
   lastEvents: Array<{
     type: 'sent' | 'failed' | 'bounced'
     email: string
@@ -150,6 +154,52 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
 
     const queuedNow = safeInt(queueRes.rows[0]?.cnt)
 
+    // Top failure reason in last 24h
+    const topFailureRes = await query<{ error: string; cnt: string }>(
+      `SELECT
+         COALESCE(NULLIF(TRIM(metadata->>'error'),''), NULLIF(TRIM(metadata->>'reason'),''), 'unknown') AS error,
+         COUNT(*) AS cnt
+       FROM events
+       WHERE client_id = $1
+         AND event_type IN ('failed','bounce','bounced')
+         AND created_at >= NOW() - INTERVAL '24 hours'
+         AND COALESCE(NULLIF(TRIM(metadata->>'error'),''), NULLIF(TRIM(metadata->>'reason'),'')) IS NOT NULL
+       GROUP BY 1
+       ORDER BY cnt DESC
+       LIMIT 1`,
+      [clientId]
+    ).catch(() => ({ rows: [] as { error: string; cnt: string }[], rowCount: 0 }))
+
+    const topFailureReason = topFailureRes.rows[0]?.error ?? null
+
+    // Heuristic next-action
+    function deriveNextAction(): string {
+      if (failed24h > sent24h * 0.1 && sent24h > 0) {
+        return `High failure rate (${failed24h}/${sent24h}). Check SMTP credentials and domain health first.`
+      }
+      if (bounced24h > 2) {
+        return `${bounced24h} bounces detected. Run ZeroBounce validation on queued contacts before next send.`
+      }
+      if (replies24h > 0 && followUpsStopped24h < replies24h) {
+        return `${replies24h} replies — verify follow-ups are stopped for replied contacts.`
+      }
+      if (queuedNow === 0 && sentToday === 0) {
+        return 'Nothing queued or sent today. Check DAILY_OUTBOUND_ENABLED and domain capacity.'
+      }
+      if (queuedNow > 0 && sentToday === 0) {
+        return `${queuedNow} jobs queued but 0 sent. Check sender worker is running on Render.`
+      }
+      if (followUpsDue > 0) {
+        return `${followUpsDue} follow-ups are due. Ensure sequence worker is processing them.`
+      }
+      if (sentToday > 0 && replies24h === 0) {
+        return `Sending healthy (${sentToday} today). Keep monitoring for first replies — refine copy if none in 48h.`
+      }
+      return 'System nominal. Continue monitoring reply rate and domain health.'
+    }
+
+    const nextAction = deriveNextAction()
+
     // Last 8 events for the digest feed
     const lastEventsRes = await query<{
       event_type: string
@@ -196,6 +246,8 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       followUpsSent24h,
       followUpsStopped24h,
       queuedNow,
+      topFailureReason,
+      nextAction,
       lastEvents,
     }
   } catch (error) {
@@ -216,6 +268,8 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       followUpsSent24h: 0,
       followUpsStopped24h: 0,
       queuedNow: 0,
+      topFailureReason: null,
+      nextAction: 'Digest query failed — check DB connectivity.',
       lastEvents: [],
     }
   }
