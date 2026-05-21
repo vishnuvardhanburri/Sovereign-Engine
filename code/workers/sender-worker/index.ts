@@ -408,11 +408,24 @@ function providerFailureNeedsFallback(provider: SendProvider, err: unknown): boo
 function fallbackSenderAccounts(account: SenderAccount): SenderAccount[] {
   if (account.provider !== 'brevo' && account.provider !== 'resend') return []
 
-  return configuredApiProviders(account.user)
+  const list = configuredApiProviders(account.user)
     .filter((provider) => provider !== account.provider)
     .sort((a, b) => providerDailyLimit(b) - providerDailyLimit(a))
     .map((provider) => accountForProvider({ provider, user: account.user }))
     .filter((fallback) => Boolean(fallback.pass))
+
+  // Append SMTP fallback if credentials exist in SMTP_ACCOUNTS or main env vars
+  const matchedSmtp = SMTP_ACCOUNTS.find((a) => cleanEmail(a.user) === cleanEmail(account.user))
+  const smtpPass = matchedSmtp?.pass || process.env.SMTP_PASS
+  if (smtpPass) {
+    list.push({
+      user: account.user,
+      pass: smtpPass,
+      provider: 'smtp',
+    })
+  }
+
+  return list
 }
 
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
