@@ -154,7 +154,10 @@ const SMTP_ACCOUNTS = readJsonArray('SMTP_ACCOUNTS')
   .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
   .filter((x) => x.user && x.pass)
 
-type SenderAccount = { user: string; pass: string }
+type SendProvider = 'smtp' | 'brevo' | 'resend'
+type ApiSendProvider = Exclude<SendProvider, 'smtp'>
+type SenderAccount = { user: string; pass: string; provider: SendProvider }
+const API_SEND_PROVIDERS: ApiSendProvider[] = ['brevo', 'resend']
 
 function cleanEmail(raw: unknown): string {
   const email = String(raw ?? '').trim().toLowerCase()
@@ -165,12 +168,69 @@ function emailDomain(raw: unknown): string {
   return cleanEmail(raw).split('@')[1] ?? ''
 }
 
-function providerModeFromEnv(): 'smtp' | 'brevo' | 'resend' {
+function providerDailyLimit(provider: ApiSendProvider): number {
+  const names =
+    provider === 'brevo'
+      ? ['BREVO_DAILY_LIMIT', 'DAILY_BREVO_LIMIT', 'SENDINBLUE_DAILY_LIMIT']
+      : ['RESEND_DAILY_LIMIT', 'DAILY_RESEND_LIMIT']
+
+  for (const name of names) {
+    const value = Number.parseInt(String(process.env[name] || ''), 10)
+    if (Number.isFinite(value)) return clamp(value, 0, 100_000)
+  }
+
+  return provider === 'brevo' ? 300 : 100
+}
+
+function parseProviderMode(rawValue: string): SendProvider | 'auto' | null {
+  const raw = rawValue.trim().toLowerCase()
+  if (!raw || raw === 'auto' || raw === 'central' || raw === 'balanced') return raw ? 'auto' : null
+  if (raw === 'smtp' || raw === 'resend' || raw === 'brevo') return raw
+  if (raw.startsWith('re_') || raw.includes('resend_api_key=')) return 'resend'
+  if (raw.startsWith('xsmtpsib-') || raw.includes('brevo_api_key=')) return 'brevo'
+  return null
+}
+
+function explicitProviderMode(): SendProvider | 'auto' | null {
   const explicit = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '').trim().toLowerCase()
-  if (explicit === 'resend' || explicit.startsWith('re_') || explicit.includes('resend_api_key=')) return 'resend'
-  if (explicit === 'brevo' || explicit.startsWith('xsmtpsib-') || explicit.includes('brevo_api_key=')) return 'brevo'
-  if (providerSecret('brevo')) return 'brevo'
-  if (providerSecret('resend')) return 'resend'
+  const parsed = parseProviderMode(explicit)
+  if (parsed === 'auto') return 'auto'
+
+  // Historical Render configs often had EMAIL_PROVIDER=resend even after Brevo
+  // was added. Do not pin the worker to one ESP unless the operator asks for it.
+  return envBool('FORCE_EMAIL_PROVIDER', false) ? parsed : 'auto'
+}
+
+function configuredApiProviders(email: string): ApiSendProvider[] {
+  return API_SEND_PROVIDERS.filter((provider) => providerDailyLimit(provider) > 0 && Boolean(providerSecretForEmail(provider, email)))
+}
+
+function weightedProvider(idemKey: string, providers: ApiSendProvider[]): ApiSendProvider {
+  const weighted = providers
+    .map((provider) => ({ provider, weight: providerDailyLimit(provider) }))
+    .filter((item) => item.weight > 0)
+  if (!weighted.length) return providers[0] ?? 'resend'
+
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0)
+  const day = new Date().toISOString().slice(0, 10)
+  const key = `${day}|${idemKey}`
+  let bucket = stableIndex(key, Math.max(total, 1))
+
+  for (const item of weighted) {
+    if (bucket < item.weight) return item.provider
+    bucket -= item.weight
+  }
+
+  return weighted[weighted.length - 1]!.provider
+}
+
+function providerModeForEmail(idemKey: string, email: string): SendProvider {
+  const explicit = explicitProviderMode()
+  if (explicit && explicit !== 'auto') return explicit
+
+  const providers = configuredApiProviders(email)
+  if (providers.length > 1) return weightedProvider(idemKey, providers)
+  if (providers.length === 1) return providers[0]!
   return 'smtp'
 }
 
@@ -196,7 +256,7 @@ function envKeySuffix(value: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
-function providerSecretForEmail(provider: 'brevo' | 'resend', email: string): string {
+function providerSecretForEmail(provider: ApiSendProvider, email: string): string {
   const clean = cleanEmail(email)
   const domain = emailDomain(clean)
   const suffixes = [envKeySuffix(clean), envKeySuffix(domain)].filter(Boolean)
@@ -240,29 +300,44 @@ function preferredEspFromAddress(): string {
   )
 }
 
+function accountForProvider(input: {
+  provider: SendProvider
+  user: string
+  matched?: { user: string; pass: string }
+}): SenderAccount {
+  if (input.provider === 'brevo' || input.provider === 'resend') {
+    return {
+      user: input.user,
+      provider: input.provider,
+      pass: providerSecretForEmail(input.provider, input.user) || input.matched?.pass || process.env.SMTP_PASS || '',
+    }
+  }
+
+  return {
+    user: input.user,
+    provider: 'smtp',
+    pass: input.matched?.pass || process.env.SMTP_PASS || '',
+  }
+}
+
 function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): SenderAccount {
-  const provider = providerModeFromEnv()
   const selectedFrom = cleanEmail(selectedIdentityEmail)
 
-  if ((provider === 'resend' || provider === 'brevo') && selectedFrom) {
+  if (selectedFrom) {
+    const provider = providerModeForEmail(idemKey, selectedFrom)
     const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === selectedFrom)
-    return {
-      user: selectedFrom,
-      pass: providerSecretForEmail(provider, selectedFrom) || matched?.pass || process.env.SMTP_PASS || '',
-    }
+    return accountForProvider({ provider, user: selectedFrom, matched })
   }
 
   const preferredFrom = preferredEspFromAddress()
 
-  if ((provider === 'resend' || provider === 'brevo') && preferredFrom) {
+  if (preferredFrom) {
+    const provider = providerModeForEmail(idemKey, preferredFrom)
     const matched = SMTP_ACCOUNTS.find((account) => cleanEmail(account.user) === preferredFrom)
-    return {
-      user: preferredFrom,
-      pass: providerSecretForEmail(provider, preferredFrom) || matched?.pass || process.env.SMTP_PASS || '',
-    }
+    return accountForProvider({ provider, user: preferredFrom, matched })
   }
 
-  if ((provider === 'resend' || provider === 'brevo') && SMTP_ACCOUNTS.length > 0) {
+  if (SMTP_ACCOUNTS.length > 0) {
     const preferredDomain = String(
       process.env.BOOTSTRAP_SENDING_DOMAIN || process.env.RESEND_SENDING_DOMAIN || ''
     )
@@ -273,15 +348,12 @@ function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): S
       : undefined
     const account = matched ?? SMTP_ACCOUNTS[0]!
     const user = cleanEmail(account.user)
-    return {
-      user: account.user,
-      pass: providerSecretForEmail(provider, user) || account.pass || process.env.SMTP_PASS || '',
-    }
+    const provider = providerModeForEmail(idemKey, user)
+    return accountForProvider({ provider, user: account.user, matched: account })
   }
 
-  if (SMTP_ACCOUNTS.length > 0) return SMTP_ACCOUNTS[stableIndex(idemKey, SMTP_ACCOUNTS.length)]!
-
-  return { user: reqEnv('SMTP_USER'), pass: reqEnv('SMTP_PASS') }
+  const user = reqEnv('SMTP_USER')
+  return { user, pass: reqEnv('SMTP_PASS'), provider: providerModeForEmail(idemKey, user) }
 }
 
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
@@ -1963,6 +2035,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
                   secure: SMTP_SECURE,
                   user: account.user,
                   pass: account.pass,
+                  provider: account.provider,
                   providerApiKey: account.pass,
                 },
                 {

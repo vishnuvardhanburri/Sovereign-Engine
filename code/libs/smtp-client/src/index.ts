@@ -7,6 +7,7 @@ export interface SmtpConfig {
   secure?: boolean
   user: string
   pass: string
+  provider?: 'smtp' | 'brevo' | 'resend'
   providerApiKey?: string
 }
 
@@ -136,7 +137,11 @@ function hasSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): boolean {
   return Boolean(providerSecret(name))
 }
 
-function providerMode(): 'smtp' | 'brevo' | 'resend' {
+function providerMode(config?: SmtpConfig): 'smtp' | 'brevo' | 'resend' {
+  if (config?.provider === 'smtp' || config?.provider === 'brevo' || config?.provider === 'resend') {
+    return config.provider
+  }
+
   const explicitMode = process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER
   const inferredMode = hasSecret('BREVO_API_KEY') ? 'brevo' : hasSecret('RESEND_API_KEY') ? 'resend' : 'smtp'
   const mode = String(explicitMode || inferredMode)
@@ -209,7 +214,7 @@ async function sendResend(req: SendEmailRequest, built: BuiltSmtpHeaders, apiKey
 
 export async function sendSmtp(config: SmtpConfig, req: SendEmailRequest): Promise<{ messageId: string }> {
   const built = buildCompliantSmtpHeaders(req)
-  const mode = providerMode()
+  const mode = providerMode(config)
 
   if (mode === 'brevo') {
     return sendBrevo(req, built, config.providerApiKey || config.pass)
