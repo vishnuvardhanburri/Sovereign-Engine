@@ -17,7 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Send } from 'lucide-react'
+import { Search, Send, TrendingUp, AlertTriangle, Mail, Reply } from 'lucide-react'
 
 type SentItem = {
   id: number
@@ -33,12 +33,80 @@ type SentItem = {
   error: string | null
   bodyText: string
   bodyHtml: string
+  provider: string | null
+  offerType: string | null
+}
+
+type SentSummary = {
+  sentToday: number
+  sent24h: number
+  failed24h: number
+  bounced24h: number
+  replies24h: number
+  replyRate24h: number
+  sent7d: number
+  replies7d: number
+  replyRate7d: number
+  agencySent24h: number
+  directSent24h: number
+  topFailureReason: string | null
+  topProvider: string | null
+}
+
+type ApiResponse = {
+  ok: boolean
+  summary?: SentSummary
+  items: SentItem[]
 }
 
 function statusBadge(type: SentItem['type']) {
   if (type === 'sent') return <Badge className="bg-green-500/10 text-green-500">Sent</Badge>
   if (type === 'bounce') return <Badge className="bg-red-500/10 text-red-500">Bounced</Badge>
   return <Badge className="bg-amber-500/10 text-amber-500">Failed</Badge>
+}
+
+function offerBadge(offerType: string | null) {
+  if (!offerType) return null
+  if (offerType === 'agency')
+    return <Badge className="bg-purple-500/10 text-purple-400 text-xs">$100k Agency</Badge>
+  return <Badge className="bg-blue-500/10 text-blue-400 text-xs">$25k Stack</Badge>
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+  sub?: string
+  accent?: 'green' | 'red' | 'amber' | 'purple' | 'blue'
+}) {
+  const accentClass = {
+    green: 'text-green-400',
+    red: 'text-red-400',
+    amber: 'text-amber-400',
+    purple: 'text-purple-400',
+    blue: 'text-blue-400',
+  }[accent ?? 'blue']
+
+  return (
+    <Card>
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 ${accentClass}`}>{icon}</div>
+          <div>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className={`text-2xl font-bold ${accentClass}`}>{value}</p>
+            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function SentMailPage() {
@@ -53,7 +121,7 @@ export default function SentMailPage() {
     queryFn: async () => {
       const res = await fetch('/api/dashboard/sent?limit=200')
       if (!res.ok) throw new Error('failed')
-      return (await res.json()) as { ok: boolean; items: SentItem[] }
+      return (await res.json()) as ApiResponse
     },
     refetchInterval: 10_000,
   })
@@ -83,17 +151,88 @@ export default function SentMailPage() {
         x.toEmail.toLowerCase().includes(needle) ||
         x.fromEmail.toLowerCase().includes(needle) ||
         x.subject.toLowerCase().includes(needle) ||
-        (x.campaignName ?? '').toLowerCase().includes(needle)
+        (x.campaignName ?? '').toLowerCase().includes(needle) ||
+        (x.provider ?? '').toLowerCase().includes(needle) ||
+        (x.error ?? '').toLowerCase().includes(needle)
       )
     })
   }, [data, q])
+
+  const s = data?.summary
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Sent Mail</h1>
-        <p className="text-muted-foreground">Proof of what was actually sent (or blocked)</p>
+        <p className="text-muted-foreground">Proof of what was actually sent — reply rates, offer mix, and delivery health</p>
       </div>
+
+      {/* BI Summary Cards */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Array(8).fill(0).map((_, i) => (
+            <Card key={i}><CardContent className="pt-5"><Skeleton className="h-10 w-full" /></CardContent></Card>
+          ))}
+        </div>
+      ) : s ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard
+            icon={<Send className="w-4 h-4" />}
+            label="Sent today"
+            value={s.sentToday}
+            sub={`${s.sent24h} in last 24h`}
+            accent="green"
+          />
+          <StatCard
+            icon={<Reply className="w-4 h-4" />}
+            label="Reply rate (24h)"
+            value={`${s.replyRate24h.toFixed(1)}%`}
+            sub={`${s.replies24h} replies / ${s.sent24h} sent`}
+            accent="blue"
+          />
+          <StatCard
+            icon={<TrendingUp className="w-4 h-4" />}
+            label="Reply rate (7d)"
+            value={`${s.replyRate7d.toFixed(1)}%`}
+            sub={`${s.replies7d} replies / ${s.sent7d} sent`}
+            accent="purple"
+          />
+          <StatCard
+            icon={<AlertTriangle className="w-4 h-4" />}
+            label="Failed + Bounced (24h)"
+            value={s.failed24h + s.bounced24h}
+            sub={`${s.failed24h} failed · ${s.bounced24h} bounced`}
+            accent="red"
+          />
+          <StatCard
+            icon={<Mail className="w-4 h-4" />}
+            label="Agency $100k (24h)"
+            value={s.agencySent24h}
+            sub="Agency Master License"
+            accent="purple"
+          />
+          <StatCard
+            icon={<Mail className="w-4 h-4" />}
+            label="Direct $25k (24h)"
+            value={s.directSent24h}
+            sub="Sovereign Stack"
+            accent="blue"
+          />
+          <StatCard
+            icon={<Send className="w-4 h-4" />}
+            label="Top provider"
+            value={s.topProvider ?? '—'}
+            accent="green"
+          />
+          <StatCard
+            icon={<AlertTriangle className="w-4 h-4" />}
+            label="Top failure reason"
+            value={s.topFailureReason ? s.topFailureReason.slice(0, 24) : '—'}
+            sub={s.topFailureReason && s.topFailureReason.length > 24 ? s.topFailureReason : undefined}
+            accent="amber"
+          />
+        </div>
+      ) : null}
 
       <Card>
         <CardContent className="pt-6">
@@ -102,7 +241,7 @@ export default function SentMailPage() {
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by to/from/subject/campaign..."
+                  placeholder="Search by to/from/subject/campaign/provider/error..."
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   className="pl-8"
@@ -148,6 +287,8 @@ export default function SentMailPage() {
                   <TableHead>To</TableHead>
                   <TableHead>From</TableHead>
                   <TableHead>Subject</TableHead>
+                  <TableHead>Offer</TableHead>
+                  <TableHead>Provider</TableHead>
                   <TableHead>Body</TableHead>
                   <TableHead>Campaign</TableHead>
                   <TableHead className="text-right">Time</TableHead>
@@ -159,7 +300,7 @@ export default function SentMailPage() {
                     .fill(0)
                     .map((_, i) => (
                       <TableRow key={i}>
-                        {Array(7)
+                        {Array(9)
                           .fill(0)
                           .map((_, j) => (
                             <TableCell key={j}>
@@ -174,10 +315,17 @@ export default function SentMailPage() {
                     const hasBody = Boolean((x.bodyText || '').trim() || (x.bodyHtml || '').trim())
                     return (
                       <TableRow key={x.id} className="align-middle">
-                        <TableCell className="whitespace-nowrap">{statusBadge(x.type)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {statusBadge(x.type)}
+                          {x.error && x.type !== 'sent' ? (
+                            <p className="text-xs text-muted-foreground mt-0.5 max-w-[160px] truncate" title={x.error}>{x.error}</p>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="font-medium whitespace-nowrap">{x.toEmail || '-'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{x.fromEmail || '-'}</TableCell>
-                        <TableCell className="max-w-[420px] truncate">{x.subject || '-'}</TableCell>
+                        <TableCell className="max-w-[320px] truncate">{x.subject || '-'}</TableCell>
+                        <TableCell className="whitespace-nowrap">{offerBadge(x.offerType)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{x.provider || '-'}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           <Button
                             size="sm"
@@ -191,7 +339,7 @@ export default function SentMailPage() {
                             View
                           </Button>
                         </TableCell>
-                        <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground">
+                        <TableCell className="max-w-[180px] truncate text-sm text-muted-foreground">
                           {x.campaignName ?? (x.campaignId ? `Campaign #${x.campaignId}` : '-')}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap text-sm">
@@ -202,7 +350,7 @@ export default function SentMailPage() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
                       No sent events yet. Run `pnpm send:test` or activate a campaign.
                     </TableCell>
                   </TableRow>
@@ -224,6 +372,12 @@ export default function SentMailPage() {
                 <div><span className="text-muted-foreground">To:</span> {selected.toEmail || '-'}</div>
                 <div><span className="text-muted-foreground">From:</span> {selected.fromEmail || '-'}</div>
                 <div className="truncate"><span className="text-muted-foreground">Subject:</span> {selected.subject || '-'}</div>
+                {selected.provider ? (
+                  <div><span className="text-muted-foreground">Provider:</span> {selected.provider}</div>
+                ) : null}
+                {selected.offerType ? (
+                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '$100k Agency Master License' : '$25k Sovereign Stack'}</div>
+                ) : null}
                 {selected.error ? (
                   <div className="text-amber-600 break-words"><span className="text-muted-foreground">Error:</span> {selected.error}</div>
                 ) : null}

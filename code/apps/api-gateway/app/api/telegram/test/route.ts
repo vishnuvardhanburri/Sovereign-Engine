@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { appEnv } from '@/lib/env'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
+import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 
 function authorized(request: NextRequest): boolean {
   const expected = appEnv.cronSecret()
@@ -16,15 +17,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
 
+  const clientId = Number(
+    request.nextUrl.searchParams.get('client_id') ||
+      process.env.DEFAULT_CLIENT_ID ||
+      1
+  )
+
+  const digest = await getOutboundTelegramDigest(clientId)
+
   const delivery = await notifyTelegramEvent({
-    type: 'queue_batch',
-    queued: 0,
-    source: 'telegram_test',
-    queue: process.env.SEND_QUEUE ?? 'xv-send-queue',
+    type: 'daily_outbound',
+    dryRun: false,
+    queued: digest.queuedNow,
+    ...digest,
   })
 
   return NextResponse.json({
     ok: true,
+    digest,
     telegram: delivery,
     configured: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
   })

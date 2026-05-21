@@ -24,6 +24,7 @@ import {
 } from '@/lib/prospect-research'
 import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
+import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import {
   buildSovereignCopyForLead,
   balanceSovereignOfferMix,
@@ -1646,6 +1647,8 @@ export async function GET(request: NextRequest) {
       targetDailyVolume,
     })
 
+    const digest = await getOutboundTelegramDigest(plan.clientId)
+
     void notifyTelegramEvent({
       type: 'daily_outbound',
       dryRun: plan.dryRun,
@@ -1664,6 +1667,7 @@ export async function GET(request: NextRequest) {
       eligibleSenderIdentities: capacityDiagnosis.eligibleSenderIdentities,
       primaryBlocker: capacityDiagnosis.primaryBlocker,
       nextAction: capacityDiagnosis.nextAction,
+      ...digest,
     })
 
     return NextResponse.json({

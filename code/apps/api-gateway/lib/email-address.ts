@@ -48,6 +48,11 @@ export function validateBusinessEmailSyntax(email: string): EmailSyntaxResult {
     return { valid: false, normalized, reason: 'escaped_html_email_artifact' }
   }
 
+  // Block HTML-entity escape artifacts anywhere in the local part
+  if (/u00[0-9a-f]{2}/i.test(local) || />|<|&amp;/.test(local)) {
+    return { valid: false, normalized, reason: 'escaped_html_email_artifact' }
+  }
+
   if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
     return { valid: false, normalized, reason: 'invalid_domain_dots' }
   }

@@ -106,6 +106,28 @@ type TelegramNotification =
       eligibleSenderIdentities?: number
       primaryBlocker?: string | null
       nextAction?: string | null
+      // Digest fields from getOutboundTelegramDigest
+      sentToday?: number
+      sent24h?: number
+      failed24h?: number
+      bounced24h?: number
+      replies24h?: number
+      replyRate24h?: number
+      sent7d?: number
+      replies7d?: number
+      replyRate7d?: number
+      followUpsDue?: number
+      followUpsPending?: number
+      followUpsSent24h?: number
+      followUpsStopped24h?: number
+      queuedNow?: number
+      lastEvents?: Array<{
+        type: 'sent' | 'failed' | 'bounced'
+        email: string
+        subject: string
+        reason?: string
+        ts: string
+      }>
     }
   | {
       type: 'reputation_recovery'
@@ -266,6 +288,39 @@ export function formatTelegramNotification(input: TelegramNotification, options?
   }
 
   if (input.type === 'daily_outbound') {
+    const hasDigest =
+      input.sentToday !== undefined ||
+      input.sent24h !== undefined ||
+      input.queuedNow !== undefined
+
+    if (hasDigest) {
+      const lastLines = (input.lastEvents ?? []).slice(0, 5).map((ev) => {
+        const label =
+          ev.type === 'sent' ? 'SENT' : ev.type === 'failed' ? 'FAILED' : 'BOUNCED'
+        const reason = ev.reason ? ` (${clip(ev.reason, 60)})` : ''
+        return `${label} ${ev.email} ${clip(ev.subject, 60)}${reason}`
+      })
+
+      return [
+        'Sovereign Engine',
+        input.dryRun ? 'Daily outbound preview' : 'Daily outbound command center',
+        `Sent today: ${input.sentToday ?? 0}`,
+        `24h: ${input.sent24h ?? 0} sent / ${input.failed24h ?? 0} failed / ${input.bounced24h ?? 0} bounced / ${input.replies24h ?? 0} replies`,
+        `Reply rate: ${(input.replyRate24h ?? 0).toFixed(1)}%`,
+        `Follow-ups: ${input.followUpsDue ?? 0} due / ${input.followUpsPending ?? 0} pending / ${input.followUpsSent24h ?? 0} sent / ${input.followUpsStopped24h ?? 0} stopped`,
+        `Queued now: ${input.queuedNow ?? input.queued ?? 0}`,
+        input.agencyQueued || input.directQueued
+          ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
+          : null,
+        input.estimatedPipelineValueUsd
+          ? `Pipeline: $${input.estimatedPipelineValueUsd.toLocaleString('en-US')}`
+          : null,
+        input.primaryBlocker ? `Blocker: ${clip(input.primaryBlocker, 120)}` : null,
+        lastLines.length ? `Latest:\n${lastLines.join('\n')}` : null,
+      ].filter(Boolean).join('\n')
+    }
+
+    // Fallback — no digest data available yet
     return [
       'Sovereign Engine',
       input.dryRun ? 'Daily autopilot preview' : 'Daily autopilot run',
@@ -279,15 +334,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
         ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
         : null,
       input.targetDailyVolume ? `Target/day: ${input.targetDailyVolume}` : null,
-      input.capacityRemaining !== undefined ? `Capacity left: ${input.capacityRemaining}` : null,
-      input.healthyDomains !== undefined ? `Healthy domains: ${input.healthyDomains}` : null,
-      input.eligibleSenderIdentities !== undefined
-        ? `Sender identities: ${input.eligibleSenderIdentities}`
-        : null,
       input.primaryBlocker ? `Blocker: ${clip(input.primaryBlocker, 140)}` : null,
-      input.nextAction ? `Next: ${clip(input.nextAction, 180)}` : null,
-      `Approval limit: ${input.approveLimit ?? 0}`,
-      `Send limit: ${input.sendLimit ?? 0}`,
       `Stage failures: ${input.failures ?? 0}`,
     ].filter(Boolean).join('\n')
   }
