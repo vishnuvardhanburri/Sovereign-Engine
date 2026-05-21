@@ -32,6 +32,21 @@ function domainSlug(email: string): string {
   return domain.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
+function emailDomain(email: string): string {
+  return parseAddress(email).email.trim().toLowerCase().split('@')[1] || ''
+}
+
+function isBrevoBlockedDomain(senderEmail: string): boolean {
+  const domain = emailDomain(senderEmail)
+  if (!domain) return false
+  const raw = process.env.BREVO_BLOCKED_SENDER_DOMAINS ?? 'vishnuvardhanburri.in'
+  return raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`))
+}
+
 function envBool(name: string, fallback = false): boolean {
   const value = process.env[name]
   if (value === undefined || value === null || value === '') return fallback
@@ -72,6 +87,8 @@ function secretFromMisplacedProviderEnv(provider: Provider): string {
 }
 
 function providerSecret(provider: ApiProvider, fromEmail: string): string {
+  if (provider === 'brevo' && isBrevoBlockedDomain(fromEmail)) return ''
+
   const slug = domainSlug(parseAddress(fromEmail).email)
   const domainAliases =
     provider === 'brevo'
@@ -101,7 +118,11 @@ function parseProvider(value: string): Provider | 'auto' | null {
 
 function configuredApiProviders(fromEmail: string): ApiProvider[] {
   return API_PROVIDERS.filter((provider) => {
-    return providerDailyLimit(provider) > 0 && Boolean(providerSecret(provider, fromEmail))
+    return (
+      providerDailyLimit(provider) > 0 &&
+      Boolean(providerSecret(provider, fromEmail)) &&
+      !(provider === 'brevo' && isBrevoBlockedDomain(fromEmail))
+    )
   })
 }
 
@@ -155,7 +176,14 @@ function selectedProvider(request: SendMessageRequest, to: string[]): Provider {
     return chooseWeightedProvider({ request, to, providers: apiProviders })
   }
 
-  if (explicitProvider && explicitProvider !== 'auto') return explicitProvider
+  if (explicitProvider && explicitProvider !== 'auto') {
+    if (explicitProvider === 'brevo' && isBrevoBlockedDomain(fromEmail)) {
+      if (apiProviders.length === 1) return apiProviders[0]!
+      if (apiProviders.length > 1) return chooseWeightedProvider({ request, to, providers: apiProviders })
+      return 'smtp'
+    }
+    return explicitProvider
+  }
   if (apiProviders.length === 1) return apiProviders[0]!
   if (apiProviders.length > 1) return chooseWeightedProvider({ request, to, providers: apiProviders })
   return 'smtp'

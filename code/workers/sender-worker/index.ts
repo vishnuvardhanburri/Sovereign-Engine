@@ -245,7 +245,15 @@ function weightedProvider(idemKey: string, providers: ApiSendProvider[]): ApiSen
 
 function providerModeForEmail(idemKey: string, email: string): SendProvider {
   const explicit = explicitProviderMode()
-  if (explicit && explicit !== 'auto') return explicit
+  if (explicit && explicit !== 'auto') {
+    if (explicit === 'brevo' && isBrevoBlockedDomain(email)) {
+      const providers = configuredApiProviders(email)
+      if (providers.length > 1) return weightedProvider(idemKey, providers)
+      if (providers.length === 1) return providers[0]!
+      return 'smtp'
+    }
+    return explicit
+  }
 
   const providers = configuredApiProviders(email)
   if (providers.length > 1) return weightedProvider(idemKey, providers)
@@ -276,6 +284,8 @@ function envKeySuffix(value: string): string {
 }
 
 function providerSecretForEmail(provider: ApiSendProvider, email: string): string {
+  if (provider === 'brevo' && isBrevoBlockedDomain(email)) return ''
+
   const clean = cleanEmail(email)
   const domain = emailDomain(clean)
   const suffixes = [envKeySuffix(clean), envKeySuffix(domain)].filter(Boolean)
