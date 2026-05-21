@@ -1,10 +1,68 @@
 import { query } from '@/lib/db'
 
-const FALLBACK_REVIEW_WINDOW = 5
-const SYSTEM_APPROVAL_CEILING = Math.max(
-  1,
-  Math.min(Number(process.env.CONTACT_APPROVAL_MAX_WINDOW ?? 100), 800)
-)
+const DEFAULT_FALLBACK_REVIEW_WINDOW = 1_000
+const DEFAULT_APPROVAL_INVENTORY_WINDOW = 100_000
+const ABSOLUTE_APPROVAL_CEILING = 250_000
+
+function envInteger(name: string, fallback: number, min: number, max: number): number {
+  const value = Number(process.env[name])
+  if (!Number.isFinite(value)) return fallback
+  return Math.max(min, Math.min(Math.trunc(value), max))
+}
+
+function approvalConfig() {
+  const fallbackReviewWindow = envInteger(
+    'CONTACT_APPROVAL_FALLBACK_WINDOW',
+    DEFAULT_FALLBACK_REVIEW_WINDOW,
+    1,
+    ABSOLUTE_APPROVAL_CEILING
+  )
+  const inventoryWindow = envInteger(
+    'CONTACT_APPROVAL_INVENTORY_WINDOW',
+    DEFAULT_APPROVAL_INVENTORY_WINDOW,
+    1,
+    ABSOLUTE_APPROVAL_CEILING
+  )
+  const ceiling = envInteger(
+    'CONTACT_APPROVAL_MAX_WINDOW',
+    Math.max(inventoryWindow, 2_000),
+    1,
+    ABSOLUTE_APPROVAL_CEILING
+  )
+
+  return {
+    fallbackReviewWindow: Math.min(fallbackReviewWindow, ceiling),
+    inventoryWindow: Math.min(inventoryWindow, ceiling),
+    ceiling,
+  }
+}
+
+export function computeSystemApprovalLimit(input: {
+  activeDomains: number
+  remainingCapacity: number
+  senderRemainingCapacity?: number
+  averageHealthScore: number
+}): number {
+  const config = approvalConfig()
+  const senderCapacity = Math.max(0, Math.trunc(input.senderRemainingCapacity ?? 0))
+  const domainCapacity = Math.max(0, Math.trunc(input.remainingCapacity))
+
+  // Approval is an inventory/research gate, not the final send gate. Keep the
+  // backlog large enough for autonomous verification while send capacity remains
+  // controlled later by the queue planner.
+  if (input.activeDomains === 0 || Math.max(senderCapacity, domainCapacity) <= 0) {
+    return config.fallbackReviewWindow
+  }
+
+  const healthFloor =
+    input.averageHealthScore <= 30
+      ? config.fallbackReviewWindow
+      : config.inventoryWindow
+  const capacityBacklog = Math.floor(Math.max(senderCapacity, domainCapacity) * 2)
+  const computed = Math.max(config.fallbackReviewWindow, healthFloor, capacityBacklog)
+
+  return Math.max(1, Math.min(config.ceiling, computed))
+}
 
 export type SystemApprovalWindow = {
   limit: number
@@ -109,7 +167,12 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
 
   if (activeDomains === 0 || remainingCapacity <= 0) {
     return {
-      limit: FALLBACK_REVIEW_WINDOW,
+      limit: computeSystemApprovalLimit({
+        activeDomains,
+        remainingCapacity,
+        senderRemainingCapacity,
+        averageHealthScore,
+      }),
       activeDomains,
       healthyDomains,
       remainingCapacity,
@@ -121,9 +184,12 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
     }
   }
 
-  const reviewPercent = averageHealthScore >= 90 ? 0.2 : averageHealthScore >= 75 ? 0.1 : 0.05
-  const computed = Math.floor(remainingCapacity * reviewPercent)
-  const limit = Math.max(1, Math.min(SYSTEM_APPROVAL_CEILING, Math.max(FALLBACK_REVIEW_WINDOW, computed)))
+  const limit = computeSystemApprovalLimit({
+    activeDomains,
+    remainingCapacity,
+    senderRemainingCapacity,
+    averageHealthScore,
+  })
 
   return {
     limit,

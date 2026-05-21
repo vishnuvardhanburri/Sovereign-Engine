@@ -4,6 +4,7 @@ import {
   resolveDailyBoolean,
   resolveDailySheetUrl,
 } from '../lib/daily-outbound'
+import { computeSystemApprovalLimit } from '../lib/contact-approval-window'
 
 const healthyWindow = {
   limit: 20,
@@ -15,7 +16,7 @@ const healthyWindow = {
 
 const highCapacityWindow = {
   ...healthyWindow,
-  limit: 800,
+  limit: 100_000,
   remainingCapacity: 1_000,
   eligibleSenderIdentities: 4,
   senderRemainingCapacity: 1_000,
@@ -23,14 +24,14 @@ const highCapacityWindow = {
 
 const lowHealthWindow = {
   ...healthyWindow,
-  limit: 5,
+  limit: 100_000,
   remainingCapacity: 50,
   averageHealthScore: 50,
 }
 
 const noHealthySenderWindow = {
   ...healthyWindow,
-  limit: 5,
+  limit: 100_000,
   remainingCapacity: 91,
   averageHealthScore: 50,
   eligibleSenderIdentities: 0,
@@ -39,7 +40,7 @@ const noHealthySenderWindow = {
 
 const severeRecoveryWindow = {
   ...healthyWindow,
-  limit: 5,
+  limit: 1_000,
   remainingCapacity: 0,
   averageHealthScore: 24,
   eligibleSenderIdentities: 0,
@@ -50,6 +51,36 @@ assert.equal(resolveDailyBoolean(undefined, true), true)
 assert.equal(resolveDailyBoolean('false', true), false)
 assert.equal(resolveDailyBoolean('0', true), false)
 assert.equal(resolveDailyBoolean('yes', false), true)
+
+assert.equal(
+  computeSystemApprovalLimit({
+    activeDomains: 2,
+    remainingCapacity: 91,
+    senderRemainingCapacity: 91,
+    averageHealthScore: 50,
+  }),
+  100_000
+)
+
+assert.equal(
+  computeSystemApprovalLimit({
+    activeDomains: 2,
+    remainingCapacity: 1_000,
+    senderRemainingCapacity: 1_000,
+    averageHealthScore: 96,
+  }),
+  100_000
+)
+
+assert.equal(
+  computeSystemApprovalLimit({
+    activeDomains: 0,
+    remainingCapacity: 0,
+    senderRemainingCapacity: 0,
+    averageHealthScore: 100,
+  }),
+  1_000
+)
 
 assert.equal(
   resolveDailySheetUrl({
@@ -243,7 +274,7 @@ const growthDefaultMaxPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(growthDefaultMaxPlan.sendLimit, 100)
-assert.equal(growthDefaultMaxPlan.approveLimit, 800)
+assert.equal(growthDefaultMaxPlan.approveLimit, 100_000)
 
 const providerBackedGrowthPlan = buildDailyOutboundPlan({
   approvalWindow: highCapacityWindow,
@@ -258,7 +289,7 @@ const providerBackedGrowthPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(providerBackedGrowthPlan.sendLimit, 800)
-assert.equal(providerBackedGrowthPlan.approveLimit, 800)
+assert.equal(providerBackedGrowthPlan.approveLimit, 100_000)
 assert.ok(
   providerBackedGrowthPlan.guardrails.includes(
     'Provider-backed growth ceiling is configured at 800/day; queueing still requires verified contacts, healthy domains, and active sender capacity'

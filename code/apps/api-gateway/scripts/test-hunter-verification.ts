@@ -6,6 +6,7 @@ import {
   verifyEmailWithHunter,
 } from '../lib/integrations/hunter'
 import { verifyEmailAddress, verifyEmailWithOwnedSignals } from '../lib/integrations/zerobounce'
+import { validateBusinessEmailSyntax } from '../lib/email-address'
 
 async function main() {
   const originalFetch = globalThis.fetch
@@ -144,7 +145,15 @@ async function main() {
   const ownedInvalid = await verifyEmailWithOwnedSignals('not-an-email')
   assert.equal(ownedInvalid.provider, 'owned')
   assert.equal(ownedInvalid.status, 'invalid')
-  assert.equal(ownedInvalid.error, 'invalid_syntax')
+  assert.equal(ownedInvalid.error, 'invalid_at_count')
+
+  assert.equal(validateBusinessEmailSyntax('sales@example.com').valid, true)
+  assert.equal(validateBusinessEmailSyntax('first.last+ops@example.co').valid, true)
+  assert.equal(validateBusinessEmailSyntax('hello..team@example.com').valid, false)
+  assert.equal(validateBusinessEmailSyntax('hello@example..com').valid, false)
+  assert.equal(validateBusinessEmailSyntax('hello@-example.com').valid, false)
+  assert.equal(validateBusinessEmailSyntax('hello@example-.com').valid, false)
+  assert.equal(validateBusinessEmailSyntax('hello@例.com').valid, false)
 
   let defaultHunterCalls = 0
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -157,14 +166,25 @@ async function main() {
     }
     if (url.hostname === 'api.hunter.io') {
       defaultHunterCalls += 1
+      return new Response(
+        JSON.stringify({
+          data: {
+            result: 'deliverable',
+            score: 89,
+            accept_all: false,
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
     }
     throw new Error(`unexpected test URL: ${url.toString()}`)
   }) as typeof fetch
 
-  const noDefaultFallback = await verifyEmailAddress('hello@example.com')
-  assert.equal(noDefaultFallback.provider, 'zerobounce')
-  assert.equal(noDefaultFallback.status, 'unknown')
-  assert.equal(defaultHunterCalls, 0)
+  const defaultFallback = await verifyEmailAddress('hello@example.com')
+  assert.equal(defaultFallback.provider, 'hunter')
+  assert.equal(defaultFallback.status, 'valid')
+  assert.equal(defaultFallback.score, 0.89)
+  assert.equal(defaultHunterCalls, 1)
 
   process.env.HUNTER_FALLBACK_ENABLED = 'true'
 

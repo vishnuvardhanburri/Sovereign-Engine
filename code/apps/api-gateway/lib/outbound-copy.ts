@@ -1,5 +1,6 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
 import { appEnv } from '@/lib/env'
+import { buildSalesBrainContext } from '@/lib/sales-brain'
 
 export type SovereignOfferType = 'direct' | 'agency'
 
@@ -412,8 +413,9 @@ export async function buildSovereignCopyForLead(
   }>({
     task: 'sovereign_outbound_copy',
     system:
-      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Keep it plain text, professional, value-first, and under 170 words. Include a polite opt-out line.',
+      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Keep it plain text, professional, pain-first, value-first, and under 170 words. Include a polite opt-out line.',
     user: JSON.stringify({
+      salesBrain: buildSalesBrainContext(lead, offerType),
       recipient: {
         firstName,
         company,

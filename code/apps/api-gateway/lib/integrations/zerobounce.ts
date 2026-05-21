@@ -5,6 +5,7 @@ import {
   HunterVerificationResult,
   verifyEmailWithHunter,
 } from '@/lib/integrations/hunter'
+import { validateBusinessEmailSyntax } from '@/lib/email-address'
 
 export interface VerificationResult {
   status: VerificationStatus
@@ -15,14 +16,39 @@ export interface VerificationResult {
   raw: Record<string, unknown> | null
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+let zeroBounceCircuitOpenUntil = 0
 
-function envFlag(name: string): boolean {
-  return ['1', 'true', 'yes', 'on'].includes(String(process.env[name] ?? '').trim().toLowerCase())
+function envFlagOverride(name: string): boolean | null {
+  const normalized = String(process.env[name] ?? '').trim().toLowerCase()
+  if (!normalized) return null
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return null
+}
+
+function rateLimitCooldownMs(): number {
+  const parsed = Number(process.env.ZEROBOUNCE_RATE_LIMIT_COOLDOWN_MS)
+  if (!Number.isFinite(parsed)) return 15 * 60 * 1000
+  return Math.max(60_000, Math.min(Math.trunc(parsed), 60 * 60 * 1000))
+}
+
+function openZeroBounceCircuit() {
+  zeroBounceCircuitOpenUntil = Math.max(
+    zeroBounceCircuitOpenUntil,
+    Date.now() + rateLimitCooldownMs()
+  )
 }
 
 export function isHunterFallbackEnabled(): boolean {
-  return envFlag('HUNTER_FALLBACK_ENABLED') || envFlag('EMAIL_VALIDATION_HUNTER_FALLBACK')
+  const explicit =
+    envFlagOverride('HUNTER_FALLBACK_ENABLED') ??
+    envFlagOverride('EMAIL_VALIDATION_HUNTER_FALLBACK')
+  if (explicit !== null) return explicit
+
+  // If Hunter is configured, use it as the automatic continuity provider when
+  // ZeroBounce is unknown, timed out, or rate-limited. This prevents one
+  // verifier quota event from freezing the approval inventory.
+  return Boolean(appEnv.hunterApiKey())
 }
 
 function scoreOwnedResult(status: VerificationStatus): number {
@@ -45,15 +71,16 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Pr
 }
 
 export async function verifyEmailWithOwnedSignals(email: string): Promise<VerificationResult> {
-  const normalized = email.trim().toLowerCase()
-  if (!EMAIL_PATTERN.test(normalized)) {
+  const syntax = validateBusinessEmailSyntax(email)
+  const normalized = syntax.normalized
+  if (!syntax.valid) {
     return {
       status: 'invalid',
-      subStatus: 'invalid_syntax',
+      subStatus: syntax.reason ?? 'invalid_syntax',
       provider: 'owned',
       score: scoreOwnedResult('invalid'),
-      error: 'invalid_syntax',
-      raw: { provider: 'owned', checks: ['syntax'], syntax: false },
+      error: syntax.reason ?? 'invalid_syntax',
+      raw: { provider: 'owned', checks: ['syntax'], syntax: false, reason: syntax.reason },
     }
   }
 
@@ -224,6 +251,28 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
     return verifyEmailWithOwnedSignals(email)
   }
 
+  if (zeroBounceCircuitOpenUntil > Date.now()) {
+    const ownedFallback = await verifyEmailWithOwnedSignals(email)
+    const original: VerificationResult = {
+      status: 'unknown',
+      subStatus: 'zerobounce_circuit_open',
+      provider: 'zerobounce',
+      score: 0.5,
+      error: 'zerobounce_circuit_open',
+      raw: {
+        provider: 'zerobounce',
+        error: 'zerobounce_circuit_open',
+        retry_after_ms: Math.max(0, zeroBounceCircuitOpenUntil - Date.now()),
+        owned_fallback: ownedFallback.raw,
+      },
+    }
+    const fallback = await verifyWithHunterFallback(email, {
+      reason: 'zerobounce_circuit_open',
+      zeroBounceRaw: original.raw,
+    })
+    return ownedFallback.status === 'invalid' ? ownedFallback : mergeHunterFallback(original, fallback)
+  }
+
   const url = new URL('https://api.zerobounce.net/v2/validate')
   url.searchParams.set('api_key', apiKey)
   url.searchParams.set('email', email)
@@ -237,6 +286,9 @@ export async function verifyEmailAddress(email: string): Promise<VerificationRes
     })
 
     if (!response.ok) {
+      if (response.status === 429) {
+        openZeroBounceCircuit()
+      }
       const ownedFallback = await verifyEmailWithOwnedSignals(email)
       const original: VerificationResult = {
         status: 'unknown',

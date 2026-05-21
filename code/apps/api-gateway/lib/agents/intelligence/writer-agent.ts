@@ -1,3 +1,5 @@
+import { salesBrainBulletPoints } from '@/lib/sales-brain'
+
 export interface EmailDraft {
   body: string
   bulletPoints: string[]
@@ -19,6 +21,7 @@ export async function writeEmailBody(input: {
   return {
     body,
     bulletPoints: [
+      ...salesBrainBulletPoints(input.angle === 'authority' ? 'agency' : 'direct'),
       'Clear next step with a low-risk ask',
       'Proof point tailored to your market',
       'Fast follow-up process to keep momentum',

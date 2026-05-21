@@ -52,7 +52,8 @@ const MAX_SHEET_LIMIT = 500
 const MAX_MAPS_LIMIT = 100
 const DEFAULT_LEAD_SCOUT_LIMIT = 3
 const MAX_LEAD_SCOUT_LIMIT = 3
-const MAX_APPROVE_LIMIT = 800
+const MAX_APPROVE_LIMIT = 100_000
+const DEFAULT_GROWTH_APPROVAL_FLOOR = 100_000
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
 const DEFAULT_GROWTH_MAX_SEND_LIMIT = 100
 const ABSOLUTE_GROWTH_MAX_SEND_LIMIT = 800
@@ -237,6 +238,35 @@ function resolveSendLimit(input: {
   return Math.min(baseLimit, effectiveCapacity)
 }
 
+function resolveApproveLimit(input: {
+  requested: string | undefined | null
+  env: EnvLike
+  approvalWindow: SystemApprovalWindow
+  mode: DailyOutboundMode
+}): number {
+  const hasQueryOverride = String(input.requested ?? '').trim().length > 0
+  const requested = input.requested ?? input.env.DAILY_OUTBOUND_APPROVE_LIMIT
+  const baseLimit = clampInteger(
+    requested,
+    input.approvalWindow.limit,
+    1,
+    MAX_APPROVE_LIMIT
+  )
+  const growthFloor = clampInteger(
+    input.env.DAILY_OUTBOUND_MIN_APPROVE_LIMIT,
+    DEFAULT_GROWTH_APPROVAL_FLOOR,
+    1,
+    MAX_APPROVE_LIMIT
+  )
+  const floor = !hasQueryOverride && input.mode === 'growth' ? growthFloor : 1
+
+  return Math.min(
+    Math.max(baseLimit, floor),
+    Math.max(1, input.approvalWindow.limit),
+    MAX_APPROVE_LIMIT
+  )
+}
+
 export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   const enabled = resolveDailyBoolean(input.env.DAILY_OUTBOUND_ENABLED, true)
   const dryRun = resolveDailyBoolean(input.query.dryRun, false)
@@ -304,15 +334,12 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       'Autonomous lead scout imports only exact public-contact evidence when enabled'
     )
   }
-  const approveLimit = Math.min(
-    clampInteger(
-      input.query.approveLimit ?? input.env.DAILY_OUTBOUND_APPROVE_LIMIT,
-      input.approvalWindow.limit,
-      1,
-      MAX_APPROVE_LIMIT
-    ),
-    Math.max(1, input.approvalWindow.limit)
-  )
+  const approveLimit = resolveApproveLimit({
+    requested: input.query.approveLimit,
+    env: input.env,
+    approvalWindow: input.approvalWindow,
+    mode,
+  })
   const sendLimit = resolveSendLimit({
     requested: input.query.sendLimit,
     env: input.env,
