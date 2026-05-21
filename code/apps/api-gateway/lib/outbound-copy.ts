@@ -23,6 +23,31 @@ export const SOVEREIGN_STACK_DIRECT_SUBJECT =
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
   'White-label outbound + AI security product for your agency'
 
+export const SOVEREIGN_BOOKING_URL = 'https://cal.com/vishnuvardhanburri/30min'
+
+export function sovereignBookingCtaText(): string {
+  return `Book a 20-minute audit + demo here: ${SOVEREIGN_BOOKING_URL}`
+}
+
+export function withSovereignBookingCta(body: string): string {
+  const trimmed = body.trim()
+  if (!trimmed || /cal\.com\/vishnuvardhanburri\/30min/i.test(trimmed)) {
+    return trimmed
+  }
+
+  const cta = sovereignBookingCtaText()
+  const optOutMatch = trimmed.match(
+    /\n\nIf this is not relevant, reply "no" and I will not follow up\.$/i
+  )
+  if (optOutMatch?.index !== undefined) {
+    return `${trimmed.slice(0, optOutMatch.index).trim()}\n\n${cta}${trimmed.slice(
+      optOutMatch.index
+    )}`
+  }
+
+  return `${trimmed}\n\n${cta}`
+}
+
 export type SovereignRenderedCopy = {
   subject: string
   text: string
@@ -105,6 +130,8 @@ Fully self-hosted, audit-ready, and works on top of Instantly, Smartlead, Apollo
 
 Would you be open to a 20-minute audit + demo next week?
 
+${sovereignBookingCtaText()}
+
 Best regards,
 Vishnu
 Xavira Tech Labs
@@ -130,6 +157,8 @@ Sovereign Stack Agency Master License - $100k one-time:
 Many agencies recover the full $100k with just 5-8 clients.
 
 Interested in seeing the white-label demo?
+
+${sovereignBookingCtaText()}
 
 Best regards,
 Vishnu
@@ -162,6 +191,8 @@ Curious - are you currently facing any deliverability drops or concerns around A
 
 Happy to run a free 15-min risk check for {{Company}} if useful.
 
+${sovereignBookingCtaText()}
+
 Best regards,
 Vishnu
 Xavira Tech Labs
@@ -185,6 +216,8 @@ We can also split it into 3 payments of ~$8,500 if that helps.
 
 Would you like to see the dashboard live and get a custom risk report for your current setup?
 
+${sovereignBookingCtaText()}
+
 Best regards,
 Vishnu
 Xavira Tech Labs
@@ -203,6 +236,8 @@ If this is not relevant, reply "no" and I will not follow up.`,
 Still interested in protecting your outbound revenue and locking down AI usage?
 
 No pressure - just let me know if you want the 20-min demo or if I should stop following up.
+
+${sovereignBookingCtaText()}
 
 Best regards,
 Vishnu
@@ -224,6 +259,8 @@ Last email.
 If you're planning to scale outbound this year, Sovereign Stack is one of the highest-ROI infrastructure decisions you can make right now.
 
 Reply "DEMO" if you want to schedule a quick call.
+
+${sovereignBookingCtaText()}
 
 Thanks,
 Vishnu
@@ -321,6 +358,7 @@ function cleanBody(value: unknown, fallback: string, physicalAddress: string): s
 
   if (!body || body.length < 120 || body.length > 2_400) return fallback
   if (!/vishnu/i.test(body)) body += '\n\nBest regards,\nVishnu\nXavira Tech Labs'
+  body = withSovereignBookingCta(body)
   if (!body.includes(physicalAddress)) body += `\n${physicalAddress}`
   if (!/reply\s+"?no"?|do not follow up|not relevant/i.test(body)) {
     body += '\n\nIf this is not relevant, reply "no" and I will not follow up.'
@@ -354,7 +392,7 @@ export async function buildSovereignCopyForLead(
   if (!shouldUseOpenRouter) {
     return {
       subject: fallbackSubject,
-      text: fallbackText,
+      text: withSovereignBookingCta(fallbackText),
       source: 'template',
     }
   }
@@ -423,7 +461,7 @@ export async function buildSovereignCopyForLead(
   if (result.source !== 'openrouter') {
     return {
       subject: fallbackSubject,
-      text: fallbackText,
+      text: withSovereignBookingCta(fallbackText),
       source: 'template',
       error: result.error,
     }

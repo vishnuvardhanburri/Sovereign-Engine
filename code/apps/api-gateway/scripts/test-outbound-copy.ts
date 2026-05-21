@@ -2,6 +2,7 @@ import {
   inferSovereignOfferType,
   rankSovereignLeads,
   renderSovereignTemplate,
+  SOVEREIGN_BOOKING_URL,
   sovereignDealValueUsd,
   sovereignBodyForLead,
   sovereignSubjectForLead,
@@ -55,6 +56,7 @@ const directBody = renderSovereignTemplate(
   'Xavira Tech Labs, India'
 )
 assert(directBody.includes('Sovereign Stack'), 'direct body should mention Sovereign Stack')
+assert(directBody.includes(SOVEREIGN_BOOKING_URL), 'direct body should include booking link')
 assert(
   directBody.includes('$25,000 one-time license (Sovereign Engine + Sovereign Shield)'),
   'direct body should mention the $25,000 Engine + Shield license'
@@ -77,6 +79,7 @@ const agencyBody = renderSovereignTemplate(
 )
 assert(agencyBody.includes('$100k one-time'), 'agency body should mention $100k master license')
 assert(agencyBody.includes('white-labeled deployments'), 'agency body should mention white-label value')
+assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')
 
 console.log('outbound copy tests passed')

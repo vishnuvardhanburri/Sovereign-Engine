@@ -42,6 +42,7 @@ import { enrichContactProfile } from '@/lib/agents/data/lead-agent'
 import { verifyEmailAddress } from '@/lib/integrations/zerobounce'
 import { enrichContactWithFreeData } from '@/lib/integrations/free-enrichment'
 import { buildPersonalizedMessage } from '@/lib/agents/intelligence/personalization-agent'
+import { SOVEREIGN_BOOKING_URL, sovereignBookingCtaText } from '@/lib/outbound-copy'
 import { recalculateDomainHealth, refreshDomainRiskLimits } from '@/lib/agents/data/risk-agent'
 import { suggestSubjectLines } from '@/lib/agents/intelligence/subject-generation-agent'
 import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
@@ -3216,6 +3217,43 @@ export async function runDailyMaintenance(clientId?: number) {
   return refreshDomainRiskLimits(clientId)
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function ensureBookingCtaText(text: string): string {
+  const trimmed = text.trim()
+  if (/cal\.com\/vishnuvardhanburri\/30min/i.test(trimmed)) {
+    return trimmed
+  }
+
+  const unsubscribeIndex = trimmed.lastIndexOf('\n\nUnsubscribe:')
+  if (unsubscribeIndex >= 0) {
+    return `${trimmed.slice(0, unsubscribeIndex).trim()}\n\n${sovereignBookingCtaText()}${trimmed.slice(
+      unsubscribeIndex
+    )}`
+  }
+
+  return `${trimmed}\n\n${sovereignBookingCtaText()}`
+}
+
+function renderOutboundHtml(text: string): string {
+  const safeText = escapeHtml(text).replaceAll('\n', '<br />')
+  const safeBookingUrl = escapeHtml(SOVEREIGN_BOOKING_URL)
+  const bookingButton = [
+    '<p style="margin:18px 0;">',
+    `<a href="${safeBookingUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;">Book 20-min audit/demo</a>`,
+    '</p>',
+  ].join('')
+
+  return `${safeText}<br />${bookingButton}`
+}
+
 export async function buildSendMessage(context: QueueExecutionContext) {
   validateSequenceStepCopy(context.sequenceStep)
 
@@ -3230,11 +3268,11 @@ export async function buildSendMessage(context: QueueExecutionContext) {
   })
 
   const footer = `\n\nUnsubscribe: ${unsubscribeUrl}`
-  const text = `${personalized.text}${footer}`.trim()
+  const text = ensureBookingCtaText(`${personalized.text}${footer}`)
 
   return {
     subject: personalized.subject,
-    html: text.replaceAll('\n', '<br />'),
+    html: renderOutboundHtml(text),
     text,
     spamFlags: personalized.spamFlags,
     unsubscribeUrl,
