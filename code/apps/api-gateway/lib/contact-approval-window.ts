@@ -44,7 +44,13 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
      domain_rows AS (
        SELECT
          *,
-         (((COALESCE(sent_count, 0) >= 20) OR (COALESCE(bounce_count, 0) >= 3)) AND raw_bounce_rate > 5) AS proven_bounce_pressure
+         (((COALESCE(sent_count, 0) >= 20) OR (COALESCE(bounce_count, 0) >= 3)) AND raw_bounce_rate > 5) AS proven_bounce_pressure,
+         (
+           COALESCE(daily_cap, 0) > 0
+           AND GREATEST(COALESCE(daily_cap, daily_limit) - sent_today, 0) > 0
+           AND computed_health_score >= 30
+           AND raw_bounce_rate <= 35
+         ) AS recovery_lane_eligible
        FROM domain_base
      ),
      domain_signal AS (
@@ -52,7 +58,7 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
          COUNT(*)::text AS active_domains,
          COUNT(*) FILTER (
            WHERE computed_health_score >= 30
-             AND NOT proven_bounce_pressure
+             AND (NOT proven_bounce_pressure OR recovery_lane_eligible)
          )::text AS healthy_domains,
          COALESCE(SUM(GREATEST(COALESCE(daily_cap, daily_limit) - sent_today, 0)), 0)::text AS remaining_capacity,
          COALESCE(AVG(computed_health_score), 100)::text AS average_health_score,
@@ -75,7 +81,7 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
        JOIN identities i ON i.domain_id = d.id AND i.client_id = d.client_id
        WHERE i.status = 'active'
          AND d.computed_health_score >= 30
-         AND NOT d.proven_bounce_pressure
+         AND (NOT d.proven_bounce_pressure OR d.recovery_lane_eligible)
          AND i.sent_today < i.daily_limit
          AND d.sent_today < COALESCE(d.daily_cap, d.daily_limit)
      )

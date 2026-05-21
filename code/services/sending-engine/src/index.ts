@@ -23,11 +23,18 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
   // but keep this service independent of apps/*.
   const computedHealthSql = `GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8))))`
   const rawBounceSql = `CASE WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100 ELSE 0 END`
+  const hasValidationProvider = Boolean(process.env.ZEROBOUNCE_API_KEY || process.env.HUNTER_API_KEY)
+  const recoveryCapMax = hasValidationProvider ? 100 : 3
   const recoveryCap = envInteger(
     'DOMAIN_RECOVERY_DAILY_CAP',
-    envInteger('DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT', 1, 0, 3),
+    envInteger(
+      'DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT',
+      hasValidationProvider ? 50 : 1,
+      0,
+      recoveryCapMax
+    ),
     0,
-    3
+    recoveryCapMax
   )
   const recoveryEnabled =
     lane === 'normal' &&

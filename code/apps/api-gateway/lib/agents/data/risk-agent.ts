@@ -98,11 +98,18 @@ export function shouldEnableRecoveryTrickle(
 export async function refreshDomainRiskLimits(clientId?: number) {
   const params: unknown[] = []
   let where = ''
+  const hasValidationProvider = Boolean(process.env.ZEROBOUNCE_API_KEY || process.env.HUNTER_API_KEY)
+  const recoveryCapMax = hasValidationProvider ? 100 : 3
   const recoveryCap = envInteger(
     'DOMAIN_RECOVERY_DAILY_CAP',
-    envInteger('DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT', 1, 0, 3),
+    envInteger(
+      'DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT',
+      hasValidationProvider ? 50 : 1,
+      0,
+      recoveryCapMax
+    ),
     0,
-    3
+    recoveryCapMax
   )
   const recoveryEnabled =
     recoveryCap > 0 &&

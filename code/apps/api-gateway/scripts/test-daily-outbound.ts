@@ -327,8 +327,26 @@ const recoveryTricklePlan = buildDailyOutboundPlan({
 assert.equal(recoveryTricklePlan.sendLimit, 1)
 assert.equal(recoveryTricklePlan.runQueue, true)
 assert.ok(
-  recoveryTricklePlan.guardrails.includes(
-    'Recovery mode allows a tiny verified-only trickle despite exhausted domain capacity'
+  recoveryTricklePlan.guardrails.some((guardrail) =>
+    guardrail.includes('Recovery mode allows a verified-only recovery batch')
+  )
+)
+
+const validationBackedRecoveryPlan = buildDailyOutboundPlan({
+  approvalWindow: noHealthySenderWindow,
+  env: {
+    DAILY_OUTBOUND_MODE: 'growth',
+    DAILY_OUTBOUND_SEND_LIMIT: '50',
+    ZEROBOUNCE_API_KEY: 'configured',
+  },
+  query: {},
+})
+
+assert.equal(validationBackedRecoveryPlan.sendLimit, 50)
+assert.equal(validationBackedRecoveryPlan.runQueue, true)
+assert.ok(
+  validationBackedRecoveryPlan.guardrails.some((guardrail) =>
+    guardrail.includes('verified-only recovery batch while sender health rebuilds')
   )
 )
 

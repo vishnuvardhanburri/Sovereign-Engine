@@ -87,6 +87,12 @@ function diagnoseDomain(row: DomainCapacityRow): DomainCapacityDiagnostic {
   const dnsReady = Boolean(row.spf_valid && row.dkim_valid && row.dmarc_valid)
   const paused = Boolean(row.paused)
   const blockers: string[] = []
+  const recoveryMaxBounceRate = envInt('DOMAIN_RECOVERY_MAX_BOUNCE_RATE', 35, 0, 100)
+  const recoveryLaneEligible =
+    effectiveDailyCap > 0 &&
+    domainRemainingCapacity > 0 &&
+    computedHealthScore >= 30 &&
+    bounceRate <= recoveryMaxBounceRate
 
   if (row.status !== 'active') blockers.push(`domain_status_${row.status || 'unknown'}`)
   if (paused) blockers.push('operator_paused')
@@ -96,7 +102,9 @@ function diagnoseDomain(row: DomainCapacityRow): DomainCapacityDiagnostic {
   if (identityRemainingCapacity <= 0) blockers.push('identity_daily_capacity_used')
   if (computedHealthScore < 30) blockers.push('domain_health_below_recovery_floor')
   if ((toNumber(row.sent_count) >= 20 || toNumber(row.bounce_count) >= 3) && bounceRate > 5) {
-    blockers.push('proven_bounce_pressure_gt_5_percent')
+    blockers.push(
+      recoveryLaneEligible ? 'recovery_lane_bounce_pressure' : 'proven_bounce_pressure_gt_5_percent'
+    )
   }
   if (!dnsReady) blockers.push('dns_authentication_incomplete')
 

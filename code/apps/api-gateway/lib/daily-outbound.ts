@@ -126,11 +126,13 @@ function resolveSendLimit(input: {
     input.approvalWindow.eligibleSenderIdentities ??
     (senderRemainingCapacity > 0 ? 1 : 0)
   const effectiveCapacity = Math.min(input.approvalWindow.remainingCapacity, senderRemainingCapacity)
+  const hasValidationProvider = Boolean(input.env.ZEROBOUNCE_API_KEY || input.env.HUNTER_API_KEY)
   const recoveryTrickleLimit = clampInteger(
-    input.env.DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT,
-    1,
+    input.env.DAILY_OUTBOUND_RECOVERY_TRICKLE_LIMIT ||
+      input.env.DOMAIN_RECOVERY_DAILY_CAP,
+    hasValidationProvider ? 50 : 1,
     0,
-    3
+    hasValidationProvider ? 100 : 3
   )
   const recoveryTrickleEnabled =
     input.recoveryMode &&
@@ -141,7 +143,7 @@ function resolveSendLimit(input: {
     input.guardrails.push('No remaining domain capacity; queueing is blocked')
     if (recoveryTrickleEnabled) {
       input.guardrails.push(
-        'Recovery mode allows a tiny verified-only trickle despite exhausted domain capacity'
+        `Recovery mode allows a verified-only recovery batch capped at ${recoveryTrickleLimit} sends`
       )
       return Math.min(baseLimit, recoveryTrickleLimit)
     }
@@ -154,7 +156,7 @@ function resolveSendLimit(input: {
     )
     if (recoveryTrickleEnabled) {
       input.guardrails.push(
-        'Recovery mode allows a tiny verified-only trickle while sender health rebuilds'
+        `Recovery mode allows a verified-only recovery batch while sender health rebuilds, capped at ${recoveryTrickleLimit} sends`
       )
       return Math.min(baseLimit, recoveryTrickleLimit)
     }
@@ -223,8 +225,10 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   const dryRun = resolveDailyBoolean(input.query.dryRun, false)
   const mode = resolveDailyMode({ requested: input.query.mode, env: input.env })
   const recoveryMode = resolveDailyBoolean(
-    input.query.recoveryMode ?? input.env.DAILY_OUTBOUND_RECOVERY_MODE,
-    false
+    input.query.recoveryMode ??
+      input.env.DAILY_OUTBOUND_RECOVERY_MODE ??
+      input.env.DOMAIN_RECOVERY_CAP_ENABLED,
+    Boolean(input.env.ZEROBOUNCE_API_KEY)
   )
   const clientId = clampInteger(
     input.query.clientId ?? input.env.DEFAULT_CLIENT_ID,
