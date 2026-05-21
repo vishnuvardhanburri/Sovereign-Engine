@@ -30,22 +30,19 @@ export async function GET(request: NextRequest) {
            e.id,
            e.event_type,
            e.created_at::text AS created_at,
-           e.campaign_id,
-           c.name AS campaign_name,
-           e.queue_job_id,
-           e.provider_message_id,
-           COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), NULLIF(e.metadata->>'recipient',''), co.email) AS to_email,
-           COALESCE(NULLIF(e.metadata->>'from_email',''), NULLIF(e.metadata->>'from',''), i.email) AS from_email,
+           NULL::bigint AS campaign_id,
+           NULL::text AS campaign_name,
+           NULL::bigint AS queue_job_id,
+           NULL::text AS provider_message_id,
+           COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), NULLIF(e.metadata->>'recipient','')) AS to_email,
+           COALESCE(NULLIF(e.metadata->>'from_email',''), NULLIF(e.metadata->>'from','')) AS from_email,
            COALESCE(NULLIF(e.metadata->>'subject',''), NULLIF(e.metadata->>'email_subject','')) AS subject,
            COALESCE(NULLIF(e.metadata->>'error',''), NULLIF(e.metadata->>'reason','')) AS error,
            e.metadata->>'body_text' AS body_text,
            e.metadata->>'body_html' AS body_html,
            COALESCE(NULLIF(e.metadata->>'provider',''), NULLIF(e.metadata->>'sending_provider','')) AS provider,
-           COALESCE(NULLIF(co.custom_fields->>'offer_type',''), NULLIF(e.metadata->>'offer_type','')) AS offer_type
+           NULLIF(e.metadata->>'offer_type','') AS offer_type
          FROM events e
-         LEFT JOIN campaigns c ON c.id = e.campaign_id AND c.client_id = e.client_id
-         LEFT JOIN contacts co ON co.id = e.contact_id AND co.client_id = e.client_id
-         LEFT JOIN identities i ON i.id = e.identity_id AND i.client_id = e.client_id
          WHERE e.client_id = $1
            AND e.event_type IN ('sent','failed','bounce')
          ORDER BY e.created_at DESC
