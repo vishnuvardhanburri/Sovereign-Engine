@@ -44,6 +44,10 @@ export function validateBusinessEmailSyntax(email: string): EmailSyntaxResult {
     return { valid: false, normalized, reason: 'invalid_local_dots' }
   }
 
+  if (/(^|[._-])u003[ce]/i.test(local) || /(^|[._-])u0026/i.test(local)) {
+    return { valid: false, normalized, reason: 'escaped_html_email_artifact' }
+  }
+
   if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
     return { valid: false, normalized, reason: 'invalid_domain_dots' }
   }

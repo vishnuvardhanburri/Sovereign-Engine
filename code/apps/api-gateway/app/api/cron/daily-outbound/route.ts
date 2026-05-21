@@ -7,6 +7,7 @@ import { importContacts, runDailyMaintenance, type ContactInput } from '@/lib/ba
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
 import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import { searchDomainWithHunter, type HunterDomainEmail } from '@/lib/integrations/hunter'
+import { validateBusinessEmailSyntax } from '@/lib/email-address'
 import {
   buildApifyGoogleMapsActorInput,
   prepareMapsLeadContacts,
@@ -25,8 +26,8 @@ import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } 
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import {
   buildSovereignCopyForLead,
+  balanceSovereignOfferMix,
   inferSovereignOfferType,
-  rankSovereignLeads,
   sovereignDealValueUsd,
 } from '@/lib/outbound-copy'
 import { getSendingCapacityDiagnosis } from '@/lib/sending-capacity-diagnostics'
@@ -173,23 +174,41 @@ const SAFE_HUNTER_MAILBOX_PREFIXES = new Set([
 const BLOCKED_HUNTER_MAILBOX_PREFIXES = new Set([
   'abuse',
   'admin',
+  'accounting',
   'billing',
   'career',
   'careers',
   'compliance',
+  'copyright',
+  'customer',
+  'customerservice',
+  'dmca',
   'donotreply',
   'finance',
+  'fraud',
+  'help',
+  'helpdesk',
   'hr',
+  'investor',
+  'investors',
+  'ir',
   'invoice',
   'invoices',
   'jobs',
   'legal',
+  'media',
+  'news',
   'no-reply',
   'noreply',
+  'orders',
+  'payroll',
   'postmaster',
+  'pr',
+  'press',
   'privacy',
   'security',
   'support',
+  'tax',
   'webmaster',
 ])
 
@@ -221,7 +240,7 @@ function hunterEmailRejectionReason(input: {
   minConfidence: number
 }): string | null {
   const value = input.email.value.trim().toLowerCase()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'invalid_email'
+  if (!validateBusinessEmailSyntax(value).valid) return 'invalid_email'
   const [prefix = '', emailDomain = ''] = value.split('@')
   if (!isSameRootDomain(emailDomain, input.domain)) return 'domain_mismatch'
   if (input.email.confidence < input.minConfidence) return 'low_confidence'
@@ -1250,7 +1269,7 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
     }
   })
 
-  return rankSovereignLeads(leads).slice(0, limit)
+  return balanceSovereignOfferMix(leads, limit)
 }
 
 async function runQueue(input: {

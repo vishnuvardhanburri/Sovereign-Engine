@@ -356,6 +356,36 @@ function selectSenderAccount(idemKey: string, selectedIdentityEmail?: string): S
   return { user, pass: reqEnv('SMTP_PASS'), provider: providerModeForEmail(idemKey, user) }
 }
 
+function providerFailureNeedsFallback(provider: SendProvider, err: unknown): boolean {
+  if (provider !== 'brevo' && provider !== 'resend') return false
+  const msg = String((err as any)?.message ?? err ?? '').toLowerCase()
+  if (provider === 'brevo') {
+    return (
+      msg.includes('brevo_send_failed:401') ||
+      msg.includes('brevo_send_failed:403') ||
+      msg.includes('unrecognised ip address') ||
+      msg.includes('authorised_ips') ||
+      msg.includes('unauthorized')
+    )
+  }
+  return (
+    msg.includes('resend_send_failed:401') ||
+    msg.includes('resend_send_failed:403') ||
+    msg.includes('unauthorized') ||
+    msg.includes('invalid api key')
+  )
+}
+
+function fallbackSenderAccounts(account: SenderAccount): SenderAccount[] {
+  if (account.provider !== 'brevo' && account.provider !== 'resend') return []
+
+  return configuredApiProviders(account.user)
+    .filter((provider) => provider !== account.provider)
+    .sort((a, b) => providerDailyLimit(b) - providerDailyLimit(a))
+    .map((provider) => accountForProvider({ provider, user: account.user }))
+    .filter((fallback) => Boolean(fallback.pass))
+}
+
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
 const GLOBAL_RISK_WINDOW_SEC = 60 * 60 // 1h
 const GLOBAL_RISK_THRESHOLD = 3 // domains spiking before applying slowdown
@@ -2025,48 +2055,78 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
               host: SMTP_HOST,
               port: SMTP_PORT,
               secure: SMTP_SECURE,
+              provider: account.provider,
             })
 
-            return Promise.race([
-              sendSmtp(
-                {
-                  host: SMTP_HOST,
-                  port: SMTP_PORT,
-                  secure: SMTP_SECURE,
-                  user: account.user,
-                  pass: account.pass,
-                  provider: account.provider,
-                  providerApiKey: account.pass,
-                },
-                {
-                  from: account.user,
-                  to: job.toEmail,
-                  subject: outboundSubject,
-                  html: outboundHtml,
-                  text: outboundText,
-                  headerContext: {
-                    clientId: job.clientId,
-                    campaignId: job.campaignId ?? null,
-                    queueJobId: job.queueJobId ?? null,
-                    idempotencyKey: idemKey,
-                    sendingDomain: String(account.user).split('@')[1] || selection.domain.domain,
-                    provider: recipientProvider,
+            const sendWithAccount = (sender: SenderAccount) =>
+              Promise.race([
+                sendSmtp(
+                  {
+                    host: SMTP_HOST,
+                    port: SMTP_PORT,
+                    secure: SMTP_SECURE,
+                    user: sender.user,
+                    pass: sender.pass,
+                    provider: sender.provider,
+                    providerApiKey: sender.pass,
                   },
-                  headers:
-                    process.env.SMTP_DEBUG_HEADERS === 'true'
-                      ? {
-                          'X-Sovereign-Engine-Lane': lane,
-                          'X-Sovereign-Engine-Adaptive': adaptive.reasons.join(','),
-                          'X-Sovereign-Engine-QueueJobId': String(job.queueJobId ?? ''),
-                          'X-Sovereign-Engine-CampaignId': String(job.campaignId ?? ''),
-                        }
-                      : undefined,
+                  {
+                    from: sender.user,
+                    to: job.toEmail,
+                    subject: outboundSubject,
+                    html: outboundHtml,
+                    text: outboundText,
+                    headerContext: {
+                      clientId: job.clientId,
+                      campaignId: job.campaignId ?? null,
+                      queueJobId: job.queueJobId ?? null,
+                      idempotencyKey: idemKey,
+                      sendingDomain: String(sender.user).split('@')[1] || selection.domain.domain,
+                      provider: recipientProvider,
+                    },
+                    headers:
+                      process.env.SMTP_DEBUG_HEADERS === 'true'
+                        ? {
+                            'X-Sovereign-Engine-Lane': lane,
+                            'X-Sovereign-Engine-Adaptive': adaptive.reasons.join(','),
+                            'X-Sovereign-Engine-QueueJobId': String(job.queueJobId ?? ''),
+                            'X-Sovereign-Engine-CampaignId': String(job.campaignId ?? ''),
+                          }
+                        : undefined,
+                  }
+                ),
+                sleep(75_000).then(() => {
+                  throw new Error('smtp_timeout')
+                }),
+              ])
+
+            try {
+              return await sendWithAccount(account)
+            } catch (err) {
+              if (!providerFailureNeedsFallback(account.provider, err)) throw err
+
+              await recordMetric(job.clientId, 'provider_fallback_count', 1, {
+                fromProvider: account.provider,
+                reason: sanitizeLogValue((err as any)?.message ?? String(err)),
+              }).catch(() => {})
+              const fallbacks = fallbackSenderAccounts(account)
+              for (const fallback of fallbacks) {
+                fromAddress = String(fallback.user).toLowerCase()
+                console.warn('[sender-worker] provider fallback after auth/ip failure', {
+                  fromProvider: account.provider,
+                  toProvider: fallback.provider,
+                  from: maskEmail(fallback.user),
+                  to: maskEmail(job.toEmail),
+                  reason: sanitizeLogValue((err as any)?.message ?? String(err)),
+                })
+                try {
+                  return await sendWithAccount(fallback)
+                } catch (fallbackErr) {
+                  if (!providerFailureNeedsFallback(fallback.provider, fallbackErr)) throw fallbackErr
                 }
-              ),
-              sleep(75_000).then(() => {
-                throw new Error('smtp_timeout')
-              }),
-            ])
+              }
+              throw err
+            }
           })()
       messageId = sent.messageId
       if (!MOCK_SMTP_FASTLANE) {

@@ -21,9 +21,12 @@ const CORE_RULES = [
   'Make one clear offer: Sovereign Stack combines Sovereign Engine and Sovereign Shield in one license.',
   'Keep the ask low-friction: offer a 15-20 minute risk audit and live dashboard walkthrough.',
   'Use proof language over hype: self-hosted, audit-ready, works above existing outbound tools, no fake customer claims.',
+  'Write like a helpful human: short sentences, specific business pain, no buzzword pileups, no AI-sounding filler.',
   'Preserve deal value: direct offer is $25,000 one-time; agency master offer is $100,000 one-time.',
   'Use payment-plan language only as a conversion aid, not as the headline.',
   'Personalize from verified public evidence only; never invent a founder, campaign, revenue number, or private fact.',
+  'Use social, LinkedIn, or competitor context only when it is present in the lead research payload; otherwise skip it.',
+  'Never claim competitors are customers unless the lead record contains explicit competitor evidence.',
   'Every email must include a clear booking CTA and a polite opt-out line.',
 ]
 
@@ -61,6 +64,13 @@ export function buildSalesBrainContext(
       lead.source ||
       'operator-owned lead source'
   )
+  const socialContext = [
+    custom.linkedin_url ? `LinkedIn: ${custom.linkedin_url}` : '',
+    custom.linkedin_post_url ? `LinkedIn post: ${custom.linkedin_post_url}` : '',
+    custom.social_signal ? `Social signal: ${custom.social_signal}` : '',
+    custom.competitor_signal ? `Competitor/category signal: ${custom.competitor_signal}` : '',
+    custom.research_summary ? `Research summary: ${custom.research_summary}` : '',
+  ].filter(Boolean)
   const rules = offerType === 'agency' ? AGENCY_RULES : DIRECT_RULES
 
   return [
@@ -68,6 +78,8 @@ export function buildSalesBrainContext(
     `Lead: ${company}`,
     `Region/context: ${region}`,
     `Evidence source: ${evidence}`,
+    socialContext.length > 0 ? 'Lead research context:' : '',
+    ...socialContext.map((item) => `- ${item}`),
     'Core rules:',
     ...CORE_RULES.map((rule) => `- ${rule}`),
     'Offer rules:',

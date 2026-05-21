@@ -1,4 +1,5 @@
 import { verifyEmailAddress, type VerificationResult } from '@/lib/integrations/zerobounce'
+import { validateBusinessEmailSyntax } from '@/lib/email-address'
 
 export type ProspectResearchContact = {
   id: string | number
@@ -76,23 +77,41 @@ const PERSONAL_EMAIL_DOMAINS = new Set([
 const BLOCKED_MAILBOX_PREFIXES = new Set([
   'abuse',
   'admin',
+  'accounting',
   'billing',
   'career',
   'careers',
   'compliance',
+  'copyright',
+  'customer',
+  'customerservice',
+  'dmca',
   'donotreply',
   'finance',
+  'fraud',
+  'help',
+  'helpdesk',
   'hr',
+  'investor',
+  'investors',
+  'ir',
   'invoice',
   'invoices',
   'jobs',
   'legal',
+  'media',
+  'news',
   'no-reply',
   'noreply',
+  'orders',
+  'payroll',
   'postmaster',
+  'pr',
+  'press',
   'privacy',
   'security',
   'support',
+  'tax',
   'webmaster',
 ])
 
@@ -195,7 +214,7 @@ function isSameOrSubdomain(candidate: string, root: string): boolean {
 }
 
 function isEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  return validateBusinessEmailSyntax(value).valid
 }
 
 function getEvidenceHost(value: string | null): string | null {
@@ -290,9 +309,11 @@ export function approvedContactQueueBlockers(
   const verificationStatus = String(contact.verification_status ?? 'pending')
   const customFields = contact.custom_fields ?? {}
 
+  if (!isEmail(email)) blockers.push('invalid_email')
   if (contact.status && contact.status !== 'active') blockers.push('inactive_contact')
   if (contact.bounced_at) blockers.push('previously_bounced')
   if (contact.unsubscribed_at) blockers.push('unsubscribed')
+  if (BLOCKED_MAILBOX_PREFIXES.has(prefix)) blockers.push('blocked_mailbox_prefix')
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) {
     blockers.push(`verification_${verificationStatus}`)
   }

@@ -1,8 +1,8 @@
 import { query } from '@/lib/db'
 
 const DEFAULT_FALLBACK_REVIEW_WINDOW = 1_000
-const DEFAULT_APPROVAL_INVENTORY_WINDOW = 100_000
-const ABSOLUTE_APPROVAL_CEILING = 250_000
+const DEFAULT_APPROVAL_INVENTORY_WINDOW = 1_000_000
+const ABSOLUTE_APPROVAL_CEILING = 1_000_000
 
 function envInteger(name: string, fallback: number, min: number, max: number): number {
   const value = Number(process.env[name])

@@ -1,0 +1,59 @@
+{
+  "name": "Sovereign - Sheet to Daily Approval",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SOVEREIGN_BASE_URL + '/api/cron/daily-outbound'}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "secret", "value": "={{$env.CRON_SECRET}}"},
+            {"name": "client_id", "value": "1"},
+            {"name": "mode", "value": "growth"},
+            {"name": "sheetUrl", "value": "={{$env.GOOGLE_SHEET_URL}}"},
+            {"name": "sheetLimit", "value": "500"},
+            {"name": "approveLimit", "value": "1000000"},
+            {"name": "sendLimit", "value": "800"}
+          ]
+        }
+      },
+      "id": "run-sovereign",
+      "name": "Run Sovereign Daily Outbound",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SOVEREIGN_BASE_URL + '/api/telegram/test'}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "secret", "value": "={{$env.CRON_SECRET}}"}
+          ]
+        }
+      },
+      "id": "telegram-health",
+      "name": "Telegram Health Ping",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Run Sovereign Daily Outbound", "type": "main", "index": 0}]]
+    },
+    "Run Sovereign Daily Outbound": {
+      "main": [[{"node": "Telegram Health Ping", "type": "main", "index": 0}]]
+    }
+  }
+}

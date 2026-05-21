@@ -1,5 +1,7 @@
 import {
   inferSovereignOfferType,
+  balanceSovereignOfferMix,
+  buildLeadResearchContext,
   rankSovereignLeads,
   renderSovereignTemplate,
   SOVEREIGN_BOOKING_URL,
@@ -41,6 +43,23 @@ assert(
   ])[0]?.company === agencyLead.company,
   'agency master-license leads should outrank direct leads even with lower fit score'
 )
+const balanced = balanceSovereignOfferMix(
+  [
+    { ...agencyLead, company: 'Agency A', customFields: { fit_score: 99 } },
+    { ...agencyLead, company: 'Agency B', customFields: { fit_score: 98 } },
+    { ...directLead, company: 'Direct A', customFields: { fit_score: 97 } },
+    { ...directLead, company: 'Direct B', customFields: { fit_score: 96 } },
+  ],
+  4
+)
+assert(
+  balanced.filter((lead) => inferSovereignOfferType(lead) === 'agency').length === 2,
+  'balanced queue should reserve about half for agency offers'
+)
+assert(
+  balanced.filter((lead) => inferSovereignOfferType(lead) === 'direct').length === 2,
+  'balanced queue should reserve about half for direct offers'
+)
 assert(
   sovereignSubjectForLead(directLead).includes('outbound deliverability'),
   'direct subject should use requested copy'
@@ -81,5 +100,23 @@ assert(agencyBody.includes('$100k one-time'), 'agency body should mention $100k 
 assert(agencyBody.includes('white-labeled deployments'), 'agency body should mention white-label value')
 assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')
+
+const researchContext = buildLeadResearchContext({
+  ...agencyLead,
+  customFields: {
+    linkedin_url: 'https://www.linkedin.com/company/example-agency',
+    linkedin_post_url: 'https://www.linkedin.com/feed/update/example',
+    social_signal: 'recent post about outbound scaling',
+    competitor_signal: 'category is adopting AI governance',
+  },
+})
+assert(
+  researchContext.linkedinPostUrl?.includes('linkedin.com'),
+  'research context should preserve LinkedIn post evidence'
+)
+assert(
+  researchContext.competitorSignal === 'category is adopting AI governance',
+  'research context should carry competitor/category signal only from evidence'
+)
 
 console.log('outbound copy tests passed')

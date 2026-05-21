@@ -1,0 +1,61 @@
+{
+  "name": "Sovereign - Social Context Research",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "leads"
+      },
+      "id": "read-leads",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => { const row = item.json; const signals = [row.linkedin_post_url ? `Recent LinkedIn evidence: ${row.linkedin_post_url}` : '', row.linkedin_url ? `Company LinkedIn: ${row.linkedin_url}` : '', row.social_signal || '', row.competitor_signal || ''].filter(Boolean); return { json: { ...row, research_summary: row.research_summary || signals.join(' | ') || `Public context exists for ${row.company || row.company_domain || row.email}.`, social_signal: row.social_signal || signals[0] || '', offer_type: /agency|revops|marketing/i.test(`${row.company} ${row.social_signal} ${row.research_summary}`) ? 'agency' : 'direct' } }; });"
+      },
+      "id": "build-context",
+      "name": "Build Human Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 0]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "leads",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["email"]
+        }
+      },
+      "id": "update-leads",
+      "name": "Update Research Context",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [700, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Read Leads", "type": "main", "index": 0}]]
+    },
+    "Read Leads": {
+      "main": [[{"node": "Build Human Context", "type": "main", "index": 0}]]
+    },
+    "Build Human Context": {
+      "main": [[{"node": "Update Research Context", "type": "main", "index": 0}]]
+    }
+  }
+}

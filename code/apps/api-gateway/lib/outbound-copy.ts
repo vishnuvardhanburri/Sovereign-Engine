@@ -56,6 +56,15 @@ export type SovereignRenderedCopy = {
   error?: string
 }
 
+type LeadResearchContext = {
+  evidenceUrl?: string
+  linkedinUrl?: string
+  linkedinPostUrl?: string
+  socialSignal?: string
+  competitorSignal?: string
+  researchSummary?: string
+}
+
 export function inferSovereignOfferType(input: SovereignCopyLead): SovereignOfferType {
   const custom = input.customFields ?? {}
   const explicit = String(
@@ -113,21 +122,64 @@ export function rankSovereignLeads<T extends SovereignCopyLead>(leads: T[]): T[]
   })
 }
 
+export function balanceSovereignOfferMix<T extends SovereignCopyLead>(
+  leads: T[],
+  limit: number
+): T[] {
+  const normalizedLimit = Math.max(0, Math.trunc(limit))
+  if (normalizedLimit <= 0) return []
+
+  const ranked = rankSovereignLeads(leads)
+  const agency = ranked.filter((lead) => inferSovereignOfferType(lead) === 'agency')
+  const direct = ranked.filter((lead) => inferSovereignOfferType(lead) === 'direct')
+  const targetAgency = Math.ceil(normalizedLimit / 2)
+  const targetDirect = normalizedLimit - targetAgency
+  const selected = [
+    ...agency.slice(0, targetAgency),
+    ...direct.slice(0, targetDirect),
+  ]
+  const selectedSet = new Set(selected)
+  const remainder = ranked.filter((lead) => !selectedSet.has(lead))
+
+  return rankSovereignLeads([...selected, ...remainder.slice(0, normalizedLimit - selected.length)])
+}
+
+export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchContext {
+  const custom = lead.customFields ?? {}
+  const pick = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = String(custom[key] ?? '').trim()
+      if (value) return value.slice(0, 320)
+    }
+    return undefined
+  }
+
+  return {
+    evidenceUrl: pick('research_evidence_url', 'public_evidence_url', 'source_url'),
+    linkedinUrl: pick('linkedin_url', 'linkedin', 'linkedinUrl'),
+    linkedinPostUrl: pick('linkedin_post_url', 'recent_linkedin_post_url', 'linkedinPostUrl'),
+    socialSignal: pick('social_signal', 'recent_social_signal', 'social_context'),
+    competitorSignal: pick('competitor_signal', 'competitor_context', 'category_signal'),
+    researchSummary: pick('research_summary', 'reason_to_contact', 'why_now'),
+  }
+}
+
 export function sovereignDirectEmail1Body(): string {
   return `Hey {{FirstName}},
 
-I noticed {{Company}} is running active outbound campaigns.
+I noticed {{Company}} is active in outbound / growth.
 
-Most teams we speak with are losing leads because of:
+The expensive problems usually show up quietly:
 * Warming domains getting burned
-* AI tools leaking PII / sensitive data
-* Compliance pressure (GDPR / DPDP)
+* follow-ups stop because inbox health drops
+* AI tools touch PII / sensitive data
+* compliance pressure builds (GDPR / DPDP)
 
 We built Sovereign Stack - one $25,000 one-time license (Sovereign Engine + Sovereign Shield) that combines:
 * Adaptive deliverability OS (protects your domains & inbox placement)
 * Private AI Security Gateway (blocks prompt injection + masks PII)
 
-Fully self-hosted, audit-ready, and works on top of Instantly, Smartlead, Apollo, etc.
+It is built for serious outbound teams that need clean follow-ups, safer AI usage, and a path to higher-volume sending without losing control.
 
 Would you be open to a 20-minute audit + demo next week?
 
@@ -146,16 +198,18 @@ If this is not relevant, reply "no" and I will not follow up.`
 export function sovereignAgencyEmail1Body(): string {
   return `Hey {{FirstName}},
 
-You run a strong lead generation / RevOps agency.
+You run a strong growth / RevOps agency.
 
-What if you could offer your clients a premium "Outbound Protection + Private AI Governance" product under your own brand?
+Most agencies can drive leads, but clients still worry about burned domains, broken follow-ups, and AI data leaks.
+
+What if you could offer that protection under your own brand?
 
 Sovereign Stack Agency Master License - $100k one-time:
 * Unlimited white-labeled deployments
 * You charge clients $15k-$35k each
 * We handle core licensing & backend updates
 
-Many agencies recover the full $100k with just 5-8 clients.
+The goal is simple: turn infrastructure into a high-ticket product instead of another low-margin service.
 
 Interested in seeing the white-label demo?
 
@@ -405,6 +459,7 @@ export async function buildSovereignCopyForLead(
     lead.reasonToContact ||
     'the company appears relevant to outbound infrastructure or AI security'
   const firstName = safeGreetingName(lead.first_name || lead.firstName)
+  const researchContext = buildLeadResearchContext(lead)
 
   const result = await tryOpenRouterJson<{
     subject?: string
@@ -422,6 +477,7 @@ export async function buildSovereignCopyForLead(
         title: lead.title || null,
         companyDomain: lead.companyDomain || null,
         reasonToContact: reason,
+        researchContext,
       },
       offer:
         offerType === 'agency'
@@ -450,6 +506,13 @@ export async function buildSovereignCopyForLead(
       requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Sovereign Stack'],
       physicalAddress: options.physicalAddress,
       fallbackSubject,
+      writingRules: [
+        'Use at most one evidence-backed personalization line.',
+        'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
+        'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
+        'Keep the email short, useful, and human.',
+        'Explain the product benefit in simple words: safer outbound, cleaner follow-ups, reduced AI data leak risk.',
+      ],
     }),
     fallback: {
       subject: fallbackSubject,

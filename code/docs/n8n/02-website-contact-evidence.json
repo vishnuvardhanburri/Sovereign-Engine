@@ -1,0 +1,77 @@
+{
+  "name": "Sovereign - Website Contact Evidence",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "domains"
+      },
+      "id": "read-domains",
+      "name": "Read Domains Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.source_url || 'https://' + $json.company_domain + '/contact'}}",
+        "responseFormat": "string",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetch-contact-page",
+      "name": "Fetch Public Contact Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g; return $input.all().flatMap((item) => { const html = String(item.json.body || item.json.data || ''); const sourceUrl = item.json.source_url || item.json.url || ''; const matches = [...new Set(html.match(EMAIL) || [])]; return matches.map((email) => { const domain = email.split('@')[1].toLowerCase(); return { json: { email: email.toLowerCase(), company: item.json.company || domain, company_domain: item.json.company_domain || domain, source_url: sourceUrl, research_summary: `Exact public email evidence found on ${sourceUrl || 'contact page'}.`, email_evidence: 'public_page_email_match' } }; }); });"
+      },
+      "id": "extract-emails",
+      "name": "Extract Public Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "leads",
+        "columns": {
+          "mappingMode": "autoMapInputData"
+        }
+      },
+      "id": "append-leads",
+      "name": "Append Evidence Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [940, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Read Domains Sheet", "type": "main", "index": 0}]]
+    },
+    "Read Domains Sheet": {
+      "main": [[{"node": "Fetch Public Contact Page", "type": "main", "index": 0}]]
+    },
+    "Fetch Public Contact Page": {
+      "main": [[{"node": "Extract Public Emails", "type": "main", "index": 0}]]
+    },
+    "Extract Public Emails": {
+      "main": [[{"node": "Append Evidence Leads", "type": "main", "index": 0}]]
+    }
+  }
+}

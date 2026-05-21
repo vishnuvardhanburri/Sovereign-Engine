@@ -16,7 +16,7 @@ const healthyWindow = {
 
 const highCapacityWindow = {
   ...healthyWindow,
-  limit: 100_000,
+  limit: 1_000_000,
   remainingCapacity: 1_000,
   eligibleSenderIdentities: 4,
   senderRemainingCapacity: 1_000,
@@ -59,7 +59,7 @@ assert.equal(
     senderRemainingCapacity: 91,
     averageHealthScore: 50,
   }),
-  100_000
+  1_000_000
 )
 
 assert.equal(
@@ -69,7 +69,7 @@ assert.equal(
     senderRemainingCapacity: 1_000,
     averageHealthScore: 96,
   }),
-  100_000
+  1_000_000
 )
 
 assert.equal(
@@ -274,7 +274,7 @@ const growthDefaultMaxPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(growthDefaultMaxPlan.sendLimit, 100)
-assert.equal(growthDefaultMaxPlan.approveLimit, 100_000)
+assert.equal(growthDefaultMaxPlan.approveLimit, 1_000_000)
 
 const providerBackedGrowthPlan = buildDailyOutboundPlan({
   approvalWindow: highCapacityWindow,
@@ -289,7 +289,7 @@ const providerBackedGrowthPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(providerBackedGrowthPlan.sendLimit, 800)
-assert.equal(providerBackedGrowthPlan.approveLimit, 100_000)
+assert.equal(providerBackedGrowthPlan.approveLimit, 1_000_000)
 assert.ok(
   providerBackedGrowthPlan.guardrails.includes(
     'Provider-backed growth ceiling is configured at 800/day; queueing still requires verified contacts, healthy domains, and active sender capacity'

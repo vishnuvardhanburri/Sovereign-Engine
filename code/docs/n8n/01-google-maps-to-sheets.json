@@ -1,0 +1,68 @@
+{
+  "name": "Sovereign - Google Maps to Lead Sheet",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/{{$env.APIFY_GOOGLE_MAPS_ACTOR_ID}}/run-sync-get-dataset-items?token={{$env.APIFY_API_TOKEN}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": {
+          "searchStringsArray": ["lead generation agency", "revops agency", "marketing agency"],
+          "locationQuery": "United States",
+          "maxCrawledPlacesPerSearch": 50,
+          "language": "en"
+        }
+      },
+      "id": "apify-google-maps",
+      "name": "Apify Google Maps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => { const row = item.json; const website = row.website || row.url || ''; const email = row.email || row.emails?.[0] || ''; return { json: { email, company: row.title || row.name || '', company_domain: website.replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0], source_url: website || row.url || '', research_summary: `Public business listing for ${row.title || row.name || 'company'} shows agency/service signals.`, offer_type: 'agency', social_signal: row.categoryName || row.categories?.join(', ') || '' } }; }).filter((item) => item.json.email || item.json.source_url);"
+      },
+      "id": "normalize-maps",
+      "name": "Normalize Lead Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "leads",
+        "columns": {
+          "mappingMode": "autoMapInputData"
+        }
+      },
+      "id": "append-sheet",
+      "name": "Append to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [720, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Apify Google Maps", "type": "main", "index": 0}]]
+    },
+    "Apify Google Maps": {
+      "main": [[{"node": "Normalize Lead Rows", "type": "main", "index": 0}]]
+    },
+    "Normalize Lead Rows": {
+      "main": [[{"node": "Append to Google Sheet", "type": "main", "index": 0}]]
+    }
+  }
+}

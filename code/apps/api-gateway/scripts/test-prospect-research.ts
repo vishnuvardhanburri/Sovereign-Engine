@@ -108,6 +108,60 @@ const unsupportedInbox = scoreProspectForResearchApproval({
 assert.equal(unsupportedInbox.approved, false)
 assert.ok(unsupportedInbox.blockers.includes('blocked_mailbox_prefix'))
 
+const pressInbox = scoreProspectForResearchApproval({
+  id: 31,
+  email: 'press@mistral.ai',
+  email_domain: 'mistral.ai',
+  company: 'Mistral',
+  company_domain: 'mistral.ai',
+  source: 'google_sheet_import',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    sheet_import: true,
+    auto_approval_eligible: true,
+    public_evidence_url: 'https://mistral.ai/news',
+    reason_to_contact: 'Company appears relevant to outbound infrastructure or AI security.',
+  },
+})
+
+assert.equal(pressInbox.approved, false)
+assert.ok(pressInbox.blockers.includes('blocked_mailbox_prefix'))
+
+assert.ok(
+  approvedContactQueueBlockers({
+    id: 32,
+    email: 'fraud@netlify.com',
+    email_domain: 'netlify.com',
+    company: 'Netlify',
+    company_domain: 'netlify.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'valid',
+    custom_fields: {
+      send_status: 'approved',
+      public_evidence_url: 'https://netlify.com/contact',
+    },
+  }).includes('blocked_mailbox_prefix')
+)
+
+assert.ok(
+  approvedContactQueueBlockers({
+    id: 33,
+    email: 'u003esupport@render.com',
+    email_domain: 'render.com',
+    company: 'Render',
+    company_domain: 'render.com',
+    source: 'google_sheet_import',
+    status: 'active',
+    verification_status: 'valid',
+    custom_fields: {
+      send_status: 'approved',
+      public_evidence_url: 'https://render.com/contact',
+    },
+  }).includes('invalid_email')
+)
+
 const mismatch = scoreProspectForResearchApproval({
   id: 4,
   email: 'sales@realagency.com',
