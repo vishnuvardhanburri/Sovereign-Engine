@@ -1,0 +1,258 @@
+{
+  "name": "Sovereign Maps Lead Scout to CSV",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b4b0a4d7-08e0-4a48-a2f7-5c3ed72d0401",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * 2-5"
+            }
+          ]
+        }
+      },
+      "id": "3ee4f90c-b77a-4eb9-a5fb-b12e91ad0314",
+      "name": "Weekday 08:30 Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "41c4e63d-9c92-4a4f-a0f1-2522842e1b60",
+              "name": "apifyToken",
+              "type": "string",
+              "value": "={{$env.APIFY_API_TOKEN}}"
+            },
+            {
+              "id": "a9c0b1df-b92b-4e15-a3c9-df8b317cebf7",
+              "name": "actorId",
+              "type": "string",
+              "value": "={{$env.APIFY_GOOGLE_MAPS_ACTOR_ID || 'YOUR_APIFY_GOOGLE_MAPS_ACTOR_ID'}}"
+            },
+            {
+              "id": "fb111d1a-cf9b-4e6d-9080-f42f0f8a2d18",
+              "name": "searches",
+              "type": "string",
+              "value": "={{$env.APIFY_GOOGLE_MAPS_SEARCHES || 'lead generation agency,outbound agency,RevOps agency,B2B marketing agency,AI automation agency'}}"
+            },
+            {
+              "id": "a6f9645f-5cf0-49c8-b49e-20f45128d5d6",
+              "name": "location",
+              "type": "string",
+              "value": "={{$env.APIFY_GOOGLE_MAPS_LOCATION || 'United States'}}"
+            },
+            {
+              "id": "77834e3e-0ab7-4f3e-bf47-4ee4462d7bd7",
+              "name": "limit",
+              "type": "number",
+              "value": "={{Number($env.GOOGLE_MAPS_DAILY_LIMIT || 100)}}"
+            },
+            {
+              "id": "8c95e697-c156-475c-ae29-556fa6a13667",
+              "name": "sovereignSheetSource",
+              "type": "string",
+              "value": "public_google_maps_listing"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "40eaa153-604b-4919-b752-57e0ae7da8a8",
+      "name": "Maps Search Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -460,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/{{$json.actorId.replace('/', '~')}}/run-sync-get-dataset-items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{$json.apifyToken}}"
+            },
+            {
+              "name": "clean",
+              "value": "true"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "limit",
+              "value": "={{$json.limit}}"
+            },
+            {
+              "name": "timeout",
+              "value": "180"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"searchStringsArray\": $json.searches.split(',').map((item) => item.trim()).filter(Boolean),\n  \"locationQuery\": $json.location,\n  \"maxCrawledPlacesPerSearch\": $json.limit,\n  \"language\": \"en\",\n  \"website\": \"withWebsite\",\n  \"scrapeContacts\": true,\n  \"skipClosedPlaces\": true\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "ecf95c11-8749-4045-bd26-c10e1202c64d",
+      "name": "Run Apify Google Maps Actor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        20
+      ],
+      "notes": "Requires APIFY_API_TOKEN and APIFY_GOOGLE_MAPS_ACTOR_ID in the n8n environment."
+    },
+    {
+      "parameters": {
+        "jsCode": "const PERSONAL_DOMAINS = new Set(['gmail.com','googlemail.com','yahoo.com','hotmail.com','outlook.com','icloud.com','aol.com','proton.me','protonmail.com','live.com','msn.com','mail.com','yandex.com']);\nconst BLOCKED_PREFIXES = new Set(['abuse','admin','billing','career','careers','compliance','donotreply','finance','hr','invoice','invoices','jobs','legal','no-reply','noreply','postmaster','privacy','security','support','webmaster']);\nconst SAFE_PREFIXES = new Set(['bd','business','contact','growth','hello','hi','info','inquiries','inquiry','mail','marketing','opportunities','opportunity','partners','partnership','partnerships','sales','team']);\nconst RELEVANT_RE = /\\b(?:advertis(?:e|ing)|ai|automation|b2b|brand|business(?:\\s+development)?|cloud|consult(?:ant|ing|ancy)?|crm|cyber(?:security)?|data|demand\\s+gen(?:eration)?|digital\\s+marketing|growth|gtm|information\\s+technology|it\\s+service|lead\\s+gen(?:eration)?|marketing|performance\\s+marketing|public\\s+relations|revenue|revops|saas|sales|software|technology|web(?:site)?\\s+design)\\b/i;\nconst IRRELEVANT_RE = /\\b(?:adoption|artist|auto|automotive|booking|bus|car\\s+rental|charter|child\\s+care|collection|dating|employment|estate|event|government|helicopter|home\\s+health|insurance|modeling|news|nursing|real\\s+estate|recruit(?:er|ing|ment)?|rental|staffing|tour|travel|wedding)\\s+agency\\b/i;\nconst EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n\nfunction text(value) {\n  return typeof value === 'string' ? value.trim() : '';\n}\n\nfunction asArray(value) {\n  if (Array.isArray(value)) return value.flatMap(asArray).map((item) => text(item)).filter(Boolean);\n  const raw = text(value);\n  if (!raw) return [];\n  return raw.split(/[,\\n;]/).map((item) => item.trim()).filter(Boolean);\n}\n\nfunction cleanUrl(value) {\n  const raw = text(value);\n  if (!raw || /^\\[.*\\]$/.test(raw)) return '';\n  if (!/^https?:\\/\\//i.test(raw)) return '';\n  return raw;\n}\n\nfunction domainFromUrl(value) {\n  try {\n    return new URL(value).hostname.toLowerCase().replace(/^www\\./, '');\n  } catch {\n    return text(value).toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].split('?')[0];\n  }\n}\n\nfunction domainsAlign(emailDomain, websiteDomain) {\n  return emailDomain === websiteDomain || emailDomain.endsWith(`.${websiteDomain}`) || websiteDomain.endsWith(`.${emailDomain}`);\n}\n\nfunction collectEmails(item) {\n  const fields = ['email','emails','emailAddress','email_addresses','contactEmails'];\n  const values = fields.flatMap((field) => asArray(item[field]));\n  return [...new Set(values.map((email) => email.toLowerCase()).filter(Boolean))];\n}\n\nfunction categoryText(item) {\n  return [text(item.categoryName), text(item.category), ...asArray(item.categories), ...asArray(item.additionalCategories)].filter(Boolean).join(', ');\n}\n\nfunction csvEscape(value) {\n  const raw = String(value ?? '');\n  if (/[\",\\n]/.test(raw)) return `\"${raw.replace(/\"/g, '\"\"')}\"`;\n  return raw;\n}\n\nconst rawItems = $input.all().flatMap((entry) => {\n  if (Array.isArray(entry.json)) return entry.json;\n  if (Array.isArray(entry.json?.items)) return entry.json.items;\n  return [entry.json];\n});\n\nconst rows = [];\nconst rejected = [];\nconst seenEmails = new Set();\nconst seenDomains = new Set();\n\nfor (const item of rawItems) {\n  const company = text(item.title) || text(item.name) || text(item.companyName) || text(item.placeName);\n  const website = cleanUrl(item.website) || cleanUrl(item.websiteUrl) || cleanUrl(item.url);\n  const sourceUrl = cleanUrl(item.url) || cleanUrl(item.placeUrl) || cleanUrl(item.googleMapsUri) || website;\n  const websiteDomain = website ? domainFromUrl(website) : '';\n  const categories = categoryText(item);\n\n  if (categories && IRRELEVANT_RE.test(categories)) {\n    rejected.push({ company, reason: 'irrelevant_business_category', categories });\n    continue;\n  }\n\n  if (categories && !RELEVANT_RE.test(categories)) {\n    rejected.push({ company, reason: 'low_relevance_category', categories });\n    continue;\n  }\n\n  for (const email of collectEmails(item)) {\n    if (!EMAIL_RE.test(email)) {\n      rejected.push({ company, email, reason: 'invalid_email' });\n      continue;\n    }\n\n    const [prefix, emailDomain] = email.split('@');\n    if (PERSONAL_DOMAINS.has(emailDomain)) {\n      rejected.push({ company, email, reason: 'personal_email_domain' });\n      continue;\n    }\n    if (BLOCKED_PREFIXES.has(prefix)) {\n      rejected.push({ company, email, reason: 'blocked_mailbox_prefix' });\n      continue;\n    }\n    if (emailDomain === 'example.com' || emailDomain.endsWith('.test')) {\n      rejected.push({ company, email, reason: 'placeholder_domain' });\n      continue;\n    }\n    if (websiteDomain && !domainsAlign(emailDomain, websiteDomain)) {\n      rejected.push({ company, email, reason: 'email_domain_does_not_match_website', websiteDomain });\n      continue;\n    }\n    if (seenEmails.has(email) || (websiteDomain && seenDomains.has(websiteDomain))) continue;\n\n    seenEmails.add(email);\n    if (websiteDomain) seenDomains.add(websiteDomain);\n\n    const mailboxScore = SAFE_PREFIXES.has(prefix) ? 8 : 0;\n    const fitScore = Math.min(98, Math.max(70, 82 + mailboxScore + (categories ? 6 : 0)));\n    const reason = `${company || emailDomain} appears relevant to outbound infrastructure, lead generation, revenue operations, or AI automation based on its public Google Maps/business listing.`;\n\n    rows.push({\n      email,\n      first_name: '',\n      company: company || emailDomain,\n      consent_source: 'public_google_maps_listing',\n      reason_to_contact: reason,\n      website,\n      source_url: sourceUrl,\n      segment: categories || 'maps_public_listing',\n      status: 'review_ready',\n      fit_score: fitScore,\n      evidence: sourceUrl || website\n    });\n  }\n}\n\nconst headers = ['email','first_name','company','consent_source','reason_to_contact','website','source_url','segment','status','fit_score','evidence'];\nconst csv = [headers.join(','), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\\n');\n\nreturn [{\n  json: {\n    ok: true,\n    produced_at: new Date().toISOString(),\n    rows_found: rows.length,\n    rejected_count: rejected.length,\n    headers,\n    csv,\n    rows,\n    rejected\n  }\n}];"
+      },
+      "id": "5ce8c58b-c578-4910-a3c8-26d563b671b7",
+      "name": "Normalize to Sovereign CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        120,
+        20
+      ],
+      "notes": "Output contains a csv field and a rows array. Append rows to Google Sheets or download csv from execution output."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c8a1d381-e452-4dbc-b344-4c89e88c1392",
+              "name": "summary",
+              "type": "string",
+              "value": "=Sovereign Maps Scout produced {{$json.rows_found}} review-ready rows and rejected {{$json.rejected_count}} risky rows."
+            },
+            {
+              "id": "d8c674b7-9984-4df5-ac64-f85a6fce5c41",
+              "name": "csv",
+              "type": "string",
+              "value": "={{$json.csv}}"
+            },
+            {
+              "id": "9f4dc7a0-7ffd-4897-9b84-4c7a8b0ed0c3",
+              "name": "next_step",
+              "type": "string",
+              "value": "Paste csv into Google Sheets or connect a Google Sheets Append node to $json.rows. Sovereign will import from your sheet or run Maps import directly."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f55c7b25-6465-488a-b962-cb42e79313f2",
+      "name": "Operator Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        20
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Maps Search Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekday 08:30 Schedule": {
+      "main": [
+        [
+          {
+            "node": "Maps Search Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maps Search Config": {
+      "main": [
+        [
+          {
+            "node": "Run Apify Google Maps Actor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Apify Google Maps Actor": {
+      "main": [
+        [
+          {
+            "node": "Normalize to Sovereign CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize to Sovereign CSV": {
+      "main": [
+        [
+          {
+            "node": "Operator Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b13d4ac9-7d3d-4a92-9c31-344652c1175e",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "sovereign-engine"
+    },
+    {
+      "name": "maps-leads"
+    }
+  ]
+}
