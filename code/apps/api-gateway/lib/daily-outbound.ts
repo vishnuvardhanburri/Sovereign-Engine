@@ -51,9 +51,10 @@ const MAX_SHEET_LIMIT = 500
 const MAX_MAPS_LIMIT = 100
 const DEFAULT_LEAD_SCOUT_LIMIT = 3
 const MAX_LEAD_SCOUT_LIMIT = 3
-const MAX_APPROVE_LIMIT = 25
+const MAX_APPROVE_LIMIT = 800
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
-const GROWTH_MAX_SEND_LIMIT = 50
+const DEFAULT_GROWTH_MAX_SEND_LIMIT = 100
+const ABSOLUTE_GROWTH_MAX_SEND_LIMIT = 800
 
 export function resolveDailyBoolean(value: string | undefined | null, fallback: boolean): boolean {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -98,8 +99,15 @@ function resolveSendLimit(input: {
   recoveryMode: boolean
 }): number {
   const envLimit = input.env.DAILY_OUTBOUND_SEND_LIMIT
+  const growthMaxSendLimit = clampInteger(
+    input.env.DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT ||
+      input.env.DAILY_OUTBOUND_PROVIDER_MAX_SEND_LIMIT,
+    DEFAULT_GROWTH_MAX_SEND_LIMIT,
+    1,
+    ABSOLUTE_GROWTH_MAX_SEND_LIMIT
+  )
   const maxSendLimit =
-    input.mode === 'growth' ? GROWTH_MAX_SEND_LIMIT : CONSERVATIVE_MAX_SEND_LIMIT
+    input.mode === 'growth' ? growthMaxSendLimit : CONSERVATIVE_MAX_SEND_LIMIT
   const envMax = clampInteger(
     input.env.DAILY_OUTBOUND_MAX_SEND_LIMIT,
     maxSendLimit,
@@ -168,6 +176,11 @@ function resolveSendLimit(input: {
     input.guardrails.push(
       'Growth mode is enabled; volume still follows reputation health, validation, and domain capacity'
     )
+    if (growthMaxSendLimit > DEFAULT_GROWTH_MAX_SEND_LIMIT) {
+      input.guardrails.push(
+        `Provider-backed growth ceiling is configured at ${growthMaxSendLimit}/day; queueing still requires verified contacts, healthy domains, and active sender capacity`
+      )
+    }
 
     if (input.approvalWindow.averageHealthScore <= 60) {
       input.guardrails.push('Growth mode low reputation health caps daily queueing at 5 sends')

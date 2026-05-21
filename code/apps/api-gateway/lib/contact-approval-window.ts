@@ -3,7 +3,7 @@ import { query } from '@/lib/db'
 const FALLBACK_REVIEW_WINDOW = 5
 const SYSTEM_APPROVAL_CEILING = Math.max(
   1,
-  Math.min(Number(process.env.CONTACT_APPROVAL_MAX_WINDOW ?? 50), 250)
+  Math.min(Number(process.env.CONTACT_APPROVAL_MAX_WINDOW ?? 100), 800)
 )
 
 export type SystemApprovalWindow = {

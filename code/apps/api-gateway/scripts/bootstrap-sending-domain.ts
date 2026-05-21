@@ -61,8 +61,8 @@ async function main(): Promise<void> {
   }
 
   const clientId = intEnv('DEFAULT_CLIENT_ID', 1, 1, 1_000_000)
-  const domainDailyLimit = intEnv('BOOTSTRAP_DOMAIN_DAILY_LIMIT', 50, 1, 500)
-  const identityDailyLimit = intEnv('BOOTSTRAP_IDENTITY_DAILY_LIMIT', 25, 1, 200)
+  const domainDailyLimit = intEnv('BOOTSTRAP_DOMAIN_DAILY_LIMIT', 50, 1, 1_000)
+  const identityDailyLimit = intEnv('BOOTSTRAP_IDENTITY_DAILY_LIMIT', 25, 1, 500)
   const markAuthValid = enabled(process.env.BOOTSTRAP_MARK_DNS_VALID)
   const bootstrapped: Array<{ domain: string; email: string }> = []
 
@@ -89,8 +89,8 @@ async function main(): Promise<void> {
        ON CONFLICT (client_id, domain) DO UPDATE
        SET status = 'active',
            paused = FALSE,
-           daily_limit = LEAST(domains.daily_limit, EXCLUDED.daily_limit),
-           daily_cap = COALESCE(domains.daily_cap, EXCLUDED.daily_cap),
+           daily_limit = GREATEST(COALESCE(domains.daily_limit, 0), EXCLUDED.daily_limit),
+           daily_cap = GREATEST(COALESCE(domains.daily_cap, 0), EXCLUDED.daily_cap),
            updated_at = CURRENT_TIMESTAMP
        RETURNING id`,
       [clientId, domain, markAuthValid, domainDailyLimit]
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
        ON CONFLICT (client_id, email) DO UPDATE
        SET domain_id = EXCLUDED.domain_id,
            status = 'active',
-           daily_limit = LEAST(identities.daily_limit, EXCLUDED.daily_limit),
+           daily_limit = GREATEST(COALESCE(identities.daily_limit, 0), EXCLUDED.daily_limit),
            updated_at = CURRENT_TIMESTAMP`,
       [clientId, domainId, email, identityDailyLimit]
     )

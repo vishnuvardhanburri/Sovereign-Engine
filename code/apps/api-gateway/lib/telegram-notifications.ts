@@ -98,6 +98,12 @@ type TelegramNotification =
       sendLimit?: number
       approveLimit?: number
       failures?: number
+      targetDailyVolume?: number
+      capacityRemaining?: number
+      healthyDomains?: number
+      eligibleSenderIdentities?: number
+      primaryBlocker?: string | null
+      nextAction?: string | null
     }
   | {
       type: 'reputation_recovery'
@@ -268,10 +274,18 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       input.agencyQueued || input.directQueued
         ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
         : null,
+      input.targetDailyVolume ? `Target/day: ${input.targetDailyVolume}` : null,
+      input.capacityRemaining !== undefined ? `Capacity left: ${input.capacityRemaining}` : null,
+      input.healthyDomains !== undefined ? `Healthy domains: ${input.healthyDomains}` : null,
+      input.eligibleSenderIdentities !== undefined
+        ? `Sender identities: ${input.eligibleSenderIdentities}`
+        : null,
+      input.primaryBlocker ? `Blocker: ${clip(input.primaryBlocker, 140)}` : null,
+      input.nextAction ? `Next: ${clip(input.nextAction, 180)}` : null,
       `Approval limit: ${input.approveLimit ?? 0}`,
       `Send limit: ${input.sendLimit ?? 0}`,
       `Stage failures: ${input.failures ?? 0}`,
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
   if (input.type === 'reputation_recovery') {

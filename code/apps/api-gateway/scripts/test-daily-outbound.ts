@@ -13,6 +13,14 @@ const healthyWindow = {
   policy: 'domain_capacity_health_window' as const,
 }
 
+const highCapacityWindow = {
+  ...healthyWindow,
+  limit: 800,
+  remainingCapacity: 1_000,
+  eligibleSenderIdentities: 4,
+  senderRemainingCapacity: 1_000,
+}
+
 const lowHealthWindow = {
   ...healthyWindow,
   limit: 5,
@@ -221,6 +229,39 @@ assert.equal(growthHealthyPlan.approveLimit, 20)
 assert.ok(
   growthHealthyPlan.guardrails.includes(
     'Growth mode is enabled; volume still follows reputation health, validation, and domain capacity'
+  )
+)
+
+const growthDefaultMaxPlan = buildDailyOutboundPlan({
+  approvalWindow: highCapacityWindow,
+  env: {
+    DAILY_OUTBOUND_MODE: 'growth',
+    DAILY_OUTBOUND_SEND_LIMIT: '800',
+    DAILY_OUTBOUND_APPROVE_LIMIT: '800',
+  },
+  query: {},
+})
+
+assert.equal(growthDefaultMaxPlan.sendLimit, 100)
+assert.equal(growthDefaultMaxPlan.approveLimit, 800)
+
+const providerBackedGrowthPlan = buildDailyOutboundPlan({
+  approvalWindow: highCapacityWindow,
+  env: {
+    DAILY_OUTBOUND_MODE: 'growth',
+    DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT: '800',
+    DAILY_OUTBOUND_MAX_SEND_LIMIT: '800',
+    DAILY_OUTBOUND_SEND_LIMIT: '800',
+    DAILY_OUTBOUND_APPROVE_LIMIT: '800',
+  },
+  query: {},
+})
+
+assert.equal(providerBackedGrowthPlan.sendLimit, 800)
+assert.equal(providerBackedGrowthPlan.approveLimit, 800)
+assert.ok(
+  providerBackedGrowthPlan.guardrails.includes(
+    'Provider-backed growth ceiling is configured at 800/day; queueing still requires verified contacts, healthy domains, and active sender capacity'
   )
 )
 

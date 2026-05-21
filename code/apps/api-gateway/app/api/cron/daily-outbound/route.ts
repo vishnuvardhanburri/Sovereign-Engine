@@ -29,6 +29,7 @@ import {
   rankSovereignLeads,
   sovereignDealValueUsd,
 } from '@/lib/outbound-copy'
+import { getSendingCapacityDiagnosis } from '@/lib/sending-capacity-diagnostics'
 
 type StageResult = {
   stage: 'lead_scout' | 'maps_import' | 'sheet_import' | 'hunter_domain_search' | 'research_approval' | 'queue_outbound'
@@ -105,6 +106,20 @@ function clampLimit(value: unknown, fallback: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(0, Math.min(Math.trunc(parsed), max))
+}
+
+function resolveTargetDailyVolume(params: URLSearchParams): number {
+  return Math.max(
+    1,
+    clampLimit(
+      params.get('targetDailyVolume') ||
+        process.env.DAILY_OUTBOUND_TARGET_DAILY_VOLUME ||
+        process.env.TARGET_DAILY_VOLUME ||
+        process.env.INFRASTRUCTURE_TARGET_DAILY_VOLUME,
+      800,
+      1_000_000
+    )
+  )
 }
 
 function asString(value: unknown): string {
@@ -860,6 +875,7 @@ async function runResearchApproval(input: {
   evidenceFetchLimit?: number
   providerValidationLimit?: number
   recoveryMode?: boolean
+  growthMode?: boolean
 }): Promise<StageResult> {
   try {
     const threshold = clampThreshold(process.env.DAILY_OUTBOUND_APPROVAL_THRESHOLD)
@@ -875,8 +891,20 @@ async function runResearchApproval(input: {
     const providerValidationLimit = clampLimit(
       input.providerValidationLimit ??
         (input.dryRun ? 0 : process.env.DAILY_OUTBOUND_PROVIDER_VALIDATION_LIMIT),
-      input.dryRun ? (recoveryMode ? 10 : 0) : recoveryMode ? 50 : 5,
-      input.dryRun ? (recoveryMode ? 25 : 5) : recoveryMode ? 75 : 20
+      input.dryRun
+        ? recoveryMode || input.growthMode
+          ? 10
+          : 0
+        : recoveryMode || input.growthMode
+          ? 100
+          : 5,
+      input.dryRun
+        ? recoveryMode || input.growthMode
+          ? 50
+          : 5
+        : recoveryMode || input.growthMode
+          ? 250
+          : 20
     )
     const networkDeadlineMs = input.dryRun ? (recoveryMode ? 20_000 : 8_000) : 45_000
     const networkDeadlineAt = Date.now() + networkDeadlineMs
@@ -1118,7 +1146,7 @@ async function runResearchApproval(input: {
 }
 
 async function loadApprovedContacts(clientId: number, limit: number): Promise<ApprovedLead[]> {
-  const scanLimit = Math.min(Math.max(limit * 5, limit), 500)
+  const scanLimit = Math.min(Math.max(limit * 5, limit), 5_000)
   const result = await query<{
     id: string
     email: string
@@ -1368,6 +1396,7 @@ export async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams
     const clientId = Number(params.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
+    const targetDailyVolume = resolveTargetDailyVolume(params)
     const maintenance = await maybeRunDailyMaintenance(clientId)
     const approvalWindow = await resolveSystemApprovalWindow(clientId)
     const plan = buildDailyOutboundPlan({
@@ -1531,11 +1560,16 @@ export async function GET(request: NextRequest) {
           dryRun: plan.dryRun,
           approveLimit: plan.approveLimit,
           recoveryMode,
+          growthMode: plan.mode === 'growth',
           evidenceFetchLimit: params.has('evidenceFetchLimit')
             ? clampLimit(params.get('evidenceFetchLimit'), 0, recoveryMode ? 40 : 20)
             : undefined,
           providerValidationLimit: params.has('providerValidationLimit')
-            ? clampLimit(params.get('providerValidationLimit'), 0, recoveryMode ? 75 : 20)
+            ? clampLimit(
+                params.get('providerValidationLimit'),
+                0,
+                recoveryMode || plan.mode === 'growth' ? 250 : 20
+              )
             : undefined,
         })
       )
@@ -1592,6 +1626,9 @@ export async function GET(request: NextRequest) {
         stage.stage !== 'maps_import' &&
         stage.stage !== 'lead_scout'
     )
+    const capacityDiagnosis = await getSendingCapacityDiagnosis(plan.clientId, {
+      targetDailyVolume,
+    })
 
     void notifyTelegramEvent({
       type: 'daily_outbound',
@@ -1605,6 +1642,12 @@ export async function GET(request: NextRequest) {
       sendLimit: plan.sendLimit,
       approveLimit: plan.approveLimit,
       failures: stages.filter((stage) => !stage.ok).length,
+      targetDailyVolume: capacityDiagnosis.targetDailyVolume,
+      capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
+      healthyDomains: capacityDiagnosis.healthyDomains,
+      eligibleSenderIdentities: capacityDiagnosis.eligibleSenderIdentities,
+      primaryBlocker: capacityDiagnosis.primaryBlocker,
+      nextAction: capacityDiagnosis.nextAction,
     })
 
     return NextResponse.json({
@@ -1636,6 +1679,21 @@ export async function GET(request: NextRequest) {
         providerValidationBlocked,
         staleInvalidBlocked,
         hardFailures: hardFailures.length,
+        targetDailyVolume: capacityDiagnosis.targetDailyVolume,
+        capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
+        capacityGap: capacityDiagnosis.targetGap,
+        capacityBlocker: capacityDiagnosis.primaryBlocker,
+      },
+      capacity: {
+        targetDailyVolume: capacityDiagnosis.targetDailyVolume,
+        currentRemainingCapacity: capacityDiagnosis.currentRemainingCapacity,
+        targetGap: capacityDiagnosis.targetGap,
+        activeDomains: capacityDiagnosis.activeDomains,
+        healthyDomains: capacityDiagnosis.healthyDomains,
+        eligibleSenderIdentities: capacityDiagnosis.eligibleSenderIdentities,
+        primaryBlocker: capacityDiagnosis.primaryBlocker,
+        nextAction: capacityDiagnosis.nextAction,
+        scaleModel: capacityDiagnosis.scaleModel,
       },
       plan: verbose ? plan : {
         mode: plan.mode,
