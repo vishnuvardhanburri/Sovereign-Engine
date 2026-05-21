@@ -3250,6 +3250,14 @@ function renderOutboundHtml(text: string): string {
     `<a href="${safeBookingUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;">Book 20-min audit/demo</a>`,
     '</p>',
   ].join('')
+  const unsubscribeMarker = '<br /><br />Unsubscribe:'
+  const unsubscribeIndex = safeText.lastIndexOf(unsubscribeMarker)
+
+  if (unsubscribeIndex >= 0) {
+    return `${safeText.slice(0, unsubscribeIndex)}<br />${bookingButton}${safeText.slice(
+      unsubscribeIndex
+    )}`
+  }
 
   return `${safeText}<br />${bookingButton}`
 }
