@@ -21,7 +21,7 @@ export type SafeSendDeps = {
     html: string
     text: string
     headers?: Record<string, string>
-  }) => Promise<{ success: boolean; providerMessageId?: string | null; error?: string | null }>
+  }) => Promise<{ success: boolean; providerMessageId?: string | null; provider?: string | null; error?: string | null }>
 }
 
 export type SafeSendInput = {
@@ -32,7 +32,7 @@ export type SafeSendInput = {
 }
 
 export type SafeSendResult =
-  | { ok: true; action: 'sent'; providerMessageId: string | null }
+  | { ok: true; action: 'sent'; providerMessageId: string | null; provider: string | null }
   | { ok: true; action: 'skipped'; reason: string }
   | { ok: true; action: 'deferred'; reason: string; scheduledAt: Date }
   | { ok: false; action: 'failed'; error: string }
@@ -220,9 +220,15 @@ export async function sendSafe(input: SafeSendInput): Promise<SafeSendResult> {
     from: selection.identity.email,
     subject: message.subject,
     providerMessageId: smtpResult.providerMessageId ?? null,
+    provider: smtpResult.provider ?? null,
     campaign: context.campaign.name,
   })
 
   // Success path: caller should invoke markQueueJobCompleted (single source of truth for counters + 'sent' event).
-  return { ok: true, action: 'sent', providerMessageId: smtpResult.providerMessageId ?? null }
+  return {
+    ok: true,
+    action: 'sent',
+    providerMessageId: smtpResult.providerMessageId ?? null,
+    provider: smtpResult.provider ?? null,
+  }
 }

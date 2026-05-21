@@ -23,6 +23,7 @@ type TelegramNotification =
       from?: string | null
       subject?: string | null
       providerMessageId?: string | null
+      provider?: string | null
       campaign?: string | null
     }
   | {
@@ -31,6 +32,7 @@ type TelegramNotification =
       from?: string | null
       subject?: string | null
       error?: string | null
+      provider?: string | null
       campaign?: string | null
     }
   | {
@@ -164,6 +166,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `To: ${maskEmail(input.to, fullEmails)}`,
       input.from ? `From: ${maskEmail(input.from, fullEmails)}` : null,
       input.subject ? `Subject: ${clip(input.subject, 120)}` : null,
+      input.provider ? `Provider: ${clip(input.provider, 40)}` : null,
       input.providerMessageId ? `Provider ID: ${clip(input.providerMessageId, 80)}` : null,
       input.campaign ? `Campaign: ${clip(input.campaign, 80)}` : null,
     ].filter(Boolean).join('\n')
@@ -176,6 +179,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `To: ${maskEmail(input.to, fullEmails)}`,
       input.from ? `From: ${maskEmail(input.from, fullEmails)}` : null,
       input.subject ? `Subject: ${clip(input.subject, 120)}` : null,
+      input.provider ? `Provider: ${clip(input.provider, 40)}` : null,
       input.error ? `Reason: ${clip(input.error, 200)}` : null,
       input.campaign ? `Campaign: ${clip(input.campaign, 80)}` : null,
     ].filter(Boolean).join('\n')

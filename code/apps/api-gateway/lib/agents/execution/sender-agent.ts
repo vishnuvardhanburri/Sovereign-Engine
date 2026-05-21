@@ -21,6 +21,7 @@ export interface SendMessageRequest {
 export interface SendMessageResult {
   success: boolean
   providerMessageId?: string
+  provider?: 'smtp' | 'resend' | 'brevo'
   error?: string
   circuitBreakerOpen?: boolean
 }
@@ -46,11 +47,11 @@ export async function sendMessage(request: SendMessageRequest): Promise<SendMess
     
     if (result.success) {
       await recordMetric(request.campaignId || 0, 'email_sent_success', 1)
-      logger.log('info', 'Send successful', { message_id: result.providerMessageId })
+      logger.log('info', 'Send successful', { message_id: result.providerMessageId, provider: result.provider })
       return result
     } else {
       await recordMetric(request.campaignId || 0, 'email_send_failed', 1)
-      logger.log('error', 'Send failed', { error: result.error })
+      logger.log('error', 'Send failed', { error: result.error, provider: result.provider })
       return result
     }
   } catch (error) {

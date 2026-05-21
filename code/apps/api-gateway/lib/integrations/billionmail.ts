@@ -5,6 +5,9 @@ import type { SendMessageRequest, SendMessageResult } from '@/lib/agents/executi
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null
 
 type Provider = 'smtp' | 'resend' | 'brevo'
+type ApiProvider = Exclude<Provider, 'smtp'>
+
+const API_PROVIDERS: ApiProvider[] = ['brevo', 'resend']
 
 function splitAddresses(value: string | string[] | undefined): string[] {
   const values = Array.isArray(value) ? value : [value]
@@ -29,6 +32,38 @@ function domainSlug(email: string): string {
   return domain.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
+function envBool(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function envInt(names: string[], fallback: number, min: number, max: number): number {
+  for (const name of names) {
+    const parsed = Number(process.env[name])
+    if (Number.isFinite(parsed)) {
+      return Math.max(min, Math.min(Math.trunc(parsed), max))
+    }
+  }
+  return fallback
+}
+
+function providerDailyLimit(provider: ApiProvider): number {
+  if (provider === 'brevo') {
+    return envInt(['BREVO_DAILY_LIMIT', 'DAILY_BREVO_LIMIT', 'SENDINBLUE_DAILY_LIMIT'], 300, 0, 100_000)
+  }
+  return envInt(['RESEND_DAILY_LIMIT', 'DAILY_RESEND_LIMIT'], 100, 0, 100_000)
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
 function secretFromMisplacedProviderEnv(provider: Provider): string {
   const raw = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '').trim()
   if (provider === 'brevo' && /^xsmtpsib-/i.test(raw)) return raw
@@ -36,7 +71,7 @@ function secretFromMisplacedProviderEnv(provider: Provider): string {
   return ''
 }
 
-function providerSecret(provider: Exclude<Provider, 'smtp'>, fromEmail: string): string {
+function providerSecret(provider: ApiProvider, fromEmail: string): string {
   const slug = domainSlug(parseAddress(fromEmail).email)
   const domainAliases =
     provider === 'brevo'
@@ -55,13 +90,74 @@ function providerSecret(provider: Exclude<Provider, 'smtp'>, fromEmail: string):
   return secretFromMisplacedProviderEnv(provider)
 }
 
-function selectedProvider(fromEmail: string): Provider {
-  const raw = String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || '').trim().toLowerCase()
+function parseProvider(value: string): Provider | 'auto' | null {
+  const raw = value.trim().toLowerCase()
+  if (raw === 'auto' || raw === 'central' || raw === 'balanced') return 'auto'
   if (raw === 'smtp' || raw === 'resend' || raw === 'brevo') return raw
   if (raw.startsWith('re_')) return 'resend'
   if (raw.startsWith('xsmtpsib-')) return 'brevo'
-  if (providerSecret('brevo', fromEmail)) return 'brevo'
-  if (providerSecret('resend', fromEmail)) return 'resend'
+  return null
+}
+
+function configuredApiProviders(fromEmail: string): ApiProvider[] {
+  return API_PROVIDERS.filter((provider) => {
+    return providerDailyLimit(provider) > 0 && Boolean(providerSecret(provider, fromEmail))
+  })
+}
+
+function chooseWeightedProvider(input: {
+  request: SendMessageRequest
+  to: string[]
+  providers: ApiProvider[]
+}): ApiProvider {
+  const weighted = input.providers
+    .map((provider) => ({ provider, weight: providerDailyLimit(provider) }))
+    .filter((item) => item.weight > 0)
+
+  if (weighted.length === 0) return input.providers[0] ?? 'resend'
+  const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0)
+  const day = new Date().toISOString().slice(0, 10)
+  const key = [
+    day,
+    input.request.fromEmail,
+    input.to.join(','),
+    input.request.subject,
+    input.request.idempotencyKey || '',
+  ].join('|')
+  let bucket = stableHash(key) % Math.max(totalWeight, 1)
+
+  for (const item of weighted) {
+    if (bucket < item.weight) return item.provider
+    bucket -= item.weight
+  }
+
+  return weighted[weighted.length - 1]!.provider
+}
+
+function selectedProvider(request: SendMessageRequest, to: string[]): Provider {
+  const fromEmail = request.fromEmail
+  const slug = domainSlug(parseAddress(fromEmail).email)
+  const explicitProvider = parseProvider(
+    String(
+      process.env[`EMAIL_PROVIDER_${slug}`] ||
+        process.env[`SEND_PROVIDER_${slug}`] ||
+        process.env.EMAIL_PROVIDER ||
+        process.env.SEND_PROVIDER ||
+        ''
+    )
+  )
+  const apiProviders = configuredApiProviders(fromEmail)
+  const forceExplicitProvider = envBool('FORCE_EMAIL_PROVIDER', false)
+
+  // Central brain: when multiple API providers are configured, distribute one-by-one
+  // by their daily capacity targets instead of hard-locking each domain to a provider.
+  if (apiProviders.length > 1 && !forceExplicitProvider) {
+    return chooseWeightedProvider({ request, to, providers: apiProviders })
+  }
+
+  if (explicitProvider && explicitProvider !== 'auto') return explicitProvider
+  if (apiProviders.length === 1) return apiProviders[0]!
+  if (apiProviders.length > 1) return chooseWeightedProvider({ request, to, providers: apiProviders })
   return 'smtp'
 }
 
@@ -79,7 +175,7 @@ async function sendViaResend(input: {
   headers: Record<string, string>
 }): Promise<SendMessageResult> {
   const key = providerSecret('resend', input.request.fromEmail)
-  if (!key) return { success: false, error: 'Resend provider selected but RESEND_API_KEY is missing' }
+  if (!key) return { success: false, provider: 'resend', error: 'Resend provider selected but RESEND_API_KEY is missing' }
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -99,11 +195,11 @@ async function sendViaResend(input: {
   })
 
   if (!response.ok) {
-    return { success: false, error: await readProviderError(response) }
+    return { success: false, provider: 'resend', error: await readProviderError(response) }
   }
 
   const data = (await response.json().catch(() => ({}))) as { id?: string; messageId?: string }
-  return { success: true, providerMessageId: data.id || data.messageId }
+  return { success: true, provider: 'resend', providerMessageId: data.id || data.messageId }
 }
 
 async function sendViaBrevo(input: {
@@ -114,7 +210,7 @@ async function sendViaBrevo(input: {
   headers: Record<string, string>
 }): Promise<SendMessageResult> {
   const key = providerSecret('brevo', input.request.fromEmail)
-  if (!key) return { success: false, error: 'Brevo provider selected but BREVO_API_KEY is missing' }
+  if (!key) return { success: false, provider: 'brevo', error: 'Brevo provider selected but BREVO_API_KEY is missing' }
 
   const sender = parseAddress(input.request.fromEmail)
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -135,11 +231,11 @@ async function sendViaBrevo(input: {
   })
 
   if (!response.ok) {
-    return { success: false, error: await readProviderError(response) }
+    return { success: false, provider: 'brevo', error: await readProviderError(response) }
   }
 
   const data = (await response.json().catch(() => ({}))) as { messageId?: string; messageIds?: string[] }
-  return { success: true, providerMessageId: data.messageId || data.messageIds?.[0] }
+  return { success: true, provider: 'brevo', providerMessageId: data.messageId || data.messageIds?.[0] }
 }
 
 function getTransporter() {
@@ -181,7 +277,7 @@ export async function sendViaSmtp(
       }
     }
 
-    const headers = {
+    const baseHeaders = {
       ...request.headers,
       ...(isTestMode ? { 'X-Test-Mode': 'true' } : {}),
     }
@@ -189,8 +285,13 @@ export async function sendViaSmtp(
     const subject = isTestMode ? `[TEST MODE] ${request.subject}` : request.subject
     const to = isTestMode ? testRecipients : splitAddresses(request.toEmail)
     const cc = isTestMode ? [] : splitAddresses(request.cc)
+    const provider = selectedProvider(request, to)
+    const headers = {
+      ...baseHeaders,
+      'X-Sovereign-Send-Provider': provider,
+      'X-Sovereign-Provider-Mode': provider === 'smtp' ? 'smtp' : 'central-weighted',
+    }
 
-    const provider = selectedProvider(request.fromEmail)
     if (provider === 'resend') {
       return await sendViaResend({ request, to, cc, subject, headers })
     }
@@ -226,6 +327,7 @@ export async function sendViaSmtp(
 
     return {
       success: true,
+      provider: 'smtp',
       providerMessageId: result.messageId,
     }
   } catch (error) {
