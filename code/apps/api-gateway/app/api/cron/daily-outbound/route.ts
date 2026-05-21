@@ -1424,10 +1424,7 @@ export async function GET(request: NextRequest) {
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
       false
     )
-    const recoveryMode = envBool(
-      params.get('recoveryMode') || process.env.DAILY_OUTBOUND_RECOVERY_MODE,
-      false
-    )
+    const recoveryMode = plan.recoveryMode
     const mapsActorId =
       params.get('mapsActorId') ||
       params.get('actorId') ||

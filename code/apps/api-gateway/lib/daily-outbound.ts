@@ -4,6 +4,7 @@ export type DailyOutboundPlan = {
   enabled: boolean
   dryRun: boolean
   mode: DailyOutboundMode
+  recoveryMode: boolean
   clientId: number
   sheetUrl: string
   sheetLimit: number
@@ -88,6 +89,22 @@ function resolveDailyMode(input: { requested?: string | null; env: EnvLike }): D
     .trim()
     .toLowerCase()
   return value === 'growth' ? 'growth' : 'conservative'
+}
+
+function resolveRecoveryMode(input: {
+  requested?: string | null
+  env: EnvLike
+}): boolean {
+  const hasValidationProvider = Boolean(input.env.ZEROBOUNCE_API_KEY || input.env.HUNTER_API_KEY)
+  if (resolveDailyBoolean(input.env.DAILY_OUTBOUND_RECOVERY_FORCE_OFF, false)) return false
+  if (String(input.requested ?? '').trim()) {
+    return resolveDailyBoolean(input.requested, hasValidationProvider)
+  }
+  if (hasValidationProvider) return true
+  return resolveDailyBoolean(
+    input.env.DAILY_OUTBOUND_RECOVERY_MODE ?? input.env.DOMAIN_RECOVERY_CAP_ENABLED,
+    false
+  )
 }
 
 function resolveSendLimit(input: {
@@ -224,12 +241,10 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   const enabled = resolveDailyBoolean(input.env.DAILY_OUTBOUND_ENABLED, true)
   const dryRun = resolveDailyBoolean(input.query.dryRun, false)
   const mode = resolveDailyMode({ requested: input.query.mode, env: input.env })
-  const recoveryMode = resolveDailyBoolean(
-    input.query.recoveryMode ??
-      input.env.DAILY_OUTBOUND_RECOVERY_MODE ??
-      input.env.DOMAIN_RECOVERY_CAP_ENABLED,
-    Boolean(input.env.ZEROBOUNCE_API_KEY)
-  )
+  const recoveryMode = resolveRecoveryMode({
+    requested: input.query.recoveryMode,
+    env: input.env,
+  })
   const clientId = clampInteger(
     input.query.clientId ?? input.env.DEFAULT_CLIENT_ID,
     DEFAULT_CLIENT_ID,
@@ -312,6 +327,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       enabled: false,
       dryRun,
       mode,
+      recoveryMode,
       clientId,
       sheetUrl,
       sheetLimit,
@@ -333,6 +349,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     enabled,
     dryRun,
     mode,
+    recoveryMode,
     clientId,
     sheetUrl,
     sheetLimit,
