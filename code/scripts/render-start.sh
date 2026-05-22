@@ -69,5 +69,5 @@ else
   echo "[render-start] embedded sender-worker disabled"
 fi
 
-echo "[render-start] starting api-gateway on port ${PORT:-3000}"
-exec pnpm -C apps/api-gateway start -p "${PORT:-3000}"
+echo "[render-start] starting api-gateway on 0.0.0.0:${PORT:-3000}"
+exec pnpm -C apps/api-gateway start -H 0.0.0.0 -p "${PORT:-3000}"
