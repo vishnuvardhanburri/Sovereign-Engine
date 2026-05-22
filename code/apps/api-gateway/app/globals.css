@@ -93,8 +93,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: 'Aptos', 'SF Pro Display', 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

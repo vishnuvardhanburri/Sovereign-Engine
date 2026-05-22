@@ -1,12 +1,9 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
 import { NextDevToolsOff } from '@/components/next-devtools-off'
 import './globals.css'
 
-const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
-const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' })
 const analyticsEnabled = process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === 'true'
 
 export const metadata: Metadata = {
@@ -49,7 +46,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${geist.variable} ${geistMono.variable} font-sans antialiased bg-background text-foreground transition-colors duration-200`}
+        className="font-sans antialiased bg-background text-foreground transition-colors duration-200"
       >
         <Providers>
           <NextDevToolsOff />

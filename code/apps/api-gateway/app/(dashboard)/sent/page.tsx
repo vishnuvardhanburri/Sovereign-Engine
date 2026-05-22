@@ -59,6 +59,26 @@ type ApiResponse = {
   items: SentItem[]
 }
 
+type CopyPreviewItem = {
+  label: string
+  offerType: 'direct' | 'agency'
+  dealValueUsd: number
+  company: string
+  subject: string
+  text: string
+  source: 'template' | 'openrouter'
+  error: string | null
+}
+
+type CopyPreviewResponse = {
+  ok: boolean
+  generatedAt: string
+  aiPreview: boolean
+  aiPersonalizationConfigured: boolean
+  retentionPolicy: string
+  previews: CopyPreviewItem[]
+}
+
 function statusBadge(type: SentItem['type']) {
   if (type === 'sent') return <Badge className="bg-green-500/10 text-green-500">Sent</Badge>
   if (type === 'bounce') return <Badge className="bg-red-500/10 text-red-500">Bounced</Badge>
@@ -124,6 +144,16 @@ export default function SentMailPage() {
       return (await res.json()) as ApiResponse
     },
     refetchInterval: 10_000,
+  })
+
+  const { data: copyPreview, isLoading: copyPreviewLoading } = useQuery({
+    queryKey: ['outbound', 'copy-preview', 'template'],
+    queryFn: async () => {
+      const res = await fetch('/api/outbound/copy-preview')
+      if (!res.ok) throw new Error('failed')
+      return (await res.json()) as CopyPreviewResponse
+    },
+    staleTime: 60_000,
   })
 
   async function clear(kind: 'failed' | 'test') {
@@ -233,6 +263,66 @@ export default function SentMailPage() {
           />
         </div>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="w-5 h-5" />
+            How the system is mailing now
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Operator preview of the current outbound copy. Sent-event bodies stay redacted in the database.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {copyPreviewLoading ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <Skeleton className="h-72 w-full" />
+              <Skeleton className="h-72 w-full" />
+            </div>
+          ) : copyPreview?.previews?.length ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {copyPreview.previews.map((preview) => (
+                <div key={preview.offerType} className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        {offerBadge(preview.offerType)}
+                        <Badge variant="outline" className="text-xs">
+                          {preview.source === 'openrouter' ? 'AI generated' : 'Base template'}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm font-medium">{preview.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Sample company: {preview.company}
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold">
+                      ${preview.dealValueUsd.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="rounded-md border bg-background/60 p-3">
+                    <p className="text-xs text-muted-foreground">Subject</p>
+                    <p className="text-sm font-medium">{preview.subject}</p>
+                  </div>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border bg-background/60 p-3 text-xs leading-relaxed">
+                    {preview.text}
+                  </pre>
+                  {preview.error ? (
+                    <p className="text-xs text-amber-500">
+                      AI preview fallback: {preview.error}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Copy preview is unavailable right now. Sending can still continue from queued jobs.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="pt-6">
