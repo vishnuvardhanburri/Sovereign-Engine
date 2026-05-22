@@ -26,6 +26,7 @@ import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } 
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
+import { reconcileBootstrapSendingDomain } from '@/lib/bootstrap-sending-domain'
 import {
   buildSovereignCopyForLead,
   balanceSovereignOfferMix,
@@ -44,6 +45,7 @@ type StageResult = {
     | 'queue_outbound'
     | 'run_followups'
     | 'event_retention'
+    | 'sender_reconcile'
   ok: boolean
   status: number
   skipped?: string
@@ -369,6 +371,7 @@ function compactStage(stage: StageResult): StageResult {
       staleGuardrailFailuresDeleted: getNumericField(data, 'staleGuardrailFailuresDeleted'),
       staleFailuresDeleted: getNumericField(data, 'staleFailuresDeleted'),
       bodiesRedacted: getNumericField(data, 'bodiesRedacted'),
+      bootstrapped: getNumericField(data, 'bootstrapped'),
     },
   }
 }
@@ -385,6 +388,34 @@ async function runEventRetentionStage(clientId: number): Promise<StageResult> {
   } catch (error) {
     return {
       stage: 'event_retention',
+      ok: false,
+      status: 500,
+      error: safeError(error),
+    }
+  }
+}
+
+async function runSenderReconcileStage(clientId: number): Promise<StageResult> {
+  try {
+    const data = await reconcileBootstrapSendingDomain({ clientId })
+    return {
+      stage: 'sender_reconcile',
+      ok: true,
+      status: data.enabled ? 200 : 204,
+      skipped: data.enabled ? undefined : data.reason,
+      data: {
+        enabled: data.enabled,
+        markAuthValid: data.markAuthValid,
+        domainDailyLimit: data.domainDailyLimit,
+        identityDailyLimit: data.identityDailyLimit,
+        bootstrapped: data.bootstrapped.length,
+        domains: Array.from(new Set(data.bootstrapped.map((item) => item.domain))),
+        identities: data.bootstrapped.map((item) => item.email),
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'sender_reconcile',
       ok: false,
       status: 500,
       error: safeError(error),
@@ -1534,6 +1565,8 @@ export async function GET(request: NextRequest) {
     const clientId = Number(params.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
     const targetDailyVolume = resolveTargetDailyVolume(params)
     const maintenance = await maybeRunDailyMaintenance(clientId)
+    const stages: StageResult[] = []
+    stages.push(await runSenderReconcileStage(clientId))
     const approvalWindow = await resolveSystemApprovalWindow(clientId)
     const plan = buildDailyOutboundPlan({
       approvalWindow,
@@ -1554,7 +1587,6 @@ export async function GET(request: NextRequest) {
         recoveryMode: params.get('recoveryMode'),
       },
     })
-    const stages: StageResult[] = []
     const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
     const runHunterSearch = envBool(
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
@@ -1757,6 +1789,8 @@ export async function GET(request: NextRequest) {
     const hunterImported = getNumericField(hunterStage?.data, 'imported')
     const hunterPrepared = getNumericField(hunterStage?.data, 'prepared')
     const hunterRejected = getNumericField(hunterStage?.data, 'rejected')
+    const senderReconcileStage = stages.find((stage) => stage.stage === 'sender_reconcile')
+    const sendersReconciled = getNumericField(senderReconcileStage?.data, 'bootstrapped')
     const providerValidationChecks = getNumericField(approvalStage?.data, 'providerValidationChecks')
     const providerValidationValid = getNumericField(approvalStage?.data, 'providerValidationValid')
     const providerValidationInvalid = getNumericField(approvalStage?.data, 'providerValidationInvalid')
@@ -1829,6 +1863,7 @@ export async function GET(request: NextRequest) {
         hunterImported,
         hunterPrepared,
         hunterRejected,
+        sendersReconciled,
         approved,
         queued,
         estimatedPipelineValueUsd,
