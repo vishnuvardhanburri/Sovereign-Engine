@@ -289,7 +289,7 @@ export default function SentMailPage() {
                   <TableHead>Subject</TableHead>
                   <TableHead>Offer</TableHead>
                   <TableHead>Provider</TableHead>
-                  <TableHead>Body</TableHead>
+                  <TableHead>Proof</TableHead>
                   <TableHead>Campaign</TableHead>
                   <TableHead className="text-right">Time</TableHead>
                 </TableRow>
@@ -334,7 +334,7 @@ export default function SentMailPage() {
                               setBodyOpen(true)
                             }}
                           >
-                            View
+                            Proof
                           </Button>
                         </TableCell>
                         <TableCell className="max-w-[180px] truncate text-sm text-muted-foreground">
@@ -362,7 +362,7 @@ export default function SentMailPage() {
       <Dialog open={bodyOpen} onOpenChange={setBodyOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Email body</DialogTitle>
+            <DialogTitle>Delivery proof</DialogTitle>
           </DialogHeader>
           {selected ? (
             <div className="space-y-3">
@@ -388,7 +388,7 @@ export default function SentMailPage() {
                 </pre>
               ) : (
                 <div className="text-sm bg-muted/40 border rounded-md p-3 space-y-2">
-                  <p className="font-medium">Body not retained</p>
+                  <p className="font-medium">Message body not retained</p>
                   <p className="text-muted-foreground">
                     This event keeps delivery proof only. Full email bodies are redacted by the outbound
                     retention policy so the database does not store message content.
