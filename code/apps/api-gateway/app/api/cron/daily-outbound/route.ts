@@ -1338,6 +1338,7 @@ async function runQueue(input: {
         name: 'cron_outbound_sales',
         data: {
           clientId: input.clientId,
+          contactId: lead.contact_id,
           toEmail: lead.email,
           subject: copy.subject,
           text: copy.text,

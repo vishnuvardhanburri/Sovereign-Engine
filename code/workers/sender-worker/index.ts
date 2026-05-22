@@ -10,7 +10,7 @@ import { ingestEvent } from '@sovereign/tracking-engine'
 import { updateDomainStats, getDomainScore } from '@sovereign/reputation-engine'
 import { sendSmtp } from '@sovereign/smtp-client'
 import { ContentMutationService, type ContentMutationResult } from '@sovereign/content-mutation'
-import { recipientApprovalBlockers, type RecipientGuardrailContact } from './recipient-guardrails'
+import { recipientApprovalBlockers, recipientSyntaxBlockers, type RecipientGuardrailContact } from './recipient-guardrails'
 import {
   computeAdaptiveThroughput,
   loadDomainSignals,
@@ -161,7 +161,7 @@ const API_SEND_PROVIDERS: ApiSendProvider[] = ['brevo', 'resend']
 
 function cleanEmail(raw: unknown): string {
   const email = String(raw ?? '').trim().toLowerCase()
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : ''
+  return recipientSyntaxBlockers(email).length === 0 ? email : ''
 }
 
 function emailDomain(raw: unknown): string {
@@ -286,6 +286,13 @@ function envKeySuffix(value: string): string {
 function providerSecretForEmail(provider: ApiSendProvider, email: string): string {
   if (provider === 'brevo' && isBrevoBlockedDomain(email)) return ''
 
+  const specific = domainSpecificProviderSecret(provider, email)
+  if (specific) return specific
+
+  return providerSecret(provider)
+}
+
+function domainSpecificProviderSecret(provider: ApiSendProvider, email: string): string {
   const clean = cleanEmail(email)
   const domain = emailDomain(clean)
   const suffixes = [envKeySuffix(clean), envKeySuffix(domain)].filter(Boolean)
@@ -301,7 +308,7 @@ function providerSecretForEmail(provider: ApiSendProvider, email: string): strin
     }
   }
 
-  return providerSecret(provider)
+  return ''
 }
 
 function firstConfiguredSendingEmail(): string {
@@ -408,7 +415,7 @@ function providerFailureNeedsFallback(provider: SendProvider, err: unknown): boo
 function fallbackSenderAccounts(account: SenderAccount): SenderAccount[] {
   if (account.provider !== 'brevo' && account.provider !== 'resend') return []
 
-  const list = configuredApiProviders(account.user)
+  const apiFallbacks = configuredApiProviders(account.user)
     .filter((provider) => provider !== account.provider)
     .sort((a, b) => providerDailyLimit(b) - providerDailyLimit(a))
     .map((provider) => accountForProvider({ provider, user: account.user }))
@@ -417,15 +424,23 @@ function fallbackSenderAccounts(account: SenderAccount): SenderAccount[] {
   // Append SMTP fallback if credentials exist in SMTP_ACCOUNTS or main env vars
   const matchedSmtp = SMTP_ACCOUNTS.find((a) => cleanEmail(a.user) === cleanEmail(account.user))
   const smtpPass = matchedSmtp?.pass || process.env.SMTP_PASS
-  if (smtpPass) {
-    list.push({
-      user: account.user,
-      pass: smtpPass,
-      provider: 'smtp',
-    })
+  const smtpFallback = smtpPass
+    ? {
+        user: account.user,
+        pass: smtpPass,
+        provider: 'smtp' as const,
+      }
+    : null
+
+  if (
+    account.provider === 'brevo' &&
+    smtpFallback &&
+    !domainSpecificProviderSecret('resend', account.user)
+  ) {
+    return [smtpFallback, ...apiFallbacks]
   }
 
-  return list
+  return [...apiFallbacks, ...(smtpFallback ? [smtpFallback] : [])]
 }
 
 const GLOBAL_RISK_SLOWDOWN_FACTOR = 0.75
@@ -1273,7 +1288,8 @@ async function lookupValidation(email: string): Promise<{ verdict: ValidationVer
 }
 
 async function loadRecipientGuardrailBlockers(job: SendJob): Promise<string[]> {
-  if (!job.contactId) return []
+  const syntaxBlockers = recipientSyntaxBlockers(job.toEmail).map((blocker) => `recipient_${blocker}`)
+  if (!job.contactId) return syntaxBlockers
 
   const res = await db<RecipientGuardrailContact>(
     `SELECT
@@ -1289,7 +1305,7 @@ async function loadRecipientGuardrailBlockers(job: SendJob): Promise<string[]> {
     [job.clientId, job.contactId]
   )
 
-  return recipientApprovalBlockers(res.rows[0] ?? null, job.toEmail)
+  return Array.from(new Set([...syntaxBlockers, ...recipientApprovalBlockers(res.rows[0] ?? null, job.toEmail)]))
 }
 
 async function handleTracking(event: TrackingIngestEvent) {

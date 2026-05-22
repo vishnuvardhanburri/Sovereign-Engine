@@ -32,7 +32,47 @@ function cleanEmail(raw: unknown): string {
 }
 
 function isEmail(raw: unknown): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail(raw))
+  return recipientSyntaxBlockers(raw).length === 0
+}
+
+export function recipientSyntaxBlockers(raw: unknown): string[] {
+  const email = cleanEmail(raw)
+  const blockers: string[] = []
+
+  if (!email) return ['empty_email']
+  if (email.length > 254) blockers.push('email_too_long')
+  if (!/^[\x21-\x7E]+$/.test(email)) blockers.push('non_ascii_email')
+
+  const parts = email.split('@')
+  if (parts.length !== 2) blockers.push('invalid_at_count')
+
+  const [local = '', domain = ''] = parts
+  if (!local || !domain) blockers.push('missing_local_or_domain')
+  if (local.length > 64) blockers.push('local_part_too_long')
+  if (domain.length > 253) blockers.push('domain_too_long')
+  if (local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
+    blockers.push('invalid_local_dots')
+  }
+  if (/(^|[._-])u003[ce]/i.test(local) || /(^|[._-])u0026/i.test(local)) {
+    blockers.push('escaped_html_email_artifact')
+  }
+  if (/u00[0-9a-f]{2}/i.test(local) || />|<|&amp;/.test(local)) {
+    blockers.push('escaped_html_email_artifact')
+  }
+  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
+    blockers.push('invalid_domain_dots')
+  }
+  if (
+    !/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/.test(email)
+  ) {
+    blockers.push('invalid_business_email_syntax')
+  }
+
+  if (domain.split('.').some((label) => label.length > 63)) {
+    blockers.push('domain_label_too_long')
+  }
+
+  return Array.from(new Set(blockers))
 }
 
 export function hasExactPublicEmailEvidence(value: unknown): boolean {
@@ -60,7 +100,8 @@ export function recipientApprovalBlockers(
   const hasExactEvidence = hasExactPublicEmailEvidence(customFields.email_evidence)
   const isValid = verificationStatus === 'valid'
 
-  if (!isEmail(email)) blockers.push('invalid_email')
+  const syntaxBlockers = recipientSyntaxBlockers(email)
+  if (syntaxBlockers.length > 0) blockers.push('invalid_email', ...syntaxBlockers)
   if (jobEmail && email !== jobEmail) blockers.push('recipient_contact_mismatch')
   if (contact.status && contact.status !== 'active') blockers.push('inactive_contact')
   if (contact.bounced_at) blockers.push('previously_bounced')
