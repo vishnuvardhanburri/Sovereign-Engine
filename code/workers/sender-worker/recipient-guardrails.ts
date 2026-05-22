@@ -79,10 +79,36 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   const normalized = String(value ?? '').trim().toLowerCase()
   return [
     'exact_public_email',
+    'hunter_domain_search',
+    'maps_public_business_domain_match',
     'public_page_email_match',
     'public_mailto_match',
     'provider_validated',
   ].includes(normalized)
+}
+
+function asString(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function allowUnknownProviderValidation(): boolean {
+  return envBool(
+    'DAILY_OUTBOUND_ALLOW_UNKNOWN_VALIDATION',
+    envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
+  )
+}
+
+function hasAcceptedProviderValidationFallback(customFields: Record<string, unknown>): boolean {
+  if (!allowUnknownProviderValidation()) return false
+  const provider = asString(customFields.email_validation_provider)
+  const verdict = asString(customFields.email_validation_verdict)
+  return Boolean(provider) && ['unknown', 'risky'].includes(verdict)
 }
 
 export function recipientApprovalBlockers(
@@ -98,6 +124,7 @@ export function recipientApprovalBlockers(
   const verificationStatus = String(contact.verification_status ?? 'pending').trim().toLowerCase()
   const customFields = contact.custom_fields ?? {}
   const hasExactEvidence = hasExactPublicEmailEvidence(customFields.email_evidence)
+  const acceptedProviderFallback = hasAcceptedProviderValidationFallback(customFields)
   const isValid = verificationStatus === 'valid'
 
   const syntaxBlockers = recipientSyntaxBlockers(email)
@@ -108,7 +135,7 @@ export function recipientApprovalBlockers(
   if (contact.unsubscribed_at) blockers.push('unsubscribed')
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) blockers.push(`verification_${verificationStatus}`)
 
-  if (VALIDATION_REQUIRED_PREFIXES.has(prefix) && !isValid && !hasExactEvidence) {
+  if (VALIDATION_REQUIRED_PREFIXES.has(prefix) && !isValid && !hasExactEvidence && !acceptedProviderFallback) {
     blockers.push('generic_inbox_requires_email_validation_or_exact_evidence')
   }
 
