@@ -285,6 +285,26 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   ].includes(normalized)
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function allowUnknownProviderValidation(): boolean {
+  return envBool(
+    'DAILY_OUTBOUND_ALLOW_UNKNOWN_VALIDATION',
+    envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
+  )
+}
+
+function hasAcceptedProviderValidationFallback(customFields: Record<string, unknown>): boolean {
+  if (!allowUnknownProviderValidation()) return false
+  const provider = asString(customFields.email_validation_provider)
+  const verdict = asString(customFields.email_validation_verdict)
+  return Boolean(provider) && ['unknown', 'risky'].includes(verdict)
+}
+
 export function prospectNeedsExactPublicEmailEvidence(
   contact: ProspectResearchContact
 ): boolean {
@@ -327,7 +347,8 @@ export function approvedContactQueueBlockers(
   if (
     VALIDATION_REQUIRED_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
-    !hasExactPublicEmailEvidence(customFields.email_evidence)
+    !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedProviderValidationFallback(customFields)
   ) {
     blockers.push('generic_inbox_requires_email_validation')
   }
@@ -597,7 +618,8 @@ export function scoreProspectForResearchApproval(
   if (
     VALIDATION_REQUIRED_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
-    !hasExactPublicEmailEvidence(customFields.email_evidence)
+    !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedProviderValidationFallback(customFields)
   ) {
     blockers.push('generic_inbox_requires_email_validation')
   }
@@ -681,6 +703,10 @@ export function scoreProspectForResearchApproval(
   } else if (verificationStatus === 'catch_all' || verificationStatus === 'unknown') {
     score += 2
     reasons.push(`verification_${verificationStatus}`)
+  }
+  if (hasAcceptedProviderValidationFallback(customFields)) {
+    score += 4
+    reasons.push(`provider_validation_${asString(customFields.email_validation_verdict)}_accepted`)
   }
 
   const approved = blockers.length === 0 && score >= threshold
