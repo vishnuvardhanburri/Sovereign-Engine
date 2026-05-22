@@ -312,7 +312,6 @@ export default function SentMailPage() {
                 ) : items.length ? (
                   items.map((x) => {
                     const dt = new Date(x.createdAt)
-                    const hasBody = Boolean((x.bodyText || '').trim() || (x.bodyHtml || '').trim())
                     return (
                       <TableRow key={x.id} className="align-middle">
                         <TableCell className="whitespace-nowrap">
@@ -330,7 +329,6 @@ export default function SentMailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={!hasBody}
                             onClick={() => {
                               setSelected(x)
                               setBodyOpen(true)
@@ -372,6 +370,8 @@ export default function SentMailPage() {
                 <div><span className="text-muted-foreground">To:</span> {selected.toEmail || '-'}</div>
                 <div><span className="text-muted-foreground">From:</span> {selected.fromEmail || '-'}</div>
                 <div className="truncate"><span className="text-muted-foreground">Subject:</span> {selected.subject || '-'}</div>
+                <div><span className="text-muted-foreground">Status:</span> {selected.type}</div>
+                <div><span className="text-muted-foreground">Time:</span> {new Date(selected.createdAt).toLocaleString()}</div>
                 {selected.provider ? (
                   <div><span className="text-muted-foreground">Provider:</span> {selected.provider}</div>
                 ) : null}
@@ -382,13 +382,19 @@ export default function SentMailPage() {
                   <div className="text-amber-600 break-words"><span className="text-muted-foreground">Error:</span> {selected.error}</div>
                 ) : null}
               </div>
-              <pre className="whitespace-pre-wrap text-sm bg-muted/40 border rounded-md p-3">
-                {selected.bodyText?.trim()
-                  ? selected.bodyText
-                  : selected.bodyHtml?.trim()
-                    ? selected.bodyHtml
-                    : 'No body captured for this event.'}
-              </pre>
+              {selected.bodyText?.trim() || selected.bodyHtml?.trim() ? (
+                <pre className="whitespace-pre-wrap text-sm bg-muted/40 border rounded-md p-3">
+                  {selected.bodyText?.trim() ? selected.bodyText : selected.bodyHtml}
+                </pre>
+              ) : (
+                <div className="text-sm bg-muted/40 border rounded-md p-3 space-y-2">
+                  <p className="font-medium">Body not retained</p>
+                  <p className="text-muted-foreground">
+                    This event keeps delivery proof only. Full email bodies are redacted by the outbound
+                    retention policy so the database does not store message content.
+                  </p>
+                </div>
+              )}
             </div>
           ) : null}
         </DialogContent>
