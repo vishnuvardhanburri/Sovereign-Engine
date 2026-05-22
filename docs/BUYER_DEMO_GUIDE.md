@@ -93,7 +93,7 @@ SECRET_MASTER_KEY='master_key_012345678901234567890123456789' \
 ZEROBOUNCE_API_KEY='zb_live_0123456789abcdef' \
 SMTP_HOST='smtp.sendgrid.net' \
 SMTP_USER='apikey' \
-SMTP_PASS='SG.live-production-token-0123456789' \
+SMTP_PASS='replace-with-sendgrid-api-key' \
 MOCK_SMTP='false' \
 SEND_ALLOW_UNKNOWN_VALIDATION='false' \
 pnpm prod:check:real

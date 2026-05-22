@@ -49,7 +49,7 @@ services:
       - key: SMTP_FROM_EMAIL
         value: hello@vishnulabs.com
       - key: SMTP_ACCOUNTS
-        sync: false   # set in Render dashboard: [{"user":"hello@vishnulabs.com","pass":"Vishnunani2005@21"},{"user":"hello@vishnuvardhanburri.in","pass":"Vishnunani2005@21"}]
+        sync: false   # set in Render dashboard only; never commit mailbox passwords
       - key: SENDER_PHYSICAL_ADDRESS
         value: "Xavira Tech Labs, India"
       - key: BOOTSTRAP_SENDING_DOMAIN
@@ -378,7 +378,7 @@ services:
         value: "30000"
       # Poll both sending inboxes for replies
       - key: IMAP_ACCOUNTS
-        sync: false   # [{"user":"hello@vishnulabs.com","pass":"Vishnunani2005@21"},{"user":"hello@vishnuvardhanburri.in","pass":"Vishnunani2005@21"}]
+        sync: false   # set in Render dashboard only; never commit mailbox passwords
       - key: SMTP_ACCOUNTS
         sync: false   # same JSON — used to identify our own outbound addresses
 

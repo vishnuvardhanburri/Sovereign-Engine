@@ -1,6 +1,6 @@
 # Scaling to 100k+ Daily Outbound Sends Safely: Architecture & Moat
 
-This document details how Sovereign Engine scales outbound capacity from hundreds of emails daily to an enterprise-grade **100k+/day throughput** while maintaining deliverability, protecting domain reputations, and bypassing ISP spam filters.
+This document details how Sovereign Engine scales outbound capacity from hundreds of emails daily to an enterprise-grade **100k+/day throughput** while maintaining deliverability, protecting domain reputations, and working with provider filtering and compliance controls.
 
 ---
 
