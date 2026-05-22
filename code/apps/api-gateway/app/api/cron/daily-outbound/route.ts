@@ -1425,6 +1425,30 @@ async function runFollowupsStage(input: {
   dryRun: boolean
 }): Promise<StageResult> {
   try {
+    const tableCheck = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public'
+           AND table_name = 'sequence_executions'
+       ) AS exists`
+    )
+    const hasSequenceExecutions = Boolean(tableCheck.rows[0]?.exists)
+    if (!hasSequenceExecutions) {
+      return {
+        stage: 'run_followups',
+        ok: true,
+        status: 204,
+        data: {
+          processed: 0,
+          emailsSent: 0,
+          sequencesCompleted: 0,
+          errorsCount: 0,
+          skipped: 'sequence_executions table is not installed yet',
+        },
+      }
+    }
+
     if (input.dryRun) {
       const dueCountRes = await query<{ cnt: string }>(
         `SELECT COUNT(*) as cnt

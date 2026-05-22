@@ -79,6 +79,17 @@ function providerSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY') {
   return secretFromMisplacedProviderEnv(name)
 }
 
+function envBool(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function isBrevoDisabled(): boolean {
+  if (envBool('BREVO_ENABLED', false)) return false
+  return envBool('BREVO_DISABLED', true)
+}
+
 function providerLabel(raw: string) {
   const value = raw.trim().toLowerCase()
   if (!value) return null
@@ -90,14 +101,23 @@ function providerLabel(raw: string) {
 
 function emailProviderDiagnostic() {
   const explicitProvider = providerLabel(String(process.env.EMAIL_PROVIDER || process.env.SEND_PROVIDER || ''))
+  const brevoDisabled = isBrevoDisabled()
   const hasBrevoKey = Boolean(providerSecret('BREVO_API_KEY'))
   const hasResendKey = Boolean(providerSecret('RESEND_API_KEY'))
-  const inferredProvider = hasBrevoKey ? 'brevo' : hasResendKey ? 'resend' : 'smtp'
+  const inferredProvider = !brevoDisabled && hasBrevoKey ? 'brevo' : hasResendKey ? 'resend' : 'smtp'
   const selectedProvider =
     explicitProvider === 'brevo' || explicitProvider === 'resend' || explicitProvider === 'smtp'
-      ? explicitProvider
+      ? explicitProvider === 'brevo' && brevoDisabled
+        ? hasResendKey
+          ? 'resend'
+          : 'smtp'
+        : explicitProvider
       : explicitProvider === 'brevo_key_misplaced'
-        ? 'brevo'
+        ? brevoDisabled
+          ? hasResendKey
+            ? 'resend'
+            : 'smtp'
+          : 'brevo'
         : explicitProvider === 'resend_key_misplaced'
           ? 'resend'
       : inferredProvider
@@ -106,6 +126,7 @@ function emailProviderDiagnostic() {
     selected_provider: selectedProvider,
     explicit_provider: explicitProvider,
     inferred_provider: inferredProvider,
+    brevo_disabled: brevoDisabled,
     has_brevo_key: hasBrevoKey,
     has_resend_key: hasResendKey,
     config_warning:

@@ -168,7 +168,14 @@ function emailDomain(raw: unknown): string {
   return cleanEmail(raw).split('@')[1] ?? ''
 }
 
+function isBrevoDisabled(): boolean {
+  if (envBool('BREVO_ENABLED', false)) return false
+  return envBool('BREVO_DISABLED', true)
+}
+
 function providerDailyLimit(provider: ApiSendProvider): number {
+  if (provider === 'brevo' && isBrevoDisabled()) return 0
+
   const names =
     provider === 'brevo'
       ? ['BREVO_DAILY_LIMIT', 'DAILY_BREVO_LIMIT', 'SENDINBLUE_DAILY_LIMIT']
@@ -179,7 +186,7 @@ function providerDailyLimit(provider: ApiSendProvider): number {
     if (Number.isFinite(value)) return clamp(value, 0, 100_000)
   }
 
-  return provider === 'brevo' ? 300 : 100
+  return provider === 'brevo' ? 300 : 200
 }
 
 function parseProviderMode(rawValue: string): SendProvider | 'auto' | null {
@@ -220,7 +227,7 @@ function configuredApiProviders(email: string): ApiSendProvider[] {
     (provider) =>
       providerDailyLimit(provider) > 0 &&
       Boolean(providerSecretForEmail(provider, email)) &&
-      !(provider === 'brevo' && isBrevoBlockedDomain(email))
+      !(provider === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(email)))
   )
 }
 
@@ -246,7 +253,7 @@ function weightedProvider(idemKey: string, providers: ApiSendProvider[]): ApiSen
 function providerModeForEmail(idemKey: string, email: string): SendProvider {
   const explicit = explicitProviderMode()
   if (explicit && explicit !== 'auto') {
-    if (explicit === 'brevo' && isBrevoBlockedDomain(email)) {
+    if (explicit === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(email))) {
       const providers = configuredApiProviders(email)
       if (providers.length > 1) return weightedProvider(idemKey, providers)
       if (providers.length === 1) return providers[0]!
@@ -262,6 +269,8 @@ function providerModeForEmail(idemKey: string, email: string): SendProvider {
 }
 
 function providerSecret(provider: 'brevo' | 'resend'): string {
+  if (provider === 'brevo' && isBrevoDisabled()) return ''
+
   const aliases =
     provider === 'brevo'
       ? ['BREVO_API_KEY', 'BREVO_KEY', 'SENDINBLUE_API_KEY', 'SENDINBLUE_KEY', 'brevo_api_key', 'brevo']
@@ -284,7 +293,7 @@ function envKeySuffix(value: string): string {
 }
 
 function providerSecretForEmail(provider: ApiSendProvider, email: string): string {
-  if (provider === 'brevo' && isBrevoBlockedDomain(email)) return ''
+  if (provider === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(email))) return ''
 
   const specific = domainSpecificProviderSecret(provider, email)
   if (specific) return specific
@@ -2108,6 +2117,9 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             fromAddress = String(account.user).toLowerCase()
 
             const isBrevoHost = SMTP_HOST.toLowerCase().includes('brevo') || SMTP_HOST.toLowerCase().includes('sendinblue')
+            if (isBrevoDisabled() && isBrevoHost && account.provider === 'smtp') {
+              throw new Error('retry_later:brevo_disabled')
+            }
             if (isBrevoBlockedDomain(fromAddress) && isBrevoHost) {
               throw new Error('retry_later:brevo_blocked_for_domain')
             }

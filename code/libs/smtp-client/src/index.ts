@@ -133,12 +133,25 @@ function providerSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): string {
   return secretFromMisplacedProviderEnv(name)
 }
 
+function envBool(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (value === undefined || value === null || value === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function isBrevoDisabled(): boolean {
+  if (envBool('BREVO_ENABLED', false)) return false
+  return envBool('BREVO_DISABLED', true)
+}
+
 function hasSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): boolean {
+  if (name === 'BREVO_API_KEY' && isBrevoDisabled()) return false
   return Boolean(providerSecret(name))
 }
 
 function providerMode(config?: SmtpConfig): 'smtp' | 'brevo' | 'resend' {
   if (config?.provider === 'smtp' || config?.provider === 'brevo' || config?.provider === 'resend') {
+    if (config.provider === 'brevo' && isBrevoDisabled()) return hasSecret('RESEND_API_KEY') ? 'resend' : 'smtp'
     return config.provider
   }
 
@@ -147,9 +160,12 @@ function providerMode(config?: SmtpConfig): 'smtp' | 'brevo' | 'resend' {
   const mode = String(explicitMode || inferredMode)
     .trim()
     .toLowerCase()
-  if (mode.includes('brevo_api_key=') || mode.startsWith('xsmtpsib-')) return 'brevo'
+  if (mode.includes('brevo_api_key=') || mode.startsWith('xsmtpsib-')) {
+    return isBrevoDisabled() ? (hasSecret('RESEND_API_KEY') ? 'resend' : 'smtp') : 'brevo'
+  }
   if (mode.includes('resend_api_key=') || mode.startsWith('re_')) return 'resend'
-  return mode === 'brevo' || mode === 'resend' ? mode : 'smtp'
+  if (mode === 'brevo') return isBrevoDisabled() ? (hasSecret('RESEND_API_KEY') ? 'resend' : 'smtp') : 'brevo'
+  return mode === 'resend' ? mode : 'smtp'
 }
 
 function reqSecret(name: 'BREVO_API_KEY' | 'RESEND_API_KEY'): string {

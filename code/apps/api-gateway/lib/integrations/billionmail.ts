@@ -53,6 +53,11 @@ function envBool(name: string, fallback = false): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+function isBrevoDisabled(): boolean {
+  if (envBool('BREVO_ENABLED', false)) return false
+  return envBool('BREVO_DISABLED', true)
+}
+
 function envInt(names: string[], fallback: number, min: number, max: number): number {
   for (const name of names) {
     const parsed = Number(process.env[name])
@@ -65,9 +70,10 @@ function envInt(names: string[], fallback: number, min: number, max: number): nu
 
 function providerDailyLimit(provider: ApiProvider): number {
   if (provider === 'brevo') {
+    if (isBrevoDisabled()) return 0
     return envInt(['BREVO_DAILY_LIMIT', 'DAILY_BREVO_LIMIT', 'SENDINBLUE_DAILY_LIMIT'], 300, 0, 100_000)
   }
-  return envInt(['RESEND_DAILY_LIMIT', 'DAILY_RESEND_LIMIT'], 100, 0, 100_000)
+  return envInt(['RESEND_DAILY_LIMIT', 'DAILY_RESEND_LIMIT'], 200, 0, 100_000)
 }
 
 function stableHash(value: string): number {
@@ -87,7 +93,7 @@ function secretFromMisplacedProviderEnv(provider: Provider): string {
 }
 
 function providerSecret(provider: ApiProvider, fromEmail: string): string {
-  if (provider === 'brevo' && isBrevoBlockedDomain(fromEmail)) return ''
+  if (provider === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(fromEmail))) return ''
 
   const slug = domainSlug(parseAddress(fromEmail).email)
   const domainAliases =
@@ -121,7 +127,7 @@ function configuredApiProviders(fromEmail: string): ApiProvider[] {
     return (
       providerDailyLimit(provider) > 0 &&
       Boolean(providerSecret(provider, fromEmail)) &&
-      !(provider === 'brevo' && isBrevoBlockedDomain(fromEmail))
+      !(provider === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(fromEmail)))
     )
   })
 }
@@ -177,7 +183,7 @@ function selectedProvider(request: SendMessageRequest, to: string[]): Provider {
   }
 
   if (explicitProvider && explicitProvider !== 'auto') {
-    if (explicitProvider === 'brevo' && isBrevoBlockedDomain(fromEmail)) {
+    if (explicitProvider === 'brevo' && (isBrevoDisabled() || isBrevoBlockedDomain(fromEmail))) {
       if (apiProviders.length === 1) return apiProviders[0]!
       if (apiProviders.length > 1) return chooseWeightedProvider({ request, to, providers: apiProviders })
       return 'smtp'
@@ -271,8 +277,13 @@ function getTransporter() {
     return transporter
   }
 
+  const smtpHost = appEnv.smtpHost()
+  if (isBrevoDisabled() && /brevo|sendinblue/i.test(smtpHost)) {
+    throw new Error('Brevo SMTP is disabled. Configure RESEND_API_KEY or a non-Brevo SMTP host.')
+  }
+
   transporter = nodemailer.createTransport({
-    host: appEnv.smtpHost(),
+    host: smtpHost,
     port: appEnv.smtpPort(),
     secure: appEnv.smtpSecure(),
     auth: {
