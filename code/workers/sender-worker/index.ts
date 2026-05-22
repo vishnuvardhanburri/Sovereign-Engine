@@ -50,6 +50,7 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 const SEND_ALLOW_UNKNOWN_VALIDATION = envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
+const OUTBOUND_STORE_EVENT_BODIES = envBool('OUTBOUND_STORE_EVENT_BODIES', false)
 const MOCK_SMTP = envBool('MOCK_SMTP', false)
 const MOCK_SMTP_FASTLANE = MOCK_SMTP && envBool('MOCK_SMTP_FASTLANE', false)
 
@@ -88,6 +89,14 @@ function stableIndex(key: string, mod: number) {
   const hex = crypto.createHash('sha256').update(String(key)).digest('hex')
   const n = parseInt(hex.slice(0, 8), 16)
   return n % mod
+}
+
+function eventBodyMetadata(text: unknown, html: unknown): Record<string, string> {
+  if (!OUTBOUND_STORE_EVENT_BODIES) return {}
+  return {
+    body_text: truncateText(text, 20_000),
+    body_html: truncateText(html, 40_000),
+  }
 }
 
 function intEnv(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER) {
@@ -1666,8 +1675,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           guardrail_blockers: recipientGuardrailBlockers,
           to_email: normalizedTo,
           subject: outboundSubject,
-          body_text: truncateText(outboundText, 20_000),
-          body_html: truncateText(outboundHtml, 40_000),
+          ...eventBodyMetadata(outboundText, outboundHtml),
           idempotency_key: idemKey,
         },
       })
@@ -2246,8 +2254,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         to_email: normalizedTo,
         from_email: fromAddress,
         subject: outboundSubject,
-        body_text: truncateText(outboundText, 20_000),
-        body_html: truncateText(outboundHtml, 40_000),
+        ...eventBodyMetadata(outboundText, outboundHtml),
         idempotency_key: idemKey,
         provider: recipientProvider,
         content_mutation: mutationResult
@@ -2414,8 +2421,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           to_email: String(job.toEmail || '').trim().toLowerCase(),
           from_email: fromAddress || selectedIdentityEmailForRun || cleanEmail(selectSenderAccount(idemKey).user),
           subject: outboundSubject,
-          body_text: truncateText(outboundText, 20_000),
-          body_html: truncateText(outboundHtml, 40_000),
+          ...eventBodyMetadata(outboundText, outboundHtml),
           provider: detectProvider(job.toEmail),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,

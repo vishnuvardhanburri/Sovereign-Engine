@@ -76,6 +76,11 @@ export type SystemApprovalWindow = {
   policy: 'fallback_review_window' | 'domain_capacity_health_window'
 }
 
+function capacityHealthWindowSql(): string {
+  const raw = process.env.DOMAIN_CAPACITY_HEALTH_WINDOW ?? 'today'
+  return raw.trim().toLowerCase() === '24h' ? "NOW() - INTERVAL '24 hours'" : 'CURRENT_DATE'
+}
+
 export async function resolveSystemApprovalWindow(clientId: number): Promise<SystemApprovalWindow> {
   const row = await query<{
     active_domains: string
@@ -86,15 +91,30 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
     average_health_score: string
     max_bounce_rate: string
   }>(
-    `WITH domain_base AS (
+    `WITH recent_events AS (
+       SELECT
+         domain_id,
+         COUNT(*) FILTER (WHERE event_type = 'sent') AS recent_sent_count,
+         COUNT(*) FILTER (WHERE event_type = 'bounce') AS recent_bounce_count
+       FROM events
+       WHERE client_id = $1
+         AND domain_id IS NOT NULL
+         AND created_at >= ${capacityHealthWindowSql()}
+         AND event_type IN ('sent', 'bounce')
+       GROUP BY domain_id
+     ),
+     domain_base AS (
        SELECT
          d.*,
-         GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8)))) AS computed_health_score,
+         COALESCE(re.recent_sent_count, 0) AS capacity_sent_count,
+         COALESCE(re.recent_bounce_count, 0) AS capacity_bounce_count,
+         GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(re.recent_bounce_count, 0)::numeric / GREATEST(COALESCE(re.recent_sent_count, 0) + 25, 1)) * 100 * 8)))) AS computed_health_score,
          CASE
-           WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100
+           WHEN COALESCE(re.recent_sent_count, 0) > 0 THEN (COALESCE(re.recent_bounce_count, 0)::numeric / NULLIF(re.recent_sent_count, 0)) * 100
            ELSE 0
          END AS raw_bounce_rate
        FROM domains d
+       LEFT JOIN recent_events re ON re.domain_id = d.id
        WHERE d.client_id = $1
          AND d.status = 'active'
          AND d.paused = false
@@ -102,7 +122,7 @@ export async function resolveSystemApprovalWindow(clientId: number): Promise<Sys
      domain_rows AS (
        SELECT
          *,
-         (((COALESCE(sent_count, 0) >= 20) OR (COALESCE(bounce_count, 0) >= 3)) AND raw_bounce_rate > 5) AS proven_bounce_pressure,
+         (((COALESCE(capacity_sent_count, 0) >= 20) OR (COALESCE(capacity_bounce_count, 0) >= 3)) AND raw_bounce_rate > 5) AS proven_bounce_pressure,
          (
            COALESCE(daily_cap, 0) > 0
            AND GREATEST(COALESCE(daily_cap, daily_limit) - sent_today, 0) > 0

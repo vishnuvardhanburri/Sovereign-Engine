@@ -25,6 +25,7 @@ import {
 import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
+import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
 import {
   buildSovereignCopyForLead,
   balanceSovereignOfferMix,
@@ -42,6 +43,7 @@ type StageResult = {
     | 'research_approval'
     | 'queue_outbound'
     | 'run_followups'
+    | 'event_retention'
   ok: boolean
   status: number
   skipped?: string
@@ -363,7 +365,30 @@ function compactStage(stage: StageResult): StageResult {
       emailsSent: getNumericField(data, 'emailsSent'),
       sequencesCompleted: getNumericField(data, 'sequencesCompleted'),
       errorsCount: getNumericField(data, 'errorsCount'),
+      brevoFailuresDeleted: getNumericField(data, 'brevoFailuresDeleted'),
+      staleGuardrailFailuresDeleted: getNumericField(data, 'staleGuardrailFailuresDeleted'),
+      staleFailuresDeleted: getNumericField(data, 'staleFailuresDeleted'),
+      bodiesRedacted: getNumericField(data, 'bodiesRedacted'),
     },
+  }
+}
+
+async function runEventRetentionStage(clientId: number): Promise<StageResult> {
+  try {
+    const data = await runOutboundEventRetention(clientId)
+    return {
+      stage: 'event_retention',
+      ok: true,
+      status: 200,
+      data,
+    }
+  } catch (error) {
+    return {
+      stage: 'event_retention',
+      ok: false,
+      status: 500,
+      error: safeError(error),
+    }
   }
 }
 
@@ -1707,6 +1732,8 @@ export async function GET(request: NextRequest) {
       })
     )
 
+    stages.push(await runEventRetentionStage(plan.clientId))
+
     const queuedStage = stages.find((stage) => stage.stage === 'queue_outbound')
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
@@ -1741,6 +1768,14 @@ export async function GET(request: NextRequest) {
     const followupsSent = getNumericField(followupsStage?.data, 'emailsSent')
     const followupsCompleted = getNumericField(followupsStage?.data, 'sequencesCompleted')
     const followupsErrors = getNumericField(followupsStage?.data, 'errorsCount')
+    const retentionStage = stages.find((stage) => stage.stage === 'event_retention')
+    const brevoFailuresDeleted = getNumericField(retentionStage?.data, 'brevoFailuresDeleted')
+    const staleGuardrailFailuresDeleted = getNumericField(
+      retentionStage?.data,
+      'staleGuardrailFailuresDeleted'
+    )
+    const staleFailuresDeleted = getNumericField(retentionStage?.data, 'staleFailuresDeleted')
+    const eventBodiesRedacted = getNumericField(retentionStage?.data, 'bodiesRedacted')
 
     const hardFailures = stages.filter(
       (stage) =>
@@ -1808,6 +1843,10 @@ export async function GET(request: NextRequest) {
         followupsSent,
         followupsCompleted,
         followupsErrors,
+        brevoFailuresDeleted,
+        staleGuardrailFailuresDeleted,
+        staleFailuresDeleted,
+        eventBodiesRedacted,
         hardFailures: hardFailures.length,
         targetDailyVolume: capacityDiagnosis.targetDailyVolume,
         capacityRemaining: capacityDiagnosis.currentRemainingCapacity,

@@ -13,6 +13,8 @@ type DomainCapacityRow = {
   sent_today: string | number | null
   sent_count: string | number | null
   bounce_count: string | number | null
+  capacity_sent_count: string | number | null
+  capacity_bounce_count: string | number | null
   health_score: string | number | null
   computed_health_score: string | number | null
   raw_bounce_rate: string | number | null
@@ -74,6 +76,11 @@ function unique(values: string[]) {
   return Array.from(new Set(values))
 }
 
+function capacityHealthWindowSql(): string {
+  const raw = process.env.DOMAIN_CAPACITY_HEALTH_WINDOW ?? 'today'
+  return raw.trim().toLowerCase() === '24h' ? "NOW() - INTERVAL '24 hours'" : 'CURRENT_DATE'
+}
+
 function diagnoseDomain(row: DomainCapacityRow): DomainCapacityDiagnostic {
   const activeSenderIdentities = Math.max(0, Math.trunc(toNumber(row.active_identity_count)))
   const sentToday = Math.max(0, Math.trunc(toNumber(row.sent_today)))
@@ -101,7 +108,10 @@ function diagnoseDomain(row: DomainCapacityRow): DomainCapacityDiagnostic {
   if (domainRemainingCapacity <= 0) blockers.push('domain_daily_capacity_used')
   if (identityRemainingCapacity <= 0) blockers.push('identity_daily_capacity_used')
   if (computedHealthScore < 30) blockers.push('domain_health_below_recovery_floor')
-  if ((toNumber(row.sent_count) >= 20 || toNumber(row.bounce_count) >= 3) && bounceRate > 5) {
+  if (
+    (toNumber(row.capacity_sent_count) >= 20 || toNumber(row.capacity_bounce_count) >= 3) &&
+    bounceRate > 5
+  ) {
     blockers.push(
       recoveryLaneEligible ? 'recovery_lane_bounce_pressure' : 'proven_bounce_pressure_gt_5_percent'
     )
@@ -209,7 +219,19 @@ export async function getSendingCapacityDiagnosis(
   )
 
   const rows = await query<DomainCapacityRow>(
-    `WITH domain_rows AS (
+    `WITH recent_events AS (
+       SELECT
+         domain_id,
+         COUNT(*) FILTER (WHERE event_type = 'sent') AS recent_sent_count,
+         COUNT(*) FILTER (WHERE event_type = 'bounce') AS recent_bounce_count
+       FROM events
+       WHERE client_id = $1
+         AND domain_id IS NOT NULL
+         AND created_at >= ${capacityHealthWindowSql()}
+         AND event_type IN ('sent', 'bounce')
+       GROUP BY domain_id
+     ),
+     domain_rows AS (
        SELECT
          d.id,
          d.domain,
@@ -223,20 +245,23 @@ export async function getSendingCapacityDiagnosis(
          COALESCE(d.sent_today, 0) AS sent_today,
          COALESCE(d.sent_count, 0) AS sent_count,
          COALESCE(d.bounce_count, 0) AS bounce_count,
+         COALESCE(re.recent_sent_count, 0) AS capacity_sent_count,
+         COALESCE(re.recent_bounce_count, 0) AS capacity_bounce_count,
          COALESCE(d.health_score, 0) AS health_score,
          GREATEST(
            0,
            LEAST(
              100,
-             ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8))
+             ROUND(100 - ((COALESCE(re.recent_bounce_count, 0)::numeric / GREATEST(COALESCE(re.recent_sent_count, 0) + 25, 1)) * 100 * 8))
            )
          ) AS computed_health_score,
          CASE
-           WHEN COALESCE(d.sent_count, 0) > 0
-             THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100
+           WHEN COALESCE(re.recent_sent_count, 0) > 0
+             THEN (COALESCE(re.recent_bounce_count, 0)::numeric / NULLIF(re.recent_sent_count, 0)) * 100
            ELSE 0
          END AS raw_bounce_rate
        FROM domains d
+       LEFT JOIN recent_events re ON re.domain_id = d.id
        WHERE d.client_id = $1
      ),
      identity_rows AS (

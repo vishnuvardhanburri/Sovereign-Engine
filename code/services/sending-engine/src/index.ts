@@ -21,8 +21,12 @@ function envInteger(name: string, fallback: number, min: number, max: number): n
 export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lane): Promise<SendIdentitySelection | null> {
   // Adapter-mode implementation: reuse the exact SQL selection policy we already used in api-gateway/lib/delivery/load-balancer.ts,
   // but keep this service independent of apps/*.
-  const computedHealthSql = `GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(d.bounce_count, 0)::numeric / GREATEST(COALESCE(d.sent_count, 0) + 25, 1)) * 100 * 8))))`
-  const rawBounceSql = `CASE WHEN COALESCE(d.sent_count, 0) > 0 THEN (COALESCE(d.bounce_count, 0)::numeric / NULLIF(d.sent_count, 0)) * 100 ELSE 0 END`
+  const capacityHealthWindow =
+    String(process.env.DOMAIN_CAPACITY_HEALTH_WINDOW ?? 'today').trim().toLowerCase() === '24h'
+      ? "NOW() - INTERVAL '24 hours'"
+      : 'CURRENT_DATE'
+  const computedHealthSql = `GREATEST(0, LEAST(100, ROUND(100 - ((COALESCE(re.recent_bounce_count, 0)::numeric / GREATEST(COALESCE(re.recent_sent_count, 0) + 25, 1)) * 100 * 8))))`
+  const rawBounceSql = `CASE WHEN COALESCE(re.recent_sent_count, 0) > 0 THEN (COALESCE(re.recent_bounce_count, 0)::numeric / NULLIF(re.recent_sent_count, 0)) * 100 ELSE 0 END`
   const hasValidationProvider = Boolean(process.env.ZEROBOUNCE_API_KEY || process.env.HUNTER_API_KEY)
   const recoveryCapMax = hasValidationProvider ? 100 : 3
   const recoveryCap = envInteger(
@@ -53,7 +57,7 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
              AND ${rawBounceSql} <= ${recoveryMaxBounceRate}
            )`
     : ''
-  const provenBounceBlock = `(NOT (((COALESCE(d.sent_count, 0) >= 20) OR (COALESCE(d.bounce_count, 0) >= 3)) AND ${rawBounceSql} > 5)${recoveryBounceException})`
+  const provenBounceBlock = `(NOT (((COALESCE(re.recent_sent_count, 0) >= 20) OR (COALESCE(re.recent_bounce_count, 0) >= 3)) AND ${rawBounceSql} > 5)${recoveryBounceException})`
   const extraDomainFilters =
     lane === 'low_risk'
       ? `AND d.spf_valid = TRUE AND d.dkim_valid = TRUE AND d.dmarc_valid = TRUE
@@ -72,11 +76,24 @@ export async function rotateInbox(deps: SendingDeps, clientId: number, lane: Lan
 
   const res = await deps.db<any>(
     `
+    WITH recent_events AS (
+      SELECT
+        domain_id,
+        COUNT(*) FILTER (WHERE event_type = 'sent') AS recent_sent_count,
+        COUNT(*) FILTER (WHERE event_type = 'bounce') AS recent_bounce_count
+      FROM events
+      WHERE client_id = $1
+        AND domain_id IS NOT NULL
+        AND created_at >= ${capacityHealthWindow}
+        AND event_type IN ('sent', 'bounce')
+      GROUP BY domain_id
+    )
     SELECT
       row_to_json(i.*) AS identity,
       row_to_json(d.*) AS domain
     FROM identities i
     JOIN domains d ON d.id = i.domain_id
+    LEFT JOIN recent_events re ON re.domain_id = d.id
     WHERE i.client_id = $1
       AND d.client_id = $1
       AND i.status = 'active'
