@@ -400,6 +400,27 @@ function compactSentence(value: string, fallback: string): string {
   return sentence.length > 220 ? `${sentence.slice(0, 217).trim()}...` : sentence
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function humanizeReasonForPainLine(reason: string, company: string): string {
+  const withoutCompany = reason
+    .replace(new RegExp(`^${escapeRegExp(company)}\\s+`, 'i'), '')
+    .replace(/^.*because it shows public signals around\s+/i, '')
+    .replace(/^.*because\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.?!]*$/, '')
+
+  if (!withoutCompany) return `${company} is active around outbound or growth`
+  if (/^(appears|looks|seems|runs|serves|works|offers|has|is)\b/i.test(withoutCompany)) {
+    return `${company} ${withoutCompany}`
+  }
+
+  return `${company} shows public signals around ${withoutCompany}`
+}
+
 export function buildSovereignPainLine(lead: SovereignCopyLead): string {
   const company = lead.company || lead.companyDomain || 'your team'
   const reason =
@@ -425,8 +446,9 @@ export function buildSovereignPainLine(lead: SovereignCopyLead): string {
   }
 
   if (reason) {
+    const humanReason = humanizeReasonForPainLine(reason, company)
     return compactSentence(
-      `I noticed ${company} because ${reason}; that is exactly where domain health, follow-up control, and AI data safety can either protect pipeline or quietly leak revenue.`,
+      `I noticed ${humanReason}. That is exactly where domain health, follow-up control, and AI data safety can either protect pipeline or quietly leak revenue.`,
       `I noticed ${company} is working around outbound, where domain health and AI data safety can quietly decide reply quality.`
     )
   }
