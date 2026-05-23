@@ -141,6 +141,7 @@ function emailValidationDiagnostic() {
   const hasZeroBounceKey = Boolean(appEnv.zeroBounceApiKey())
   const hasHunterKey = Boolean(appEnv.hunterApiKey())
   const hasOpenRouterKey = Boolean(appEnv.openRouterApiKey())
+  const hasGeminiKey = Boolean(appEnv.geminiApiKey())
   const hunterFallbackEnabled = isHunterFallbackEnabled()
 
   return {
@@ -149,10 +150,13 @@ function emailValidationDiagnostic() {
     has_hunter_key: hasHunterKey,
     hunter_fallback_enabled: hunterFallbackEnabled,
     owned_validation_enabled: true,
-    ai_copy_provider: hasOpenRouterKey ? 'openrouter' : 'template',
+    ai_copy_provider: hasOpenRouterKey ? 'openrouter' : hasGeminiKey ? 'gemini' : 'template',
     has_openrouter_key: hasOpenRouterKey,
+    has_gemini_key: hasGeminiKey,
     openrouter_copy_enabled:
       hasOpenRouterKey && String(process.env.OUTBOUND_OPENROUTER_COPY || 'true').toLowerCase() !== 'false',
+    gemini_copy_enabled:
+      hasGeminiKey && String(process.env.OUTBOUND_GEMINI_COPY || 'true').toLowerCase() !== 'false',
     guardrail:
       hasZeroBounceKey
         ? 'ZeroBounce validates risky inboxes; owned public-evidence and MX checks stay active. Hunter is optional.'

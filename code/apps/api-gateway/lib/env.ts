@@ -107,6 +107,16 @@ export const appEnv = {
       'openrouter'
     ),
   openRouterModel: () => process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+  geminiApiKey: () =>
+    optionalSecret(
+      'GEMINI_API_KEY',
+      'GOOGLE_GEMINI_API_KEY',
+      'GOOGLE_AI_API_KEY',
+      'GEMINI_KEY',
+      'gemini_api_key',
+      'gemini'
+    ),
+  geminiModel: () => process.env.GEMINI_MODEL || 'gemini-2.0-flash',
   // Optional validators. Production gates require at least one live validator.
   zeroBounceApiKey: () =>
     optionalSecret(

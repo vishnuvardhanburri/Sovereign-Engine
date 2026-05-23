@@ -67,7 +67,7 @@ type CopyPreviewItem = {
   subject: string
   text: string
   html: string
-  source: 'template' | 'openrouter'
+  source: 'template' | 'openrouter' | 'gemini'
   error: string | null
 }
 
@@ -291,7 +291,11 @@ export default function SentMailPage() {
                       <div className="flex items-center gap-2">
                         {offerBadge(preview.offerType)}
                         <Badge variant="outline" className="text-xs">
-                          {preview.source === 'openrouter' ? 'AI generated' : 'Base template'}
+                          {preview.source === 'template'
+                            ? 'Base template'
+                            : preview.source === 'gemini'
+                              ? 'Gemini drafted'
+                              : 'AI generated'}
                         </Badge>
                       </div>
                       <p className="mt-2 text-sm font-medium">{preview.label}</p>

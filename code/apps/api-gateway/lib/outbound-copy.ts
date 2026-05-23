@@ -1,4 +1,5 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
+import { tryGeminiJson } from '@/lib/ai/gemini'
 import { appEnv } from '@/lib/env'
 import { buildSalesBrainContext } from '@/lib/sales-brain'
 
@@ -53,7 +54,7 @@ export type SovereignRenderedCopy = {
   subject: string
   text: string
   html: string
-  source: 'template' | 'openrouter'
+  source: 'template' | 'openrouter' | 'gemini'
   error?: string
 }
 
@@ -545,12 +546,17 @@ export async function buildSovereignCopyForLead(
     options.physicalAddress
   )
   const openRouterApiKey = appEnv.openRouterApiKey()
+  const geminiApiKey = appEnv.geminiApiKey()
   const shouldUseOpenRouter =
     options.useOpenRouter ??
     (Boolean(openRouterApiKey) &&
       envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true))
+  const shouldUseGemini =
+    options.useOpenRouter ??
+    (Boolean(geminiApiKey) &&
+      envEnabled(process.env.OUTBOUND_GEMINI_COPY, true))
 
-  if (!shouldUseOpenRouter) {
+  if (!shouldUseOpenRouter && !shouldUseGemini) {
     const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
@@ -569,79 +575,132 @@ export async function buildSovereignCopyForLead(
   const firstName = safeGreetingName(lead.first_name || lead.firstName)
   const researchContext = buildLeadResearchContext(lead)
 
-  const result = await tryOpenRouterJson<{
-    subject?: string
-    body?: string
-    reason?: string
-  }>({
-    task: 'sovereign_outbound_copy',
-    system:
-      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Write like a real operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no fake competitor claims. Keep it under 150 words. Include a polite opt-out line.',
-    user: JSON.stringify({
-      salesBrain: buildSalesBrainContext(lead, offerType),
-      recipient: {
-        firstName,
-        company,
-        title: lead.title || null,
-        companyDomain: lead.companyDomain || null,
-        reasonToContact: reason,
-        researchContext,
-      },
-      offer:
-        offerType === 'agency'
-          ? {
-              name: 'Sovereign Stack Agency Master License',
-              price: '$100k one-time',
-              positioning:
-                'white-label outbound protection plus private AI governance for agencies',
-              bullets: [
-                'Unlimited white-labeled deployments',
-                'Agency can charge clients $15k-$35k each',
-                'Core licensing and backend updates handled by Xavira Tech Labs',
-              ],
-            }
-          : {
-              name: 'Sovereign Stack',
-              price: '$25,000 one-time license',
-              positioning:
-                'outbound deliverability protection plus private AI security gateway',
-              bullets: [
-                'Adaptive deliverability OS for domain and inbox placement protection',
-                'Private AI Security Gateway for prompt-injection protection and PII masking',
-                'Self-hosted, audit-ready, works above Instantly, Smartlead, Apollo, and similar tools',
-              ],
-            },
-      requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Sovereign Stack'],
-      physicalAddress: options.physicalAddress,
-      fallbackSubject,
-      writingRules: [
-        'Use at most one evidence-backed personalization line.',
-        'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
-        'Lead with the company pain before mentioning the product.',
-        'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
-        'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
-        'Keep the email short, useful, and human; avoid brochure language.',
-        'Use one clear ask and one booking link only.',
-        'Explain the product benefit in simple words: safer outbound, cleaner follow-ups, reduced AI data leak risk.',
-      ],
-    }),
-    fallback: {
-      subject: fallbackSubject,
-      body: fallbackText,
-      reason: 'fallback_template',
+  const aiPayload = JSON.stringify({
+    salesBrain: buildSalesBrainContext(lead, offerType),
+    recipient: {
+      firstName,
+      company,
+      title: lead.title || null,
+      companyDomain: lead.companyDomain || null,
+      reasonToContact: reason,
+      researchContext,
     },
-    apiKey: openRouterApiKey,
-    timeoutMs: 5_000,
+    offer:
+      offerType === 'agency'
+        ? {
+            name: 'Sovereign Stack Agency Master License',
+            price: '$100k one-time',
+            positioning:
+              'white-label outbound protection plus private AI governance for agencies',
+            bullets: [
+              'Unlimited white-labeled deployments',
+              'Agency can charge clients $15k-$35k each',
+              'Core licensing and backend updates handled by Xavira Tech Labs',
+            ],
+          }
+        : {
+            name: 'Sovereign Stack',
+            price: '$25,000 one-time license',
+            positioning:
+              'outbound deliverability protection plus private AI security gateway',
+            bullets: [
+              'Adaptive deliverability OS for domain and inbox placement protection',
+              'Private AI Security Gateway for prompt-injection protection and PII masking',
+              'Self-hosted, audit-ready, works above Instantly, Smartlead, Apollo, and similar tools',
+            ],
+          },
+    requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Sovereign Stack'],
+    physicalAddress: options.physicalAddress,
+    fallbackSubject,
+    writingRules: [
+      'Start directly with the most specific verified context available. Avoid "hope you are well" and generic intros.',
+      'Use a lower-case, short subject when possible; no salesy words, no excessive punctuation.',
+      'Use at most one evidence-backed personalization line.',
+      'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
+      'Lead with the company pain before mentioning the product.',
+      'Make the ask feel helpful: a 20-minute audit that maps risks and gives a 3-step action plan.',
+      'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
+      'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
+      'Keep the email short, useful, and human; avoid brochure language.',
+      'Use one clear ask and one booking link only.',
+      'Explain the product benefit in simple words: safer outbound, cleaner follow-ups, reduced AI data leak risk.',
+    ],
   })
+  const aiSystem =
+    'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only with subject and body. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Write like a real operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no fake competitor claims. Keep it under 150 words. Include a polite opt-out line. Structure: direct evidence hook, operational pain, why Sovereign Stack helps, low-friction audit CTA.'
+
+  const result = shouldUseOpenRouter
+    ? await tryOpenRouterJson<{
+        subject?: string
+        body?: string
+        reason?: string
+      }>({
+        task: 'sovereign_outbound_copy',
+        system: aiSystem,
+        user: aiPayload,
+        fallback: {
+          subject: fallbackSubject,
+          body: fallbackText,
+          reason: 'fallback_template',
+        },
+        apiKey: openRouterApiKey,
+        timeoutMs: 5_000,
+      })
+    : {
+        source: 'fallback' as const,
+        data: {
+          subject: fallbackSubject,
+          body: fallbackText,
+          reason: 'openrouter_disabled',
+        },
+        error: 'openrouter_disabled',
+      }
 
   if (result.source !== 'openrouter') {
+    const gemini = shouldUseGemini
+      ? await tryGeminiJson<{
+          subject?: string
+          body?: string
+          reason?: string
+        }>({
+          task: 'sovereign_outbound_copy',
+          system: aiSystem,
+          user: aiPayload,
+          fallback: {
+            subject: fallbackSubject,
+            body: fallbackText,
+            reason: 'fallback_template',
+          },
+          apiKey: geminiApiKey,
+          timeoutMs: 6_000,
+        })
+      : {
+          source: 'fallback' as const,
+          data: {
+            subject: fallbackSubject,
+            body: fallbackText,
+            reason: 'gemini_disabled',
+          },
+          error: 'gemini_disabled',
+        }
+
+    if (gemini.source === 'gemini') {
+      const text = cleanBody(gemini.data.body, fallbackText, options.physicalAddress)
+      return {
+        subject: cleanSubject(gemini.data.subject, fallbackSubject),
+        text,
+        html: renderSovereignHtmlEmail(text),
+        source: 'gemini',
+      }
+    }
+
     const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
       text,
       html: renderSovereignHtmlEmail(text),
       source: 'template',
-      error: result.error,
+      error: [result.error, gemini.error].filter(Boolean).join(';'),
     }
   }
 

@@ -79,8 +79,10 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
       aiPreview: useAiPreview,
       aiPersonalizationConfigured:
-        Boolean(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY) &&
-        envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true),
+        (Boolean(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY) &&
+          envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true)) ||
+        (Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY) &&
+          envEnabled(process.env.OUTBOUND_GEMINI_COPY, true)),
       retentionPolicy:
         'Recent sent-event bodies are retained for operator proof and sales review, then redacted by the outbound retention policy.',
       previews,
