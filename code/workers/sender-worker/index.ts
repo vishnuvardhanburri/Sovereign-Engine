@@ -1221,6 +1221,99 @@ const db: DbExecutor = async (sql, params = []) => {
   return { rows: res.rows as any[], rowCount: res.rowCount ?? 0 }
 }
 
+function splitConfiguredSenderEmails(value: unknown): string[] {
+  return String(value || '')
+    .split(/[\s,;]+/)
+    .map(cleanEmail)
+    .filter(Boolean)
+}
+
+function configuredSenderEmails(): string[] {
+  const smtpAccounts = SMTP_ACCOUNTS.map((account) => cleanEmail(account.user)).filter(Boolean)
+  return [
+    ...splitConfiguredSenderEmails(process.env.BOOTSTRAP_SENDING_EMAILS),
+    ...splitConfiguredSenderEmails(process.env.RESEND_FROM_EMAIL),
+    ...splitConfiguredSenderEmails(process.env.SMTP_FROM_EMAIL),
+    ...splitConfiguredSenderEmails(process.env.SMTP_USER),
+    ...smtpAccounts,
+  ].filter((email, index, arr) => email && arr.indexOf(email) === index)
+}
+
+async function reconcileSenderIdentitiesForWorker(clientId: number): Promise<{ bootstrapped: number; emails: string[] }> {
+  if (!envBool('SENDER_WORKER_AUTO_RECONCILE_IDENTITIES', true)) {
+    return { bootstrapped: 0, emails: [] }
+  }
+
+  const emails = configuredSenderEmails()
+  if (!emails.length) return { bootstrapped: 0, emails: [] }
+
+  const targetDailyVolume = intEnv('DAILY_OUTBOUND_TARGET_DAILY_VOLUME', 200, 1, 100_000)
+  const domainDailyLimit = intEnv(
+    'BOOTSTRAP_DOMAIN_DAILY_LIMIT',
+    Math.max(50, targetDailyVolume),
+    1,
+    100_000
+  )
+  const identityDailyLimit = intEnv(
+    'BOOTSTRAP_IDENTITY_DAILY_LIMIT',
+    Math.max(25, Math.ceil(targetDailyVolume / Math.max(emails.length, 1))),
+    1,
+    100_000
+  )
+  const markAuthValid = envBool('BOOTSTRAP_MARK_DNS_VALID', false)
+  let bootstrapped = 0
+
+  for (const email of emails) {
+    const domain = emailDomain(email)
+    if (!domain) continue
+
+    const domainRes = await db<{ id: string | number }>(
+      `INSERT INTO domains (
+         client_id,
+         domain,
+         status,
+         paused,
+         warmup_stage,
+         spf_valid,
+         dkim_valid,
+         dmarc_valid,
+         daily_limit,
+         daily_cap,
+         health_score,
+         reputation_score
+       )
+       VALUES ($1, $2, 'active', FALSE, 1, $3, $3, $3, $4, $4, 100, 100)
+       ON CONFLICT (client_id, domain) DO UPDATE
+       SET status = 'active',
+           paused = FALSE,
+           spf_valid = CASE WHEN $3 THEN TRUE ELSE domains.spf_valid END,
+           dkim_valid = CASE WHEN $3 THEN TRUE ELSE domains.dkim_valid END,
+           dmarc_valid = CASE WHEN $3 THEN TRUE ELSE domains.dmarc_valid END,
+           daily_limit = GREATEST(COALESCE(domains.daily_limit, 0), EXCLUDED.daily_limit),
+           daily_cap = GREATEST(COALESCE(domains.daily_cap, 0), EXCLUDED.daily_cap),
+           updated_at = CURRENT_TIMESTAMP
+       RETURNING id`,
+      [clientId, domain, markAuthValid, domainDailyLimit]
+    )
+    const domainId = domainRes.rows[0]?.id
+    if (!domainId) continue
+
+    await db(
+      `INSERT INTO identities (client_id, domain_id, email, daily_limit, status)
+       VALUES ($1, $2, $3, $4, 'active')
+       ON CONFLICT (client_id, email) DO UPDATE
+       SET domain_id = EXCLUDED.domain_id,
+           status = 'active',
+           daily_limit = GREATEST(COALESCE(identities.daily_limit, 0), EXCLUDED.daily_limit),
+           updated_at = CURRENT_TIMESTAMP`,
+      [clientId, domainId, email, identityDailyLimit]
+    )
+    bootstrapped += 1
+  }
+
+  return { bootstrapped, emails }
+}
+
 async function bootstrapFromSnapshots() {
   // Partial recovery: restore only missing Redis keys from DB snapshots.
   // Never overwrite fresh keys.
@@ -1820,6 +1913,26 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       await recordMetric(job.clientId, 'lane_fallback_to_normal', 1, { from: lane })
       lane = 'normal'
       selection = await rotateInboxForSend(job.clientId, lane)
+    }
+
+    if (!selection) {
+      const reconciled = await reconcileSenderIdentitiesForWorker(job.clientId).catch((error) => {
+        console.error('[sender-worker] sender identity reconcile failed', {
+          bullJobId,
+          clientId: job.clientId,
+          err: (error as any)?.message ?? String(error),
+        })
+        return { bootstrapped: 0, emails: [] }
+      })
+      if (reconciled.bootstrapped > 0) {
+        console.warn('[sender-worker] sender identities reconciled; retrying selection', {
+          bullJobId,
+          clientId: job.clientId,
+          bootstrapped: reconciled.bootstrapped,
+        })
+        selection = await rotateInboxForSend(job.clientId, 'normal')
+        lane = 'normal'
+      }
     }
 
     if (!selection) throw new Error('retry_later:no_sender_identity_available')

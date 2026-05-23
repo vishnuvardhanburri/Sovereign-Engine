@@ -148,6 +148,17 @@ function clip(value: string | null | undefined, max = 240): string {
   return `${text.slice(0, max - 1)}...`
 }
 
+function cleanTelegramText(text: string): string {
+  return text
+    .replace(/━━━━━━━━━━━━━━━━━━━━━━━/g, '------------------------------')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[✅❌⚠️🛡️🚦🔌📋📤📥📦📄👥👤📧📝⚡🎯💰⚖️🔁❗🚧💡🔍🚫🌐🏢🛑⏸️]/g, '')
+    .replace(/\*/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 export function maskEmail(email: string, showFull = false): string {
   const value = String(email || '').trim().toLowerCase()
   if (showFull || !value.includes('@')) return value
@@ -402,9 +413,9 @@ export async function notifyTelegramEvent(input: TelegramNotification) {
     return await sendTelegramMessage({
       botToken,
       chatId,
-      text: formatTelegramNotification(input, {
+      text: cleanTelegramText(formatTelegramNotification(input, {
         showFullEmails: envBool(process.env.TELEGRAM_FULL_EMAILS, false),
-      }),
+      })),
       parseMode: 'none',
     })
   } catch (error) {
