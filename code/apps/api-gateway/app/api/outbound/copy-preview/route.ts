@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
         Boolean(process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_API_KEY) &&
         envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true),
       retentionPolicy:
-        'Sent-event bodies are not retained in the database. This endpoint shows the current outbound copy path for operator preview.',
+        'Recent sent-event bodies are retained for operator proof and sales review, then redacted by the outbound retention policy.',
       previews,
     })
   } catch (error) {

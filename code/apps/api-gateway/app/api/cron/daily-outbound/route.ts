@@ -1588,6 +1588,12 @@ export async function GET(request: NextRequest) {
       },
     })
     const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
+    const compactResponse = envBool(
+      params.get('compact') ||
+        params.get('cronCompact') ||
+        process.env.DAILY_OUTBOUND_COMPACT_RESPONSE,
+      false
+    )
     const runHunterSearch = envBool(
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
       false
@@ -1823,11 +1829,48 @@ export async function GET(request: NextRequest) {
     })
 
     const digest = await getOutboundTelegramDigest(plan.clientId)
+    const generatedAt = new Date().toISOString()
+    const summary = {
+      imported: imported + mapsImported + leadScoutImported + hunterImported,
+      sheetImported: imported,
+      mapsImported,
+      mapsPrepared,
+      mapsEvidenceBacked,
+      leadScoutImported,
+      leadScoutEvidenceBacked,
+      hunterImported,
+      hunterPrepared,
+      hunterRejected,
+      sendersReconciled,
+      approved,
+      queued,
+      estimatedPipelineValueUsd,
+      agencyQueued,
+      directQueued,
+      providerValidationChecks,
+      providerValidationValid,
+      providerValidationInvalid,
+      providerValidationBlocked,
+      staleInvalidBlocked,
+      followupsProcessed,
+      followupsSent,
+      followupsCompleted,
+      followupsErrors,
+      brevoFailuresDeleted,
+      staleGuardrailFailuresDeleted,
+      staleFailuresDeleted,
+      eventBodiesRedacted,
+      hardFailures: hardFailures.length,
+      targetDailyVolume: capacityDiagnosis.targetDailyVolume,
+      capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
+      capacityGap: capacityDiagnosis.targetGap,
+      capacityBlocker: capacityDiagnosis.primaryBlocker,
+    }
 
     void notifyTelegramEvent({
       type: 'daily_outbound',
       dryRun: plan.dryRun,
-      imported: imported + mapsImported + leadScoutImported + hunterImported,
+      imported: summary.imported,
       approved,
       queued,
       estimatedPipelineValueUsd,
@@ -1845,49 +1888,42 @@ export async function GET(request: NextRequest) {
       nextAction: digest.nextAction || capacityDiagnosis.nextAction,
     })
 
+    if (compactResponse) {
+      return NextResponse.json({
+        ok: hardFailures.length === 0,
+        enabled: true,
+        daily: true,
+        clientId: plan.clientId,
+        dryRun: plan.dryRun,
+        generatedAt,
+        summary: {
+          imported: summary.imported,
+          approved,
+          queued,
+          estimatedPipelineValueUsd,
+          agencyQueued,
+          directQueued,
+          hardFailures: hardFailures.length,
+          capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
+          capacityBlocker: capacityDiagnosis.primaryBlocker,
+        },
+        plan: {
+          mode: plan.mode,
+          recoveryMode,
+          approveLimit: plan.approveLimit,
+          sendLimit: plan.sendLimit,
+        },
+      })
+    }
+
     return NextResponse.json({
       ok: hardFailures.length === 0,
       enabled: true,
       daily: true,
       clientId: plan.clientId,
       dryRun: plan.dryRun,
-      generatedAt: new Date().toISOString(),
-      summary: {
-        imported: imported + mapsImported + leadScoutImported + hunterImported,
-        sheetImported: imported,
-        mapsImported,
-        mapsPrepared,
-        mapsEvidenceBacked,
-        leadScoutImported,
-        leadScoutEvidenceBacked,
-        hunterImported,
-        hunterPrepared,
-        hunterRejected,
-        sendersReconciled,
-        approved,
-        queued,
-        estimatedPipelineValueUsd,
-        agencyQueued,
-        directQueued,
-        providerValidationChecks,
-        providerValidationValid,
-        providerValidationInvalid,
-        providerValidationBlocked,
-        staleInvalidBlocked,
-        followupsProcessed,
-        followupsSent,
-        followupsCompleted,
-        followupsErrors,
-        brevoFailuresDeleted,
-        staleGuardrailFailuresDeleted,
-        staleFailuresDeleted,
-        eventBodiesRedacted,
-        hardFailures: hardFailures.length,
-        targetDailyVolume: capacityDiagnosis.targetDailyVolume,
-        capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
-        capacityGap: capacityDiagnosis.targetGap,
-        capacityBlocker: capacityDiagnosis.primaryBlocker,
-      },
+      generatedAt,
+      summary,
       capacity: {
         targetDailyVolume: capacityDiagnosis.targetDailyVolume,
         currentRemainingCapacity: capacityDiagnosis.currentRemainingCapacity,

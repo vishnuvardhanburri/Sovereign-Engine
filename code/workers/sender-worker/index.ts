@@ -50,7 +50,7 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 const SEND_ALLOW_UNKNOWN_VALIDATION = envBool('SEND_ALLOW_UNKNOWN_VALIDATION', true)
-const OUTBOUND_STORE_EVENT_BODIES = envBool('OUTBOUND_STORE_EVENT_BODIES', false)
+const OUTBOUND_STORE_EVENT_BODIES = envBool('OUTBOUND_STORE_EVENT_BODIES', true)
 const MOCK_SMTP = envBool('MOCK_SMTP', false)
 const MOCK_SMTP_FASTLANE = MOCK_SMTP && envBool('MOCK_SMTP_FASTLANE', false)
 

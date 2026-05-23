@@ -5,6 +5,7 @@ export type OutboundEventRetentionResult = {
   staleGuardrailFailuresDeleted: number
   staleFailuresDeleted: number
   bodiesRedacted: number
+  bodyRetentionDays: number
 }
 
 function envBool(name: string, fallback: boolean): boolean {
@@ -38,12 +39,14 @@ export async function runOutboundEventRetention(
   )
   const failedRetentionHours = envInt('OUTBOUND_FAILED_EVENT_RETENTION_HOURS', 6, 0, 24 * 30)
   const redactBodies = envBool('OUTBOUND_REDACT_EVENT_BODIES', true)
+  const bodyRetentionDays = envInt('OUTBOUND_EVENT_BODY_RETENTION_DAYS', 14, 0, 365)
 
   const result: OutboundEventRetentionResult = {
     brevoFailuresDeleted: 0,
     staleGuardrailFailuresDeleted: 0,
     staleFailuresDeleted: 0,
     bodiesRedacted: 0,
+    bodyRetentionDays,
   }
 
   if (brevoDisabled()) {
@@ -84,6 +87,11 @@ export async function runOutboundEventRetention(
   }
 
   if (redactBodies) {
+    const ageFilter =
+      bodyRetentionDays > 0
+        ? `AND created_at < NOW() - ($2::int * INTERVAL '1 day')`
+        : ''
+    const params = bodyRetentionDays > 0 ? [clientId, bodyRetentionDays] : [clientId]
     const redacted = await query(
       `UPDATE events
        SET metadata = COALESCE(metadata, '{}'::jsonb)
@@ -94,6 +102,7 @@ export async function runOutboundEventRetention(
          - 'text'
        WHERE client_id = $1
          AND event_type IN ('sent', 'failed', 'bounce')
+         ${ageFilter}
          AND (
            metadata ? 'body'
            OR metadata ? 'body_text'
@@ -101,7 +110,7 @@ export async function runOutboundEventRetention(
            OR metadata ? 'html'
            OR metadata ? 'text'
          )`,
-      [clientId]
+      params
     )
     result.bodiesRedacted = redacted.rowCount
   }

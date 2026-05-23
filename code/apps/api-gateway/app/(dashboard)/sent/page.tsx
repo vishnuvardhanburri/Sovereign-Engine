@@ -271,7 +271,8 @@ export default function SentMailPage() {
             How the system is mailing now
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Operator preview of the current outbound copy. Sent-event bodies stay redacted in the database.
+            Operator preview of the current outbound copy. Recent sent bodies are visible for proof,
+            then redacted by retention after the review window.
           </p>
         </CardHeader>
         <CardContent>
@@ -478,10 +479,10 @@ export default function SentMailPage() {
                 </pre>
               ) : (
                 <div className="text-sm bg-muted/40 border rounded-md p-3 space-y-2">
-                  <p className="font-medium">Message body not retained</p>
+                  <p className="font-medium">Message body no longer retained</p>
                   <p className="text-muted-foreground">
-                    This event keeps delivery proof only. Full email bodies are redacted by the outbound
-                    retention policy so the database does not store message content.
+                    This older event keeps delivery proof only. Full email bodies are redacted after
+                    the operational review window so storage stays clean.
                   </p>
                 </div>
               )}

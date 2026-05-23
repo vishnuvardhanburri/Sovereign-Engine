@@ -167,21 +167,15 @@ export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchC
 export function sovereignDirectEmail1Body(): string {
   return `Hey {{FirstName}},
 
-I noticed {{Company}} is active in outbound / growth.
+I noticed {{Company}} is active around outbound / growth.
 
-The expensive problems usually show up quietly:
-* Warming domains getting burned
-* follow-ups stop because inbox health drops
-* AI tools touch PII / sensitive data
-* compliance pressure builds (GDPR / DPDP)
+Quick thought: when outbound scales, two silent leaks hurt revenue - domain trust drops, and AI workflows start touching PII / sensitive data.
 
-We built Sovereign Stack - one $25,000 one-time license (Sovereign Engine + Sovereign Shield) that combines:
-* Adaptive deliverability OS (protects your domains & inbox placement)
-* Private AI Security Gateway (blocks prompt injection + masks PII)
+We built Sovereign Stack - one $25,000 one-time license (Sovereign Engine + Sovereign Shield) that handles both:
+* Engine protects sending health, follow-ups, and inbox placement
+* Shield keeps AI usage private, masked, and audit-ready
 
-It is built for serious outbound teams that need clean follow-ups, safer AI usage, and a path to higher-volume sending without losing control.
-
-Would you be open to a 20-minute audit + demo next week?
+If useful, I can run a 20-minute audit and show where {{Company}} may be exposed before you spend on more tools.
 
 ${sovereignBookingCtaText()}
 
@@ -200,18 +194,18 @@ export function sovereignAgencyEmail1Body(): string {
 
 You run a strong growth / RevOps agency.
 
-Most agencies can drive leads, but clients still worry about burned domains, broken follow-ups, and AI data leaks.
+Your clients can buy more leads, but if domains burn or AI workflows leak sensitive data, campaigns stall and retainers get questioned.
 
-What if you could offer that protection under your own brand?
+Sovereign Stack lets you package "Outbound Protection + Private AI Governance" under your own brand.
 
 Sovereign Stack Agency Master License - $100k one-time:
 * Unlimited white-labeled deployments
 * You charge clients $15k-$35k each
 * We handle core licensing & backend updates
 
-The goal is simple: turn infrastructure into a high-ticket product instead of another low-margin service.
+The goal is simple: turn infrastructure into a high-ticket product, not another low-margin service.
 
-Interested in seeing the white-label demo?
+Want to see the white-label demo?
 
 ${sovereignBookingCtaText()}
 
@@ -468,7 +462,7 @@ export async function buildSovereignCopyForLead(
   }>({
     task: 'sovereign_outbound_copy',
     system:
-      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Keep it plain text, professional, pain-first, value-first, and under 170 words. Include a polite opt-out line.',
+      'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Write like a real operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no fake competitor claims. Keep it under 150 words. Include a polite opt-out line.',
     user: JSON.stringify({
       salesBrain: buildSalesBrainContext(lead, offerType),
       recipient: {
@@ -510,7 +504,8 @@ export async function buildSovereignCopyForLead(
         'Use at most one evidence-backed personalization line.',
         'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
         'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
-        'Keep the email short, useful, and human.',
+        'Keep the email short, useful, and human; avoid brochure language.',
+        'Use one clear ask and one booking link only.',
         'Explain the product benefit in simple words: safer outbound, cleaner follow-ups, reduced AI data leak risk.',
       ],
     }),
