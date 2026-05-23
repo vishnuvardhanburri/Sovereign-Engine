@@ -44,6 +44,8 @@ type SentSummary = {
   bounced24h: number
   replies24h: number
   replyRate24h: number
+  replyTargetPct: number
+  deliveryConfidence24h: number
   sent7d: number
   replies7d: number
   replyRate7d: number
@@ -223,17 +225,17 @@ export default function SentMailPage() {
           />
           <StatCard
             icon={<TrendingUp className="w-4 h-4" />}
-            label="Response rate (7d)"
-            value={`${s.replyRate7d.toFixed(1)}%`}
-            sub={`${s.replies7d} replies / ${s.sent7d} sent`}
+            label="Reply target"
+            value={`${s.replyTargetPct}%`}
+            sub="Goal; real replies stay honest"
             accent="purple"
           />
           <StatCard
             icon={<AlertTriangle className="w-4 h-4" />}
-            label="Failed + Bounced (24h)"
-            value={s.failed24h + s.bounced24h}
+            label="Delivery confidence"
+            value={`${s.deliveryConfidence24h.toFixed(1)}%`}
             sub={`${s.failed24h} failed · ${s.bounced24h} bounced`}
-            accent="red"
+            accent={s.deliveryConfidence24h >= 95 ? 'green' : s.deliveryConfidence24h >= 80 ? 'amber' : 'red'}
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}

@@ -116,14 +116,23 @@ export async function GET(request: NextRequest) {
     const replies24h = Number(s?.replies_24h ?? 0)
     const sent7d = Number(s?.sent_7d ?? 0)
     const replies7d = Number(s?.replies_7d ?? 0)
+    const failed24h = Number(s?.failed_24h ?? 0)
+    const bounced24h = Number(s?.bounced_24h ?? 0)
+    const deliveryAttempts24h = sent24h + failed24h + bounced24h
+    const deliveryConfidence24h =
+      deliveryAttempts24h > 0
+        ? Math.max(0, Math.round(((deliveryAttempts24h - failed24h - bounced24h) / deliveryAttempts24h) * 1000) / 10)
+        : 100
 
     const summary = {
       sentToday: Number(s?.sent_today ?? 0),
       sent24h,
-      failed24h: Number(s?.failed_24h ?? 0),
-      bounced24h: Number(s?.bounced_24h ?? 0),
+      failed24h,
+      bounced24h,
       replies24h,
       replyRate24h: sent24h > 0 ? Math.round((replies24h / sent24h) * 1000) / 10 : 0,
+      replyTargetPct: 100,
+      deliveryConfidence24h,
       sent7d,
       replies7d,
       replyRate7d: sent7d > 0 ? Math.round((replies7d / sent7d) * 1000) / 10 : 0,
