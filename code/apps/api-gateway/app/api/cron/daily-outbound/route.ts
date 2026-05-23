@@ -1679,6 +1679,10 @@ export async function GET(request: NextRequest) {
                   params.get('region') ||
                   process.env.GOOGLE_MAPS_REGION,
                 limit: plan.mapsLimit,
+                placesPerSearch:
+                  params.get('mapsPlacesPerSearch') ||
+                  params.get('placesPerSearch') ||
+                  process.env.APIFY_GOOGLE_MAPS_PLACES_PER_SEARCH,
               })
             : undefined,
           industry: params.get('mapsIndustry') || params.get('industry'),

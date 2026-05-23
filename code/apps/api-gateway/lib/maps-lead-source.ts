@@ -103,6 +103,52 @@ const RELEVANT_BUSINESS_CATEGORY_RE =
 const IRRELEVANT_AGENCY_CATEGORY_RE =
   /\b(?:adoption|artist|auto|automotive|booking|bus|car\s+rental|charter|child\s+care|collection|dating|employment|estate|event|government|helicopter|home\s+health|insurance|modeling|news|nursing|real\s+estate|recruit(?:er|ing|ment)?|rental|staffing|tour|travel|wedding)\s+agency\b/i
 
+const DEFAULT_HYBRID_MAPS_SEARCHES = [
+  'lead generation agency',
+  'b2b lead generation agency',
+  'cold email agency',
+  'outbound sales agency',
+  'sales development agency',
+  'appointment setting agency',
+  'demand generation agency',
+  'performance marketing agency b2b',
+  'growth marketing agency saas',
+  'revops agency',
+  'revenue operations consulting',
+  'gtm consulting firm',
+  'sales consulting firm',
+  'hubspot partner agency',
+  'salesforce consulting partner',
+  'marketing automation agency',
+  'saas marketing agency',
+  'b2b marketing agency',
+  'account based marketing agency',
+  'linkedin lead generation agency',
+  'email deliverability consultant',
+  'email marketing agency ecommerce',
+  'ai automation agency',
+  'ai consulting firm',
+  'cybersecurity consulting firm',
+  'data security consulting',
+  'cloud security consulting',
+  'software development agency saas',
+  'product marketing agency b2b',
+  'fractional cmo agency',
+  'startup growth agency',
+  'enterprise sales consulting',
+]
+
+const DEFAULT_HYBRID_MARKETS = [
+  'United States',
+  'Canada',
+  'United Kingdom',
+  'Australia',
+  'India',
+  'Singapore',
+  'United Arab Emirates',
+  'Germany',
+]
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -129,6 +175,7 @@ export function buildApifyGoogleMapsActorInput(input?: {
   location?: unknown
   limit?: unknown
   inputJson?: unknown
+  placesPerSearch?: unknown
 }): ApifyActorInput {
   if (input?.inputJson && typeof input.inputJson === 'object' && !Array.isArray(input.inputJson)) {
     return input.inputJson as ApifyActorInput
@@ -143,16 +190,34 @@ export function buildApifyGoogleMapsActorInput(input?: {
     return parsed as ApifyActorInput
   }
 
-  const searches = asStringArray(
-    input?.searches ||
-      'lead generation agency, outbound agency, RevOps agency, B2B marketing agency'
+  const explicitSearches = asStringArray(input?.searches)
+  const rawLocations = asStringArray(input?.location)
+  const primaryLocation = rawLocations[0] || 'United States'
+  const marketBoosts = rawLocations.length > 1 ? rawLocations : DEFAULT_HYBRID_MARKETS
+  const searches =
+    explicitSearches.length > 0
+      ? explicitSearches
+      : Array.from(
+          new Set([
+            ...DEFAULT_HYBRID_MAPS_SEARCHES,
+            ...DEFAULT_HYBRID_MAPS_SEARCHES.slice(0, 12).flatMap((query) =>
+              marketBoosts.slice(0, 4).map((market) => `${query} ${market}`)
+            ),
+          ])
+        )
+  const totalLimit = Math.max(1, Math.min(Number(input?.limit ?? 100), 500))
+  const placesPerSearch = Math.max(
+    1,
+    Math.min(
+      Number(input?.placesPerSearch ?? process.env.APIFY_GOOGLE_MAPS_PLACES_PER_SEARCH ?? 8),
+      50
+    )
   )
-  const maxPlaces = Math.max(1, Math.min(Number(input?.limit ?? 25), 500))
 
   return {
     searchStringsArray: searches,
-    locationQuery: asString(input?.location) || 'United States',
-    maxCrawledPlacesPerSearch: maxPlaces,
+    locationQuery: primaryLocation,
+    maxCrawledPlacesPerSearch: Math.min(totalLimit, placesPerSearch),
     language: 'en',
     website: 'withWebsite',
     scrapeContacts: true,
