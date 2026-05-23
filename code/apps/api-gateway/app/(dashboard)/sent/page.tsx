@@ -66,6 +66,7 @@ type CopyPreviewItem = {
   company: string
   subject: string
   text: string
+  html: string
   source: 'template' | 'openrouter'
   error: string | null
 }
@@ -194,7 +195,7 @@ export default function SentMailPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Sent Mail</h1>
-        <p className="text-muted-foreground">Proof of what was actually sent — reply rates, offer mix, and delivery health</p>
+        <p className="text-muted-foreground">Proof of what was actually sent — response rates, offer mix, and delivery health</p>
       </div>
 
       {/* BI Summary Cards */}
@@ -215,14 +216,14 @@ export default function SentMailPage() {
           />
           <StatCard
             icon={<Reply className="w-4 h-4" />}
-            label="Reply rate (24h)"
+            label="Response rate (24h)"
             value={`${s.replyRate24h.toFixed(1)}%`}
             sub={`${s.replies24h} replies / ${s.sent24h} sent`}
             accent="blue"
           />
           <StatCard
             icon={<TrendingUp className="w-4 h-4" />}
-            label="Reply rate (7d)"
+            label="Response rate (7d)"
             value={`${s.replyRate7d.toFixed(1)}%`}
             sub={`${s.replies7d} replies / ${s.sent7d} sent`}
             accent="purple"
@@ -309,6 +310,19 @@ export default function SentMailPage() {
                   <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border bg-background/60 p-3 text-xs leading-relaxed">
                     {preview.text}
                   </pre>
+                  {preview.html ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        HTML email preview with booking button
+                      </p>
+                      <iframe
+                        title={`${preview.offerType} email preview`}
+                        sandbox=""
+                        srcDoc={preview.html}
+                        className="h-72 w-full rounded-md border bg-white"
+                      />
+                    </div>
+                  ) : null}
                   {preview.error ? (
                     <p className="text-xs text-amber-500">
                       AI preview fallback: {preview.error}
@@ -474,9 +488,29 @@ export default function SentMailPage() {
                 ) : null}
               </div>
               {selected.bodyText?.trim() || selected.bodyHtml?.trim() ? (
-                <pre className="whitespace-pre-wrap text-sm bg-muted/40 border rounded-md p-3">
-                  {selected.bodyText?.trim() ? selected.bodyText : selected.bodyHtml}
-                </pre>
+                <div className="space-y-3">
+                  {selected.bodyHtml?.trim() ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Rendered email structure
+                      </p>
+                      <iframe
+                        title="Rendered sent email"
+                        sandbox=""
+                        srcDoc={selected.bodyHtml}
+                        className="h-96 w-full rounded-md border bg-white"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Plain-text fallback
+                    </p>
+                    <pre className="whitespace-pre-wrap text-sm bg-muted/40 border rounded-md p-3">
+                      {selected.bodyText?.trim() ? selected.bodyText : selected.bodyHtml}
+                    </pre>
+                  </div>
+                </div>
               ) : (
                 <div className="text-sm bg-muted/40 border rounded-md p-3 space-y-2">
                   <p className="font-medium">Message body no longer retained</p>

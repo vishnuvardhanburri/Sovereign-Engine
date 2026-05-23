@@ -2,7 +2,10 @@ import {
   inferSovereignOfferType,
   balanceSovereignOfferMix,
   buildLeadResearchContext,
+  buildSovereignCopyForLead,
+  buildSovereignPainLine,
   rankSovereignLeads,
+  renderSovereignHtmlEmail,
   renderSovereignTemplate,
   SOVEREIGN_BOOKING_URL,
   sovereignDealValueUsd,
@@ -77,11 +80,23 @@ const directBody = renderSovereignTemplate(
 assert(directBody.includes('Sovereign Stack'), 'direct body should mention Sovereign Stack')
 assert(directBody.includes(SOVEREIGN_BOOKING_URL), 'direct body should include booking link')
 assert(
-  directBody.includes('$25,000 one-time license (Sovereign Engine + Sovereign Shield)'),
-  'direct body should mention the $25,000 Engine + Shield license'
+  directBody.includes('$25,000 one-time license'),
+  'direct body should mention the $25,000 license'
+)
+assert(
+  directBody.includes('expected win') || directBody.includes('Expected win'),
+  'direct body should explain the buyer outcome'
 )
 assert(directBody.includes('Example SaaS'), 'direct body should render company')
 assert(!directBody.includes('{{'), 'direct body should render all placeholders')
+assert(
+  buildSovereignPainLine(directLead).includes('Example SaaS'),
+  'pain line should be company-specific'
+)
+
+const directHtml = renderSovereignHtmlEmail(directBody)
+assert(directHtml.includes(`href="${SOVEREIGN_BOOKING_URL}"`), 'html should include booking button URL')
+assert(directHtml.includes('Book 20-min audit'), 'html should render a small CTA button')
 
 const genericInboxBody = renderSovereignTemplate(
   sovereignBodyForLead({ first_name: 'hello', company: 'Inbox Co' }),
@@ -119,4 +134,18 @@ assert(
   'research context should carry competitor/category signal only from evidence'
 )
 
-console.log('outbound copy tests passed')
+async function main() {
+  const rendered = await buildSovereignCopyForLead(directLead, {
+    physicalAddress: 'Xavira Tech Labs, India',
+    useOpenRouter: false,
+  })
+  assert(rendered.html.includes('Book 20-min audit'), 'built copy should include HTML CTA')
+  assert(rendered.text.includes('Worth a quick audit'), 'built copy should use the new pain-led ask')
+
+  console.log('outbound copy tests passed')
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

@@ -52,6 +52,7 @@ export function withSovereignBookingCta(body: string): string {
 export type SovereignRenderedCopy = {
   subject: string
   text: string
+  html: string
   source: 'template' | 'openrouter'
   error?: string
 }
@@ -167,15 +168,17 @@ export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchC
 export function sovereignDirectEmail1Body(): string {
   return `Hey {{FirstName}},
 
-I noticed {{Company}} is active around outbound / growth.
+{{pain_line}}
 
-Quick thought: when outbound scales, two silent leaks hurt revenue - domain trust drops, and AI workflows start touching PII / sensitive data.
+The business case is simple: if {{Company}} is paying for outbound but replies slow down, every campaign gets more expensive while pipeline quality drops.
 
-We built Sovereign Stack - one $25,000 one-time license (Sovereign Engine + Sovereign Shield) that handles both:
-* Engine protects sending health, follow-ups, and inbox placement
-* Shield keeps AI usage private, masked, and audit-ready
+Sovereign Stack is a $25,000 one-time license built to protect that ROI:
+* Sovereign Engine keeps domains, pacing, follow-ups, and inbox placement under control
+* Sovereign Shield keeps AI personalization private, masks PII, and leaves audit proof
 
-If useful, I can run a 20-minute audit and show where {{Company}} may be exposed before you spend on more tools.
+The expected win: fewer burned domains, safer AI usage, cleaner follow-ups, and a controlled outbound system instead of another fragile tool stack.
+
+Worth a quick audit for {{Company}}?
 
 ${sovereignBookingCtaText()}
 
@@ -192,20 +195,20 @@ If this is not relevant, reply "no" and I will not follow up.`
 export function sovereignAgencyEmail1Body(): string {
   return `Hey {{FirstName}},
 
-You run a strong growth / RevOps agency.
+{{pain_line}}
 
 Your clients can buy more leads, but if domains burn or AI workflows leak sensitive data, campaigns stall and retainers get questioned.
 
-Sovereign Stack lets you package "Outbound Protection + Private AI Governance" under your own brand.
+The profit case: Sovereign Stack lets you sell infrastructure, not just services.
 
 Sovereign Stack Agency Master License - $100k one-time:
 * Unlimited white-labeled deployments
 * You charge clients $15k-$35k each
 * We handle core licensing & backend updates
 
-The goal is simple: turn infrastructure into a high-ticket product, not another low-margin service.
+The expected win: recover the license with 5-8 client deployments, improve campaign reliability, and add a premium AI governance layer your competitors are not packaging yet.
 
-Want to see the white-label demo?
+Want to see the white-label demo for {{Company}}?
 
 ${sovereignBookingCtaText()}
 
@@ -375,6 +378,7 @@ export function renderSovereignTemplate(
     lead.reason_to_contact ||
     lead.reasonToContact ||
     'your team works around outbound or growth infrastructure'
+  const painLine = buildSovereignPainLine(lead)
 
   return template
     .replaceAll('{{FirstName}}', firstName)
@@ -382,7 +386,93 @@ export function renderSovereignTemplate(
     .replaceAll('{{first_name}}', firstName)
     .replaceAll('{{company}}', company)
     .replaceAll('{{reason_to_contact}}', reason)
+    .replaceAll('{{pain_line}}', painLine)
     .replaceAll('{{physical_address}}', physicalAddress)
+}
+
+function compactSentence(value: string, fallback: string): string {
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .replace(/[<>]/g, '')
+    .trim()
+  if (!cleaned) return fallback
+  const sentence = cleaned.replace(/[.?!]*$/, '.')
+  return sentence.length > 220 ? `${sentence.slice(0, 217).trim()}...` : sentence
+}
+
+export function buildSovereignPainLine(lead: SovereignCopyLead): string {
+  const company = lead.company || lead.companyDomain || 'your team'
+  const reason =
+    lead.reason_to_contact ||
+    lead.reasonToContact ||
+    buildLeadResearchContext(lead).researchSummary ||
+    ''
+  const context = buildLeadResearchContext(lead)
+  const offerType = inferSovereignOfferType(lead)
+
+  if (context.socialSignal) {
+    return compactSentence(
+      `I noticed ${company} is active around ${context.socialSignal}; that usually means outbound reliability and AI data handling start affecting revenue, not just operations.`,
+      `I noticed ${company} is scaling outbound, where deliverability and AI data handling can quietly decide campaign ROI.`
+    )
+  }
+
+  if (context.competitorSignal) {
+    return compactSentence(
+      `I noticed ${company} sits in a category where ${context.competitorSignal}; that makes outbound reliability and private AI governance a revenue problem, not a tooling problem.`,
+      `I noticed ${company} is in a market where outbound reliability and private AI governance can become a revenue edge.`
+    )
+  }
+
+  if (reason) {
+    return compactSentence(
+      `I noticed ${company} because ${reason}; that is exactly where domain health, follow-up control, and AI data safety can either protect pipeline or quietly leak revenue.`,
+      `I noticed ${company} is working around outbound, where domain health and AI data safety can quietly decide reply quality.`
+    )
+  }
+
+  if (offerType === 'agency') {
+    return `I noticed ${company} serves growth or RevOps clients; when client campaigns miss replies because domains degrade or AI handling feels risky, the agency gets blamed before the tool stack does.`
+  }
+
+  return `I noticed ${company} is a fit for outbound-led growth; when domain health drops or AI workflows touch sensitive data, pipeline cost rises before the team sees the root cause.`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function renderTextBlock(block: string): string {
+  const lines = block.split('\n').map((line) => line.trim()).filter(Boolean)
+  if (lines.length > 0 && lines.every((line) => line.startsWith('* '))) {
+    return `<ul style="margin:0 0 16px 20px;padding:0;color:#111827;">${lines
+      .map((line) => `<li style="margin:0 0 6px 0;">${escapeHtml(line.slice(2))}</li>`)
+      .join('')}</ul>`
+  }
+
+  return `<p style="margin:0 0 16px 0;color:#111827;line-height:1.55;">${lines
+    .map(escapeHtml)
+    .join('<br>')}</p>`
+}
+
+export function renderSovereignHtmlEmail(text: string): string {
+  const blocks = text.trim().split(/\n{2,}/)
+  const htmlBlocks = blocks
+    .map((block) => {
+      if (block.includes(SOVEREIGN_BOOKING_URL)) {
+        return `<p style="margin:20px 0 18px 0;"><a href="${SOVEREIGN_BOOKING_URL}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">Book 20-min audit</a></p><p style="margin:0 0 16px 0;color:#6b7280;font-size:12px;">Or open: <a href="${SOVEREIGN_BOOKING_URL}" style="color:#2563eb;">${SOVEREIGN_BOOKING_URL}</a></p>`
+      }
+
+      return renderTextBlock(block)
+    })
+    .join('')
+
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#111827;"><div style="max-width:620px;margin:0 auto;padding:24px;">${htmlBlocks}</div></body></html>`
 }
 
 function envEnabled(value: string | undefined, fallback: boolean): boolean {
@@ -439,9 +529,11 @@ export async function buildSovereignCopyForLead(
       envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true))
 
   if (!shouldUseOpenRouter) {
+    const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
-      text: withSovereignBookingCta(fallbackText),
+      text,
+      html: renderSovereignHtmlEmail(text),
       source: 'template',
     }
   }
@@ -502,6 +594,8 @@ export async function buildSovereignCopyForLead(
       fallbackSubject,
       writingRules: [
         'Use at most one evidence-backed personalization line.',
+        'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
+        'Lead with the company pain before mentioning the product.',
         'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
         'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
         'Keep the email short, useful, and human; avoid brochure language.',
@@ -519,17 +613,21 @@ export async function buildSovereignCopyForLead(
   })
 
   if (result.source !== 'openrouter') {
+    const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
-      text: withSovereignBookingCta(fallbackText),
+      text,
+      html: renderSovereignHtmlEmail(text),
       source: 'template',
       error: result.error,
     }
   }
 
+  const text = cleanBody(result.data.body, fallbackText, options.physicalAddress)
   return {
     subject: cleanSubject(result.data.subject, fallbackSubject),
-    text: cleanBody(result.data.body, fallbackText, options.physicalAddress),
+    text,
+    html: renderSovereignHtmlEmail(text),
     source: 'openrouter',
   }
 }

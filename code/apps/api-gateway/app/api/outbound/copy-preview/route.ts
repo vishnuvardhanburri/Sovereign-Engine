@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
           company: lead.company,
           subject: rendered.subject,
           text: rendered.text,
+          html: rendered.html,
           source: rendered.source,
           error: rendered.error ?? null,
         }

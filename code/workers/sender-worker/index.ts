@@ -31,6 +31,10 @@ type SendJob = {
   subject: string
   html?: string
   text?: string
+  offerType?: string
+  dealValueUsd?: number
+  copySource?: string
+  copyError?: string
   idempotencyKey?: string
 }
 
@@ -1608,6 +1612,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
   let outboundHtml = job.html
   let mutationResult: ContentMutationResult | null = null
   let selectedIdentityEmailForRun = ''
+  let sendingProviderForRun = ''
 
   // Back-compat: if older keys exist (pre-region), respect them so we don't re-send.
   const legacyDoneKey = `xv:send:done:${job.clientId}:${idemKey}`
@@ -1675,6 +1680,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           guardrail_blockers: recipientGuardrailBlockers,
           to_email: normalizedTo,
           subject: outboundSubject,
+          offer_type: job.offerType ?? null,
+          deal_value_usd: job.dealValueUsd ?? null,
+          copy_source: job.copySource ?? null,
+          copy_error: job.copyError ?? null,
           ...eventBodyMetadata(outboundText, outboundHtml),
           idempotency_key: idemKey,
         },
@@ -2107,6 +2116,7 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
 
       const sent = MOCK_SMTP
         ? await (async () => {
+            sendingProviderForRun = 'mock'
             fromAddress = String(selection.identity.email ?? `mock@${selection.domain.domain}`).toLowerCase()
             if (!MOCK_SMTP_FASTLANE) {
               console.log('[sender-worker] mock smtp send start', {
@@ -2142,46 +2152,49 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
             })
 
             const sendWithAccount = (sender: SenderAccount) =>
-              Promise.race([
-                sendSmtp(
-                  {
-                    host: SMTP_HOST,
-                    port: SMTP_PORT,
-                    secure: SMTP_SECURE,
-                    user: sender.user,
-                    pass: sender.pass,
-                    provider: sender.provider,
-                    providerApiKey: sender.pass,
-                  },
-                  {
-                    from: sender.user,
-                    to: job.toEmail,
-                    subject: outboundSubject,
-                    html: outboundHtml,
-                    text: outboundText,
-                    headerContext: {
-                      clientId: job.clientId,
-                      campaignId: job.campaignId ?? null,
-                      queueJobId: job.queueJobId ?? null,
-                      idempotencyKey: idemKey,
-                      sendingDomain: String(sender.user).split('@')[1] || selection.domain.domain,
-                      provider: recipientProvider,
+              {
+                sendingProviderForRun = sender.provider
+                return Promise.race([
+                  sendSmtp(
+                    {
+                      host: SMTP_HOST,
+                      port: SMTP_PORT,
+                      secure: SMTP_SECURE,
+                      user: sender.user,
+                      pass: sender.pass,
+                      provider: sender.provider,
+                      providerApiKey: sender.pass,
                     },
-                    headers:
-                      process.env.SMTP_DEBUG_HEADERS === 'true'
-                        ? {
-                            'X-Sovereign-Engine-Lane': lane,
-                            'X-Sovereign-Engine-Adaptive': adaptive.reasons.join(','),
-                            'X-Sovereign-Engine-QueueJobId': String(job.queueJobId ?? ''),
-                            'X-Sovereign-Engine-CampaignId': String(job.campaignId ?? ''),
-                          }
-                        : undefined,
-                  }
-                ),
-                sleep(75_000).then(() => {
-                  throw new Error('smtp_timeout')
-                }),
-              ])
+                    {
+                      from: sender.user,
+                      to: job.toEmail,
+                      subject: outboundSubject,
+                      html: outboundHtml,
+                      text: outboundText,
+                      headerContext: {
+                        clientId: job.clientId,
+                        campaignId: job.campaignId ?? null,
+                        queueJobId: job.queueJobId ?? null,
+                        idempotencyKey: idemKey,
+                        sendingDomain: String(sender.user).split('@')[1] || selection.domain.domain,
+                        provider: recipientProvider,
+                      },
+                      headers:
+                        process.env.SMTP_DEBUG_HEADERS === 'true'
+                          ? {
+                              'X-Sovereign-Engine-Lane': lane,
+                              'X-Sovereign-Engine-Adaptive': adaptive.reasons.join(','),
+                              'X-Sovereign-Engine-QueueJobId': String(job.queueJobId ?? ''),
+                              'X-Sovereign-Engine-CampaignId': String(job.campaignId ?? ''),
+                            }
+                          : undefined,
+                    }
+                  ),
+                  sleep(75_000).then(() => {
+                    throw new Error('smtp_timeout')
+                  }),
+                ])
+              }
 
             try {
               return await sendWithAccount(account)
@@ -2254,9 +2267,14 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         to_email: normalizedTo,
         from_email: fromAddress,
         subject: outboundSubject,
+        offer_type: job.offerType ?? null,
+        deal_value_usd: job.dealValueUsd ?? null,
+        copy_source: job.copySource ?? null,
+        copy_error: job.copyError ?? null,
         ...eventBodyMetadata(outboundText, outboundHtml),
         idempotency_key: idemKey,
-        provider: recipientProvider,
+        provider: sendingProviderForRun || recipientProvider,
+        recipient_provider: recipientProvider,
         content_mutation: mutationResult
           ? {
               mutated: mutationResult.mutated,
@@ -2405,7 +2423,8 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         const next = Math.min(0.5, Math.max(cur, smtpClass === 'block' ? 0.3 : smtpClass === 'deferral' ? 0.15 : 0.1))
         await redis.set(pk, String(next), 'EX', 60 * 60) // 1h TTL
         await recordMetric(job.clientId, smtpClass === 'block' ? 'block_rate' : smtpClass === 'deferral' ? 'deferral_rate' : 'bounce_rate', 1, {
-          provider: detectProvider(job.toEmail),
+          provider: sendingProviderForRun || 'unknown',
+          recipient_provider: detectProvider(job.toEmail),
         })
       }
 
@@ -2421,8 +2440,13 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           to_email: String(job.toEmail || '').trim().toLowerCase(),
           from_email: fromAddress || selectedIdentityEmailForRun || cleanEmail(selectSenderAccount(idemKey).user),
           subject: outboundSubject,
+          offer_type: job.offerType ?? null,
+          deal_value_usd: job.dealValueUsd ?? null,
+          copy_source: job.copySource ?? null,
+          copy_error: job.copyError ?? null,
           ...eventBodyMetadata(outboundText, outboundHtml),
-          provider: detectProvider(job.toEmail),
+          provider: sendingProviderForRun || 'unknown',
+          recipient_provider: detectProvider(job.toEmail),
           smtp_response_code: responseCode,
           smtp_class: smtpClass,
           error: String(sanitizeLogValue(msg)),

@@ -195,7 +195,7 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       if (sentToday > 0 && replies24h === 0) {
         return `Sending healthy (${sentToday} today). Keep monitoring for first replies — refine copy if none in 48h.`
       }
-      return 'System nominal. Continue monitoring reply rate and domain health.'
+      return 'System nominal. Continue monitoring response rate and domain health.'
     }
 
     const nextAction = deriveNextAction()

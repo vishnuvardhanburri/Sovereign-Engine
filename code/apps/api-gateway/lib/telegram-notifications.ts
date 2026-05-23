@@ -327,7 +327,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
           : '🚀 *Sovereign Engine — Daily Outbound Report*',
         '━━━━━━━━━━━━━━━━━━━━━━━',
         `📤 Sent today: *${sent}*   ❌ Failed: ${failed}   ⚠️ Bounced: ${bounced}`,
-        `💬 Replies: *${replies}* (${rr}% reply rate)`,
+        `💬 Replies: *${replies}* (${rr}% response rate)`,
         `📋 Queued: ${queued}`,
         agency || direct
           ? `🎯 Mix: ${agency} agency ($100k) / ${direct} direct ($25k)`
