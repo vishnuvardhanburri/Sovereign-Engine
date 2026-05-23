@@ -120,19 +120,19 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
   return (
     <MotionPanel className="relative overflow-hidden bg-[radial-gradient(circle_at_8%_12%,rgba(14,165,233,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] p-5 text-slate-100">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:44px_44px] opacity-35" />
-      <div className="relative z-10 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="relative z-10 grid gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
         <div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-sky-200/80">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-sky-200/80">
                 <StatusPulse tone={risk.tone} />
-                Enterprise operations layer
+                Live operations
               </div>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
-                {mode === 'reputation' ? 'Realtime reputation operating picture' : 'Executive infrastructure command center'}
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl lg:text-4xl">
+                {mode === 'reputation' ? 'Reputation control room' : 'Outbound infrastructure cockpit'}
               </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                Live worker heartbeats, queue pressure, lane health, audit activity, and infrastructure recovery cues in one restrained cockpit.
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                Track sender capacity, queue pressure, worker health, and delivery risk before it becomes a sending problem.
               </p>
             </div>
             <Badge variant="outline" className={cn('rounded-full px-3 py-1', risk.label === 'Nominal' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200' : risk.label === 'Watch' ? 'border-amber-500/30 bg-amber-500/15 text-amber-200' : 'border-rose-500/30 bg-rose-500/15 text-rose-200')}>
@@ -140,11 +140,11 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
             </Badge>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricTile icon={RadioTower} label="Processed proof events" value={numberFmt(processed)} sub={`${workerCount} live workers`} />
-            <MetricTile icon={Zap} label="Total concurrency" value={numberFmt(concurrency)} sub="Sender capacity online" />
-            <MetricTile icon={Database} label="DB / Redis latency" value={`${dbLatency.toFixed(1)} / ${redisLatency.toFixed(1)}ms`} sub="Current health oracle sample" />
-            <MetricTile icon={TrendingUp} label="Value signal" value={moneyFmt(reputation.data?.investor?.netProfitUsd)} sub={`${pct(reputation.data?.investor?.avgInboxPlacementRate)} inbox model`} />
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <MetricTile icon={RadioTower} label="Processed sends" value={numberFmt(processed)} sub={`${workerCount} active sender workers`} />
+            <MetricTile icon={Zap} label="Sender capacity" value={numberFmt(concurrency)} sub="Total worker concurrency online" />
+            <MetricTile icon={Database} label="Infrastructure latency" value={`${Math.max(dbLatency, redisLatency).toFixed(0)}ms`} sub={`DB ${dbLatency.toFixed(1)}ms · Redis ${redisLatency.toFixed(1)}ms`} />
+            <MetricTile icon={TrendingUp} label="Revenue signal" value={moneyFmt(reputation.data?.investor?.netProfitUsd)} sub={`${pct(reputation.data?.investor?.avgInboxPlacementRate)} modeled inbox placement`} />
           </div>
 
           <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -172,7 +172,11 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
                   <div className="mt-1 text-xs text-slate-400">Def {pct(lane.deferralRate1h)} · Block {pct(lane.blockRate1h)}</div>
                 </div>
               ))}
-              {!lanes.length && <Skeleton className="h-24" />}
+              {!lanes.length && (
+                <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm text-slate-400">
+                  Provider lanes will appear after the next reputation sample.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -182,7 +186,7 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
             <div className="mb-4 flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
                 <GitBranch className="h-4 w-4 text-cyan-300" />
-                Worker topology
+                Sender workers
               </h3>
               <span className="text-xs text-slate-400">{nodes.length} nodes</span>
             </div>
@@ -198,7 +202,7 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-2 text-sm">
                       <StatusPulse tone="emerald" />
-                      <span className="truncate">{node.workerId}</span>
+                      <span className="truncate" title={node.workerId}>{node.workerId}</span>
                     </span>
                     <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">{node.region ?? 'prod'}</Badge>
                   </div>
@@ -209,7 +213,11 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
                   </div>
                 </motion.div>
               ))}
-              {!nodes.length && <Skeleton className="h-28" />}
+              {!nodes.length && (
+                <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm text-slate-400">
+                  No live sender workers reported yet.
+                </div>
+              )}
             </div>
           </div>
 
@@ -241,7 +249,11 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-300">{event.message}</p>
                   </motion.div>
                 ))}
-                {!events.length && <Skeleton className="h-28" />}
+                {!events.length && (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.025] p-4 text-sm text-slate-400">
+                    No audit events in the current window.
+                  </div>
+                )}
               </div>
             </AnimatePresence>
           </div>
@@ -253,15 +265,15 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
 
 function MetricTile({ icon: Icon, label, value, sub }: { icon: ComponentType<{ className?: string }>; label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+    <div className="min-h-[136px] rounded-2xl border border-white/10 bg-white/[0.045] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs text-slate-400">{label}</span>
+        <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">{label}</span>
         <Icon className="h-4 w-4 text-sky-300" />
       </div>
-      <motion.div layout className="text-2xl font-semibold tracking-tight">
+      <motion.div layout className="break-words text-2xl font-semibold tracking-tight md:text-3xl">
         {value}
       </motion.div>
-      <div className="mt-1 text-xs text-slate-500">{sub}</div>
+      <div className="mt-2 text-xs leading-5 text-slate-500">{sub}</div>
     </div>
   )
 }

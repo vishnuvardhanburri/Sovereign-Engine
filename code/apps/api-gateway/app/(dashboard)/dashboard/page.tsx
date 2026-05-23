@@ -191,8 +191,8 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">Control Tower</h1>
-          <p className="text-muted-foreground">Live system state, safe execution, and instant controls.</p>
+          <h1 className="text-3xl font-bold">Outbound Command Center</h1>
+          <p className="text-muted-foreground">Daily sending, workers, queue health, and recovery signals in one place.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs">
@@ -200,10 +200,10 @@ export default function DashboardPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40" />
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
             </span>
-            <span className="text-muted-foreground">System Running</span>
+            <span className="text-muted-foreground">System online</span>
           </div>
           <Badge variant="outline" className="bg-white/5 text-slate-200 border-white/10">
-            Autonomous Mode: ACTIVE
+            Autopilot active
           </Badge>
           <Badge variant="outline" className={statusTone(systemStatus)}>
             System: {systemStatus}
