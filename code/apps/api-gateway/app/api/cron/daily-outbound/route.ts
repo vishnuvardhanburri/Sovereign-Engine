@@ -595,18 +595,24 @@ async function runMapsImport(input: {
       }
     }
 
+    const taskId =
+      input.taskId ||
+      process.env.APIFY_GOOGLE_MAPS_TASK_ID ||
+      process.env.GOOGLE_MAPS_APIFY_TASK_ID ||
+      ''
+    const actorId =
+      input.actorId ||
+      process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ||
+      process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ||
+      ''
+    const preferLiveRun = envBool(process.env.APIFY_GOOGLE_MAPS_PREFER_LIVE_RUN, true)
+
     const resolved = await resolveApifyMapsItems({
-      requestedDatasetId: input.datasetId,
-      taskId:
-        input.taskId ||
-        process.env.APIFY_GOOGLE_MAPS_TASK_ID ||
-        process.env.GOOGLE_MAPS_APIFY_TASK_ID ||
-        '',
-      actorId:
-        input.actorId ||
-        process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ||
-        process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ||
-        '',
+      // Fresh actor/task runs must win over stale datasets. Dataset fallback stays available
+      // for cheap recovery when no live Apify runner is configured.
+      requestedDatasetId: preferLiveRun && (taskId || actorId) ? '' : input.datasetId,
+      taskId,
+      actorId,
       actorInput: input.actorInput,
       token,
       limit: input.mapsLimit,
@@ -629,6 +635,11 @@ async function runMapsImport(input: {
           enrich: false,
           dedupeByDomain: true,
         })
+    const rejectionReasons = prepared.rejected.reduce<Record<string, number>>((acc, item) => {
+      const reason = String(item.reason || 'unknown')
+      acc[reason] = (acc[reason] || 0) + 1
+      return acc
+    }, {})
 
     if (!input.dryRun) {
       void notifyTelegramEvent({
@@ -657,6 +668,11 @@ async function runMapsImport(input: {
         taskId: resolved.taskId || null,
         actorId: resolved.actorId || null,
         sourceType: resolved.sourceType,
+        sourceUrl: resolved.sourceUrl,
+        liveRunPreferred: preferLiveRun,
+        staleDatasetBypassed: Boolean(preferLiveRun && (taskId || actorId) && input.datasetId),
+        duplicateOrSkipped: Math.max(0, prepared.contacts.length - imported.length),
+        rejectionReasons,
       },
     }
   } catch (error) {
@@ -1793,6 +1809,11 @@ export async function GET(request: NextRequest) {
     const mapsImported = getNumericField(mapsStage?.data, 'imported')
     const mapsPrepared = getNumericField(mapsStage?.data, 'prepared')
     const mapsEvidenceBacked = getNumericField(mapsStage?.data, 'evidenceBacked')
+    const mapsScanned = getNumericField(mapsStage?.data, 'scanned')
+    const mapsSource =
+      mapsStage?.data && typeof mapsStage.data === 'object'
+        ? String((mapsStage.data as Record<string, unknown>).sourceType || 'none')
+        : 'none'
     const leadScoutImported = getNumericField(leadScoutStage?.data, 'imported')
     const leadScoutEvidenceBacked = getNumericField(leadScoutStage?.data, 'evidenceBacked')
     const hunterImported = getNumericField(hunterStage?.data, 'imported')
@@ -1897,6 +1918,8 @@ export async function GET(request: NextRequest) {
           `ok=${hardFailures.length === 0 ? 1 : 0}`,
           `client=${plan.clientId}`,
           `imported=${summary.imported}`,
+          `maps=${mapsImported}/${mapsPrepared}/${mapsScanned}`,
+          `mapsSource=${mapsSource}`,
           `approved=${approved}`,
           `queued=${queued}`,
           `agency=${agencyQueued}`,

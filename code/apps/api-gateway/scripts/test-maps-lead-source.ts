@@ -278,6 +278,23 @@ async function main() {
   assert.equal(resolvedTaskRun.taskId, 'google-maps-task')
   assert.deepEqual(resolvedTaskRun.items, [{ title: 'Task Run Agency' }])
 
+  const resolvedTaskRunBeatsLatestDataset = await resolveApifyMapsItems({
+    token: 'secret-token',
+    taskId: 'fresh-google-maps-task',
+    limit: 2,
+    fetchImpl: async (url) => {
+      const text = String(url)
+      assert.ok(!text.startsWith('https://api.apify.com/v2/datasets?'))
+      if (text.startsWith('https://api.apify.com/v2/actor-tasks/')) {
+        return new Response(JSON.stringify([{ title: 'Fresh Task Agency' }]), { status: 200 })
+      }
+      return new Response('unexpected url', { status: 500 })
+    },
+  })
+
+  assert.equal(resolvedTaskRunBeatsLatestDataset.sourceType, 'apify_task')
+  assert.deepEqual(resolvedTaskRunBeatsLatestDataset.items, [{ title: 'Fresh Task Agency' }])
+
   const resolvedActorRun = await resolveApifyMapsItems({
     token: 'secret-token',
     actorId: 'compass/crawler-google-places',

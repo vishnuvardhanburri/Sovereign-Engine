@@ -666,6 +666,37 @@ export async function resolveApifyMapsItems(input: {
     }
   }
 
+  if (taskId) {
+    return {
+      items: await fetchApifyTaskDatasetItems({
+        taskId,
+        token: input.token,
+        limit: input.limit,
+        timeoutSecs: input.taskTimeoutSecs,
+        fetchImpl: input.fetchImpl,
+      }),
+      sourceType: 'apify_task',
+      sourceUrl: `apify:task:${taskId}`,
+      taskId,
+    }
+  }
+
+  if (actorId) {
+    return {
+      items: await fetchApifyActorDatasetItems({
+        actorId,
+        token: input.token,
+        input: input.actorInput,
+        limit: input.limit,
+        timeoutSecs: input.taskTimeoutSecs,
+        fetchImpl: input.fetchImpl,
+      }),
+      sourceType: 'apify_actor',
+      sourceUrl: `apify:actor:${actorId}`,
+      actorId,
+    }
+  }
+
   try {
     const latestDatasetId = await fetchLatestApifyDatasetId({
       token: input.token,
@@ -694,32 +725,5 @@ export async function resolveApifyMapsItems(input: {
     }
   }
 
-  if (taskId) {
-    return {
-      items: await fetchApifyTaskDatasetItems({
-        taskId,
-        token: input.token,
-        limit: input.limit,
-        timeoutSecs: input.taskTimeoutSecs,
-        fetchImpl: input.fetchImpl,
-      }),
-      sourceType: 'apify_task',
-      sourceUrl: `apify:task:${taskId}`,
-      taskId,
-    }
-  }
-
-  return {
-    items: await fetchApifyActorDatasetItems({
-      actorId,
-      token: input.token,
-      input: input.actorInput,
-      limit: input.limit,
-      timeoutSecs: input.taskTimeoutSecs,
-      fetchImpl: input.fetchImpl,
-    }),
-    sourceType: 'apify_actor',
-    sourceUrl: `apify:actor:${actorId}`,
-    actorId,
-  }
+  throw new Error('Unable to resolve Apify Google Maps input source')
 }
