@@ -1892,31 +1892,27 @@ export async function GET(request: NextRequest) {
     })
 
     if (compactResponse) {
-      return NextResponse.json({
-        ok: hardFailures.length === 0,
-        enabled: true,
-        daily: true,
-        clientId: plan.clientId,
-        dryRun: plan.dryRun,
-        generatedAt,
-        summary: {
-          imported: summary.imported,
-          approved,
-          queued,
-          estimatedPipelineValueUsd,
-          agencyQueued,
-          directQueued,
-          hardFailures: hardFailures.length,
-          capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
-          capacityBlocker: capacityDiagnosis.primaryBlocker,
-        },
-        plan: {
-          mode: plan.mode,
-          recoveryMode,
-          approveLimit: plan.approveLimit,
-          sendLimit: plan.sendLimit,
-        },
-      })
+      return new Response(
+        [
+          `ok=${hardFailures.length === 0 ? 1 : 0}`,
+          `client=${plan.clientId}`,
+          `imported=${summary.imported}`,
+          `approved=${approved}`,
+          `queued=${queued}`,
+          `agency=${agencyQueued}`,
+          `direct=${directQueued}`,
+          `failures=${hardFailures.length}`,
+          `capacity=${capacityDiagnosis.currentRemainingCapacity}`,
+          `blocker=${capacityDiagnosis.primaryBlocker}`,
+        ].join(' '),
+        {
+          status: hardFailures.length === 0 ? 200 : 207,
+          headers: {
+            'content-type': 'text/plain; charset=utf-8',
+            'cache-control': 'no-store',
+          },
+        }
+      )
     }
 
     return NextResponse.json({
@@ -1961,6 +1957,22 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[api/cron/daily-outbound] failed', error)
+    const params = request.nextUrl.searchParams
+    const compactResponse = envBool(
+      params.get('compact') ||
+        params.get('cronCompact') ||
+        process.env.DAILY_OUTBOUND_COMPACT_RESPONSE,
+      false
+    )
+    if (compactResponse) {
+      return new Response(`ok=0 error=${safeError(error).slice(0, 160)}`, {
+        status: 500,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'no-store',
+        },
+      })
+    }
     return NextResponse.json(
       { ok: false, error: 'failed', detail: safeError(error) },
       { status: 500 }
