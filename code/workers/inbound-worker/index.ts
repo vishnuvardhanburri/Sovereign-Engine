@@ -140,6 +140,7 @@ const IMAP_HOST = reqEnv('IMAP_HOST')
 const IMAP_PORT = Number(process.env.IMAP_PORT ?? 993)
 const IMAP_SECURE = process.env.IMAP_SECURE !== 'false'
 const IMAP_POLL_INTERVAL = Number(process.env.IMAP_POLL_INTERVAL ?? 30_000)
+const IMAP_DSN_LOOKBACK_HOURS = Math.max(0, Number(process.env.IMAP_DSN_LOOKBACK_HOURS ?? 72) || 0)
 
 const IMAP_ACCOUNTS: ImapAccount[] = readJsonArray('IMAP_ACCOUNTS')
   .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
@@ -396,12 +397,24 @@ async function processAccount(account: ImapAccount) {
 
     const unseenRaw = await client.search({ seen: false })
     const unseen = Array.isArray(unseenRaw) ? unseenRaw : []
-    if (!unseen.length) return
+    const recentDsnRaw =
+      IMAP_DSN_LOOKBACK_HOURS > 0
+        ? await client
+            .search({
+              since: new Date(Date.now() - IMAP_DSN_LOOKBACK_HOURS * 60 * 60 * 1_000),
+            })
+            .catch(() => [])
+        : []
+    const recentDsnCandidates = Array.isArray(recentDsnRaw) ? recentDsnRaw : []
+    const unseenSet = new Set(unseen)
+    const candidateUids = Array.from(new Set([...unseen, ...recentDsnCandidates]))
+    if (!candidateUids.length) return
 
     // Process oldest-first so we keep threading consistent.
-    unseen.sort((a: number, b: number) => a - b)
+    candidateUids.sort((a: number, b: number) => a - b)
 
-    for (const uid of unseen) {
+    for (const uid of candidateUids) {
+      const wasUnseen = unseenSet.has(uid)
       const msg = await client.fetchOne(uid, { source: true, envelope: true, uid: true, flags: true })
       if (!msg || !('source' in msg) || !msg.source) continue
 
@@ -413,25 +426,31 @@ async function processAccount(account: ImapAccount) {
         continue
       }
 
-      const claimed = await claimInboundMessage(messageId)
-      if (!claimed) {
-        await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+      const fromEmail = normalizeEmail(parsed.from?.value?.[0]?.address ?? '')
+      const toEmail = normalizeEmail(parsed.to?.value?.[0]?.address ?? account.user)
+      const subject = String(parsed.subject ?? '').trim()
+      const body = String(parsed.text ?? parsed.html ?? '').trim()
+      const isDsn = isDeliverabilityNotice({ fromEmail, subject, body })
+
+      // Recent read messages are only re-scanned for delivery failures; normal
+      // reply ingestion remains unread-first to avoid importing unrelated mail.
+      if (!wasUnseen && !isDsn) {
         continue
       }
 
-      const fromEmail = normalizeEmail(parsed.from?.value?.[0]?.address ?? '')
-      const toEmail = normalizeEmail(parsed.to?.value?.[0]?.address ?? account.user)
+      const claimed = await claimInboundMessage(messageId)
+      if (!claimed) {
+        if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+        continue
+      }
 
       // Skip our own outbound messages / system emails.
       if (OUR_ADDRESSES.has(fromEmail)) {
-        await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+        if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
         continue
       }
 
-      const subject = String(parsed.subject ?? '').trim()
-      const body = String(parsed.text ?? parsed.html ?? '').trim()
-
-      if (isDeliverabilityNotice({ fromEmail, subject, body })) {
+      if (isDsn) {
         const reason = classifyDsnReason(body)
         const failedRecipients = extractFailedRecipients(body)
 
@@ -454,7 +473,7 @@ async function processAccount(account: ImapAccount) {
           failedRecipients,
         })
 
-        await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+        if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
         continue
       }
 
@@ -502,7 +521,7 @@ async function processAccount(account: ImapAccount) {
         }
       )
 
-      await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+      if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
     }
   } finally {
     await client.logout().catch(() => {})
