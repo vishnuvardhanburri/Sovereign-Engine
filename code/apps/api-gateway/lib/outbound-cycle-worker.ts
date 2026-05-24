@@ -6,6 +6,10 @@ const OUTBOUND_CYCLE_WORKER_CONCURRENCY = Math.max(
   1,
   Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_WORKER_CONCURRENCY ?? '1', 10) || 1, 3)
 )
+const OUTBOUND_CYCLE_TIMEOUT_MS = Math.max(
+  15_000,
+  Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_TIMEOUT_MS ?? '120000', 10) || 120_000, 300_000)
+)
 
 let cycleWorker: Worker<OutboundCycleJobData> | null = null
 
@@ -18,16 +22,33 @@ async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
     clientId: job.data.clientId,
   })
 
-  const response = await fetch(job.data.runUrl, {
-    method: 'GET',
-    headers: {
-      'user-agent': 'Sovereign-Engine-Outbound-Cycle-Worker/1.0',
-      ...(secret ? { 'x-cron-secret': secret } : {}),
-    },
-    cache: 'no-store',
-  })
-  const body = await response.text()
-  const elapsedMs = Date.now() - startedAt
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), OUTBOUND_CYCLE_TIMEOUT_MS)
+  let response: Response
+  let body = ''
+  let elapsedMs = 0
+
+  try {
+    response = await fetch(job.data.runUrl, {
+      method: 'GET',
+      headers: {
+        'user-agent': 'Sovereign-Engine-Outbound-Cycle-Worker/1.0',
+        ...(secret ? { 'x-cron-secret': secret } : {}),
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    body = await response.text()
+    elapsedMs = Date.now() - startedAt
+  } catch (error) {
+    elapsedMs = Date.now() - startedAt
+    if ((error as any)?.name === 'AbortError') {
+      throw new Error(`daily_outbound_cycle_timeout:${OUTBOUND_CYCLE_TIMEOUT_MS}`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
   if (!response.ok) {
     throw new Error(`daily_outbound_cycle_http_${response.status}:${body.slice(0, 240)}`)

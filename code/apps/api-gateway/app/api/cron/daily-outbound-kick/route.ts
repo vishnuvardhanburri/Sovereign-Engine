@@ -33,7 +33,9 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
 function buildRunUrl(request: NextRequest, clientId: number): string {
   const runUrl = new URL('/api/cron/daily-outbound', request.nextUrl.origin)
   const params = request.nextUrl.searchParams
-  const maxMapsLimit = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ?? null, 80, 0, 500)
+  // Hourly cron must never run a large scrape inside the web service. Use a
+  // separate/manual maps job for volume; this route is for reliable sending cycles.
+  const maxMapsLimit = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ?? null, 0, 0, 500)
   const maxPlacesPerSearch = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_PLACES_PER_SEARCH ?? null, 8, 1, 20)
 
   for (const key of [
