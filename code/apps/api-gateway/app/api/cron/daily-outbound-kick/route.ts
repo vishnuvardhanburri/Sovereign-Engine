@@ -24,9 +24,17 @@ function clientIdFrom(request: NextRequest): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 1
 }
 
+function intParam(value: string | null, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(value ?? '', 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(Math.trunc(parsed), max))
+}
+
 function buildRunUrl(request: NextRequest, clientId: number): string {
   const runUrl = new URL('/api/cron/daily-outbound', request.nextUrl.origin)
   const params = request.nextUrl.searchParams
+  const maxMapsLimit = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ?? null, 80, 0, 500)
+  const maxPlacesPerSearch = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_PLACES_PER_SEARCH ?? null, 8, 1, 20)
 
   for (const key of [
     'mode',
@@ -39,7 +47,14 @@ function buildRunUrl(request: NextRequest, clientId: number): string {
     'mapsPlacesPerSearch',
   ]) {
     const value = params.get(key)
-    if (value) runUrl.searchParams.set(key, value)
+    if (!value) continue
+    if (key === 'mapsLimit') {
+      runUrl.searchParams.set(key, String(intParam(value, maxMapsLimit, 0, maxMapsLimit)))
+    } else if (key === 'mapsPlacesPerSearch') {
+      runUrl.searchParams.set(key, String(intParam(value, maxPlacesPerSearch, 1, maxPlacesPerSearch)))
+    } else {
+      runUrl.searchParams.set(key, value)
+    }
   }
 
   runUrl.searchParams.set('client_id', String(clientId))

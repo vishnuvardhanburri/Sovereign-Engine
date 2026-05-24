@@ -55,12 +55,18 @@ else
 fi
 
 if enabled_flag "${WEB_EMBED_SENDER_WORKER:-}"; then
-  sender_replicas="$(int_between "${WEB_EMBED_SENDER_WORKER_REPLICAS:-${SENDER_REPLICAS:-}}" 2 1 8)"
+  # Render free/small services must keep the web process alive first. One embedded
+  # sender with modest concurrency can still clear 200/day without starving Next.js.
+  sender_replica_max="$(int_between "${SENDER_WORKER_REPLICA_MAX:-1}" 1 1 8)"
+  sender_concurrency_max="$(int_between "${SENDER_WORKER_CONCURRENCY_MAX:-4}" 4 1 20)"
+  sender_replicas="$(int_between "${WEB_EMBED_SENDER_WORKER_REPLICAS:-${SENDER_REPLICAS:-}}" 1 1 "$sender_replica_max")"
+  sender_concurrency="$(int_between "${SENDER_WORKER_CONCURRENCY:-}" 4 1 "$sender_concurrency_max")"
   worker_pg_pool_max="$(int_between "${SENDER_WORKER_PG_POOL_MAX:-${PG_POOL_MAX:-}}" 2 1 10)"
-  echo "[render-start] starting embedded sender-worker replicas=${sender_replicas} concurrency=${SENDER_WORKER_CONCURRENCY:-10} worker_pg_pool_max=${worker_pg_pool_max}"
+  echo "[render-start] starting embedded sender-worker replicas=${sender_replicas} concurrency=${sender_concurrency} worker_pg_pool_max=${worker_pg_pool_max}"
   i=1
   while [ "$i" -le "$sender_replicas" ]; do
     WORKER_ID="${RENDER_SERVICE_ID:-render}:${HOSTNAME:-host}:sender-${i}:$$" \
+      SENDER_WORKER_CONCURRENCY="$sender_concurrency" \
       PG_POOL_MAX="$worker_pg_pool_max" \
       pnpm -C workers/sender-worker start &
     i=$((i + 1))

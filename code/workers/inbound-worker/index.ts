@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import { ImapFlow } from 'imapflow'
+// mailparser does not ship TS declarations in this workspace, but tsx runtime loads it correctly.
+// @ts-ignore
 import { simpleParser } from 'mailparser'
 import IORedis from 'ioredis'
 import { Pool } from 'pg'
@@ -41,6 +43,96 @@ function normalizeSubject(v: string) {
   return s.replace(/^(re|fw|fwd)\s*:\s*/gi, '').trim().toLowerCase()
 }
 
+function truncateForMetadata(value: string, max = 2_000) {
+  return value.length > max ? `${value.slice(0, max)}...` : value
+}
+
+const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
+const DSN_SUBJECT_REGEX =
+  /(delivery status notification|undelivered mail returned|mail delivery failed|failure notice|returned mail|delivery failure)/i
+const DSN_BODY_REGEX = /(final-recipient|diagnostic-code|this is the mail system|recipient address rejected|no such user)/i
+const HARD_BOUNCE_REGEX =
+  /\b(5\d\d|5\.\d+\.\d+|no such user|recipient address rejected|access denied|user unknown|mailbox unavailable|does not exist)\b/i
+const SYSTEM_BOUNCE_LOCAL_PARTS = new Set(['mailer-daemon', 'postmaster', 'mail delivery subsystem', 'mail delivery system'])
+const SYSTEM_BOUNCE_DOMAINS = new Set([
+  'googlemail.com',
+  'mailchannels.net',
+  'amazonses.com',
+  'sendgrid.net',
+])
+
+function emailLocalPart(email: string) {
+  return normalizeEmail(email).split('@')[0] ?? ''
+}
+
+function emailDomainPart(email: string) {
+  return normalizeEmail(email).split('@')[1] ?? ''
+}
+
+function uniqueEmailsFrom(text: string) {
+  return Array.from(new Set((text.match(EMAIL_REGEX) ?? []).map(normalizeEmail).filter(Boolean)))
+}
+
+function isSystemBounceSender(email: string) {
+  const normalized = normalizeEmail(email)
+  const local = emailLocalPart(normalized)
+  return SYSTEM_BOUNCE_LOCAL_PARTS.has(local) || local.startsWith('mailer-daemon') || local === 'postmaster'
+}
+
+function isBounceInfrastructureEmail(email: string) {
+  const domain = emailDomainPart(email)
+  return isSystemBounceSender(email) || SYSTEM_BOUNCE_DOMAINS.has(domain)
+}
+
+function isDeliverabilityNotice(input: { fromEmail: string; subject: string; body: string }) {
+  const fromSystem = isSystemBounceSender(input.fromEmail)
+  const fromInfra = isBounceInfrastructureEmail(input.fromEmail)
+  const subjectLooksDsn = DSN_SUBJECT_REGEX.test(input.subject)
+  const bodyLooksDsn = DSN_BODY_REGEX.test(input.body)
+
+  return (
+    fromSystem ||
+    (subjectLooksDsn && bodyLooksDsn) ||
+    (fromInfra && (subjectLooksDsn || bodyLooksDsn))
+  )
+}
+
+function classifyDsnReason(body: string) {
+  const lower = body.toLowerCase()
+  if (/5\.1\.1|no such user|does not exist|user unknown/.test(lower)) return 'no_such_user'
+  if (/5\.4\.1|recipient address rejected|access denied/.test(lower)) return 'recipient_rejected'
+  if (/mailbox unavailable|disabled mailbox|mailbox not found/.test(lower)) return 'mailbox_unavailable'
+  if (HARD_BOUNCE_REGEX.test(body)) return 'hard_bounce'
+  return 'delivery_notice'
+}
+
+function extractFailedRecipients(body: string) {
+  const candidates = new Set<string>()
+  const patterns = [
+    /(?:Final|Original)-Recipient:\s*rfc822;\s*<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>?/gi,
+    /<([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>:/gi,
+    /\bfor\s+<([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>/gi,
+  ]
+
+  for (const pattern of patterns) {
+    for (const match of body.matchAll(pattern)) {
+      if (match[1]) candidates.add(normalizeEmail(match[1]))
+    }
+  }
+
+  if (!candidates.size) {
+    for (const email of uniqueEmailsFrom(body)) candidates.add(email)
+  }
+
+  return Array.from(candidates).filter((email) => {
+    if (!email || OUR_ADDRESSES.has(email)) return false
+    if (isBounceInfrastructureEmail(email)) return false
+    const local = emailLocalPart(email)
+    if (local === 'mailer-daemon' || local === 'postmaster') return false
+    return true
+  })
+}
+
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
@@ -67,7 +159,7 @@ const db: DbExecutor = async (sql, params = []) => {
   const client = await pool.connect()
   try {
     const res = await client.query(sql as any, params as any)
-    return { rows: res.rows as any, rowCount: res.rowCount }
+    return { rows: res.rows as any, rowCount: res.rowCount ?? 0 }
   } finally {
     client.release()
   }
@@ -165,6 +257,130 @@ async function matchReplyToContext(input: {
   return null
 }
 
+async function matchBounceToContext(failedRecipient: string): Promise<MatchContext | null> {
+  const email = normalizeEmail(failedRecipient)
+  if (!email) return null
+
+  const res = await db<MatchContext>(
+    `SELECT client_id AS "clientId",
+            campaign_id AS "campaignId",
+            queue_job_id AS "queueJobId",
+            contact_id AS "contactId",
+            identity_id AS "identityId",
+            domain_id AS "domainId"
+     FROM events
+     WHERE event_type = 'sent'
+       AND COALESCE(metadata->>'to_email','') = $1
+       AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [email]
+  )
+  return res.rows[0] ?? null
+}
+
+async function suppressBouncedRecipient(input: {
+  clientId: number
+  contactId: number | null
+  queueJobId: number | null
+  email: string
+  reason: string
+}) {
+  const email = normalizeEmail(input.email)
+  if (!email) return
+
+  if (input.contactId) {
+    await db(
+      `UPDATE contacts
+       SET status = 'bounced',
+           bounced_at = COALESCE(bounced_at, CURRENT_TIMESTAMP),
+           verification_status = 'invalid',
+           verification_sub_status = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = $2`,
+      [input.clientId, input.contactId, input.reason]
+    )
+  } else {
+    await db(
+      `UPDATE contacts
+       SET status = 'bounced',
+           bounced_at = COALESCE(bounced_at, CURRENT_TIMESTAMP),
+           verification_status = 'invalid',
+           verification_sub_status = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND email = $2`,
+      [input.clientId, email, input.reason]
+    )
+  }
+
+  await db(
+    `INSERT INTO suppression_list (client_id, email, reason, source)
+     VALUES ($1, $2, 'bounced', 'imap_dsn')
+     ON CONFLICT (client_id, email) DO UPDATE
+     SET reason = 'bounced',
+         source = EXCLUDED.source`,
+    [input.clientId, email]
+  )
+
+  if (input.queueJobId) {
+    await db(
+      `UPDATE queue_jobs
+       SET status = CASE WHEN status IN ('completed', 'skipped') THEN status ELSE 'failed' END,
+           last_error = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE client_id = $1 AND id = $3`,
+      [input.clientId, `dsn_bounce:${input.reason}`, input.queueJobId]
+    )
+  }
+}
+
+async function recordDsnBounce(input: {
+  messageId: string
+  fromEmail: string
+  toEmail: string
+  subject: string
+  body: string
+  failedRecipient: string
+  reason: string
+}) {
+  const failedRecipient = normalizeEmail(input.failedRecipient)
+  const ctx = await matchBounceToContext(failedRecipient)
+  const clientId = ctx?.clientId ?? 1
+
+  await ingestEvent(
+    { db },
+    {
+      type: 'BOUNCED',
+      clientId,
+      campaignId: ctx?.campaignId ?? null,
+      contactId: ctx?.contactId ?? null,
+      identityId: ctx?.identityId ?? null,
+      domainId: ctx?.domainId ?? null,
+      queueJobId: ctx?.queueJobId ?? null,
+      providerMessageId: input.messageId,
+      metadata: {
+        event_code: 'EMAIL_BOUNCED',
+        source: 'imap_dsn',
+        idempotency_key: `dsn:${input.messageId}:${failedRecipient}`,
+        failed_recipient: failedRecipient,
+        from_email: input.fromEmail,
+        to_email: input.toEmail,
+        subject: input.subject,
+        dsn_reason: input.reason,
+        body: truncateForMetadata(input.body),
+      },
+    }
+  )
+
+  await suppressBouncedRecipient({
+    clientId,
+    contactId: ctx?.contactId ?? null,
+    queueJobId: ctx?.queueJobId ?? null,
+    email: failedRecipient,
+    reason: input.reason,
+  })
+}
+
 async function processAccount(account: ImapAccount) {
   const client = new ImapFlow({
     host: IMAP_HOST,
@@ -178,15 +394,16 @@ async function processAccount(account: ImapAccount) {
   try {
     await client.mailboxOpen('INBOX')
 
-    const unseen = await client.search({ seen: false })
+    const unseenRaw = await client.search({ seen: false })
+    const unseen = Array.isArray(unseenRaw) ? unseenRaw : []
     if (!unseen.length) return
 
     // Process oldest-first so we keep threading consistent.
-    unseen.sort((a, b) => a - b)
+    unseen.sort((a: number, b: number) => a - b)
 
     for (const uid of unseen) {
       const msg = await client.fetchOne(uid, { source: true, envelope: true, uid: true, flags: true })
-      if (!msg?.source) continue
+      if (!msg || !('source' in msg) || !msg.source) continue
 
       const parsed = await simpleParser(msg.source)
       const messageId = normalizeMsgId(String(parsed.messageId ?? ''))
@@ -213,6 +430,33 @@ async function processAccount(account: ImapAccount) {
 
       const subject = String(parsed.subject ?? '').trim()
       const body = String(parsed.text ?? parsed.html ?? '').trim()
+
+      if (isDeliverabilityNotice({ fromEmail, subject, body })) {
+        const reason = classifyDsnReason(body)
+        const failedRecipients = extractFailedRecipients(body)
+
+        for (const failedRecipient of failedRecipients) {
+          await recordDsnBounce({
+            messageId,
+            fromEmail,
+            toEmail,
+            subject,
+            body,
+            failedRecipient,
+            reason,
+          })
+        }
+
+        console.log('[inbound-worker] delivery notice processed', {
+          fromEmail,
+          subject,
+          reason,
+          failedRecipients,
+        })
+
+        await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+        continue
+      }
 
       const inReplyTo = normalizeMsgId(String((parsed.headers as any)?.get?.('in-reply-to') ?? parsed.inReplyTo ?? ''))
       const referencesRaw = String((parsed.headers as any)?.get?.('references') ?? '')
