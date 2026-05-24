@@ -37,6 +37,7 @@ int_between() {
 echo "[render-start] booting Sovereign Engine"
 echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
 echo "[render-start] secrets DATABASE_URL=$(mask_presence "${DATABASE_URL:-}") REDIS_URL=$(mask_presence "${REDIS_URL:-}") SMTP_HOST=$(mask_presence "${SMTP_HOST:-}") SMTP_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}")"
+echo "[render-start] inbound env WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-true} IMAP_HOST=$(mask_presence "${IMAP_HOST:-}") IMAP_ACCOUNTS=$(mask_presence "${IMAP_ACCOUNTS:-}") IMAP_PORT=${IMAP_PORT:-993} IMAP_SECURE=${IMAP_SECURE:-true}"
 
 node scripts/sync-env.mjs
 pnpm db:init
@@ -86,7 +87,7 @@ if [ -n "${IMAP_HOST:-}" ] && [ -n "${IMAP_ACCOUNTS:-}" ] && enabled_flag "${WEB
   echo "[render-start] starting embedded inbound-worker"
   pnpm -C workers/inbound-worker start &
 else
-  echo "[render-start] embedded inbound-worker disabled or missing IMAP config"
+  echo "[render-start] embedded inbound-worker disabled or missing IMAP config (WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-true} IMAP_HOST=$(mask_presence "${IMAP_HOST:-}") IMAP_ACCOUNTS=$(mask_presence "${IMAP_ACCOUNTS:-}"))"
 fi
 
 echo "[render-start] starting api-gateway on 0.0.0.0:${PORT:-3000}"
