@@ -1616,6 +1616,47 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
 
+  const kick =
+    envBool(
+      request.nextUrl.searchParams.get('kick') ||
+        request.nextUrl.searchParams.get('background') ||
+        undefined,
+      false
+    )
+  if (kick) {
+    const runUrl = new URL(request.nextUrl.toString())
+    runUrl.searchParams.delete('kick')
+    runUrl.searchParams.delete('background')
+    runUrl.searchParams.set('compact', '1')
+    runUrl.searchParams.set('cronCompact', '1')
+
+    void fetch(runUrl.toString(), {
+      method: request.method,
+      headers: {
+        'user-agent': 'Sovereign-Engine-Cron-Kick/1.0',
+      },
+      cache: 'no-store',
+    }).catch((error) => {
+      console.error('[api/cron/daily-outbound] background kick failed', error)
+    })
+
+    return new Response(
+      [
+        'ok=1',
+        'kicked=1',
+        `client=${request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1}`,
+        `ts=${new Date().toISOString()}`,
+      ].join(' '),
+      {
+        status: 202,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'no-store',
+        },
+      }
+    )
+  }
+
   try {
     const params = request.nextUrl.searchParams
     const clientId = Number(params.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
