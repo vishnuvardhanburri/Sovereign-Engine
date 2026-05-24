@@ -27,7 +27,7 @@ import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } 
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
-import { enqueueOutboundCycleJob, startOutboundCycleWorker } from '@/lib/outbound-cycle-worker'
+import { enqueueOutboundCycleJob } from '@/lib/outbound-cycle-worker'
 import { reconcileBootstrapSendingDomain } from '@/lib/bootstrap-sending-domain'
 import {
   buildSovereignCopyForLead,
@@ -1628,38 +1628,48 @@ export async function GET(request: NextRequest) {
       false
     )
   if (kick) {
-    const clientId = Number(request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
-    const runUrl = new URL(request.nextUrl.toString())
-    runUrl.searchParams.delete('kick')
-    runUrl.searchParams.delete('background')
-    runUrl.searchParams.delete('secret')
-    runUrl.searchParams.set('compact', '1')
-    runUrl.searchParams.set('cronCompact', '1')
+    try {
+      const clientId = Number(request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
+      const runUrl = new URL(request.nextUrl.toString())
+      runUrl.searchParams.delete('kick')
+      runUrl.searchParams.delete('background')
+      runUrl.searchParams.delete('secret')
+      runUrl.searchParams.set('compact', '1')
+      runUrl.searchParams.set('cronCompact', '1')
 
-    const workerState = startOutboundCycleWorker()
-    const queued = await enqueueOutboundCycleJob({
-      clientId,
-      runUrl: runUrl.toString(),
-    })
+      const queued = await enqueueOutboundCycleJob({
+        clientId,
+        runUrl: runUrl.toString(),
+      })
 
-    return new Response(
-      [
-        'ok=1',
-        'cycleQueued=1',
-        `client=${clientId}`,
-        `queue=${queued.queue}`,
-        `job=${queued.jobId ?? queued.dedupeKey}`,
-        `workerStarted=${workerState.started ? 1 : 0}`,
-        `ts=${new Date().toISOString()}`,
-      ].join(' '),
-      {
-        status: 202,
+      return new Response(
+        [
+          'ok=1',
+          'cycleQueued=1',
+          `client=${clientId}`,
+          `queue=${queued.queue}`,
+          `job=${queued.jobId ?? queued.dedupeKey}`,
+          'worker=embedded',
+          `ts=${new Date().toISOString()}`,
+        ].join(' '),
+        {
+          status: 202,
+          headers: {
+            'content-type': 'text/plain; charset=utf-8',
+            'cache-control': 'no-store',
+          },
+        }
+      )
+    } catch (error) {
+      console.error('[api/cron/daily-outbound] cycle enqueue failed', error)
+      return new Response(`ok=0 cycleQueued=0 error=${safeError(error).slice(0, 240)}`, {
+        status: 500,
         headers: {
           'content-type': 'text/plain; charset=utf-8',
           'cache-control': 'no-store',
         },
-      }
-    )
+      })
+    }
   }
 
   try {

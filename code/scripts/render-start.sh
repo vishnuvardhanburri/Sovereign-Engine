@@ -35,7 +35,7 @@ int_between() {
 }
 
 echo "[render-start] booting Sovereign Engine"
-echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
+echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
 echo "[render-start] secrets DATABASE_URL=$(mask_presence "${DATABASE_URL:-}") REDIS_URL=$(mask_presence "${REDIS_URL:-}") SMTP_HOST=$(mask_presence "${SMTP_HOST:-}") SMTP_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}")"
 
 node scripts/sync-env.mjs
@@ -67,6 +67,13 @@ if enabled_flag "${WEB_EMBED_SENDER_WORKER:-}"; then
   done
 else
   echo "[render-start] embedded sender-worker disabled"
+fi
+
+if enabled_flag "${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true}"; then
+  echo "[render-start] starting embedded outbound-cycle-worker"
+  pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts &
+else
+  echo "[render-start] embedded outbound-cycle-worker disabled"
 fi
 
 echo "[render-start] starting api-gateway on 0.0.0.0:${PORT:-3000}"
