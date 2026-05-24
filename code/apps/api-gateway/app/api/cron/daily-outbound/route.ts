@@ -21,6 +21,7 @@ import {
   prospectNeedsExactPublicEmailEvidence,
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
+  type ProspectResearchDecision,
 } from '@/lib/prospect-research'
 import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } from '@/lib/lead-scout'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
@@ -891,7 +892,7 @@ async function getResearchPool(clientId: number) {
        END DESC,
        updated_at ASC,
        created_at ASC
-     LIMIT 500`,
+     LIMIT 5000`,
     [clientId]
   )
 
@@ -924,6 +925,40 @@ function rankResearchPool(pool: ProspectResearchContact[]): ProspectResearchCont
       researchValidationPriority(right) - researchValidationPriority(left) ||
       left.email.localeCompare(right.email)
   )
+}
+
+function balanceResearchApprovalMix(
+  decisions: ProspectResearchDecision[],
+  contactById: Map<number, ProspectResearchContact>,
+  limit: number
+): ProspectResearchDecision[] {
+  const normalizedLimit = Math.max(0, Math.trunc(limit))
+  if (normalizedLimit <= 0) return []
+
+  const ranked = [...decisions].sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
+  const agency = ranked.filter((decision) => {
+    const contact = contactById.get(decision.id)
+    if (!contact) return false
+    return inferSovereignOfferType({
+      company: contact.company,
+      companyDomain: contact.company_domain,
+      title: contact.title,
+      source: contact.source,
+      reasonToContact: asString(contact.custom_fields?.reason_to_contact),
+      customFields: contact.custom_fields,
+    }) === 'agency'
+  })
+  const direct = ranked.filter((decision) => !agency.includes(decision))
+  const targetAgency = Math.ceil(normalizedLimit / 2)
+  const targetDirect = normalizedLimit - targetAgency
+  const selected = [
+    ...agency.slice(0, targetAgency),
+    ...direct.slice(0, targetDirect),
+  ]
+  const selectedIds = new Set(selected.map((decision) => decision.id))
+  const remainder = ranked.filter((decision) => !selectedIds.has(decision.id))
+
+  return [...selected, ...remainder.slice(0, normalizedLimit - selected.length)]
 }
 
 function decorateProviderValidationUpdate(contact: ProspectResearchContact): ProspectResearchContact {
@@ -1098,10 +1133,12 @@ async function runResearchApproval(input: {
     const decisions = enrichedPool.map((contact) =>
       scoreProspectForResearchApproval(contact, { threshold })
     )
-    const approvedCandidates = decisions
-      .filter((decision) => decision.approved)
-      .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
-      .slice(0, input.approveLimit)
+    const approvedDecisions = decisions.filter((decision) => decision.approved)
+    const approvedCandidates = balanceResearchApprovalMix(
+      approvedDecisions,
+      contactById,
+      input.approveLimit
+    )
     const blocked = decisions
       .filter((decision) => !decision.approved)
       .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
@@ -1249,7 +1286,7 @@ async function runResearchApproval(input: {
 }
 
 async function loadApprovedContacts(clientId: number, limit: number): Promise<ApprovedLead[]> {
-  const scanLimit = Math.min(Math.max(limit * 5, limit), 5_000)
+  const scanLimit = Math.min(Math.max(limit * 50, 500), 10_000)
   const result = await query<{
     id: string
     email: string
