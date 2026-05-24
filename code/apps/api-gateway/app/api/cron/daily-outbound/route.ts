@@ -1630,15 +1630,17 @@ export async function GET(request: NextRequest) {
     runUrl.searchParams.set('compact', '1')
     runUrl.searchParams.set('cronCompact', '1')
 
-    void fetch(runUrl.toString(), {
-      method: request.method,
-      headers: {
-        'user-agent': 'Sovereign-Engine-Cron-Kick/1.0',
-      },
-      cache: 'no-store',
-    }).catch((error) => {
-      console.error('[api/cron/daily-outbound] background kick failed', error)
-    })
+    setTimeout(() => {
+      void fetch(runUrl.toString(), {
+        method: request.method,
+        headers: {
+          'user-agent': 'Sovereign-Engine-Cron-Kick/1.0',
+        },
+        cache: 'no-store',
+      }).catch((error) => {
+        console.error('[api/cron/daily-outbound] background kick failed', error)
+      })
+    }, 10)
 
     return new Response(
       [
