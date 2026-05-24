@@ -82,5 +82,12 @@ else
   echo "[render-start] embedded outbound-cycle-worker disabled"
 fi
 
+if [ -n "${IMAP_HOST:-}" ] && [ -n "${IMAP_ACCOUNTS:-}" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-true}"; then
+  echo "[render-start] starting embedded inbound-worker"
+  pnpm -C workers/inbound-worker start &
+else
+  echo "[render-start] embedded inbound-worker disabled or missing IMAP config"
+fi
+
 echo "[render-start] starting api-gateway on 0.0.0.0:${PORT:-3000}"
 exec pnpm -C apps/api-gateway start -H 0.0.0.0 -p "${PORT:-3000}"
