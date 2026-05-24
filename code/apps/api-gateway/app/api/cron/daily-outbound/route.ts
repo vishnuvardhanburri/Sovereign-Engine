@@ -27,6 +27,7 @@ import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } 
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
+import { enqueueOutboundCycleJob, startOutboundCycleWorker } from '@/lib/outbound-cycle-worker'
 import { reconcileBootstrapSendingDomain } from '@/lib/bootstrap-sending-domain'
 import {
   buildSovereignCopyForLead,
@@ -66,6 +67,9 @@ type ApprovedLead = {
   offer_type: 'direct' | 'agency'
   deal_value_usd: number
 }
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 function authorize(request: NextRequest): boolean {
   const expected = appEnv.cronSecret()
@@ -1624,29 +1628,28 @@ export async function GET(request: NextRequest) {
       false
     )
   if (kick) {
+    const clientId = Number(request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
     const runUrl = new URL(request.nextUrl.toString())
     runUrl.searchParams.delete('kick')
     runUrl.searchParams.delete('background')
+    runUrl.searchParams.delete('secret')
     runUrl.searchParams.set('compact', '1')
     runUrl.searchParams.set('cronCompact', '1')
 
-    setTimeout(() => {
-      void fetch(runUrl.toString(), {
-        method: request.method,
-        headers: {
-          'user-agent': 'Sovereign-Engine-Cron-Kick/1.0',
-        },
-        cache: 'no-store',
-      }).catch((error) => {
-        console.error('[api/cron/daily-outbound] background kick failed', error)
-      })
-    }, 10)
+    const workerState = startOutboundCycleWorker()
+    const queued = await enqueueOutboundCycleJob({
+      clientId,
+      runUrl: runUrl.toString(),
+    })
 
     return new Response(
       [
         'ok=1',
-        'kicked=1',
-        `client=${request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1}`,
+        'cycleQueued=1',
+        `client=${clientId}`,
+        `queue=${queued.queue}`,
+        `job=${queued.jobId ?? queued.dedupeKey}`,
+        `workerStarted=${workerState.started ? 1 : 0}`,
         `ts=${new Date().toISOString()}`,
       ].join(' '),
       {
