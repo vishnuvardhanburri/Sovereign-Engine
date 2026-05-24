@@ -1,70 +1,13 @@
-import crypto from 'node:crypto'
-import { Queue, Worker, type Job } from 'bullmq'
+import { Worker, type Job } from 'bullmq'
 import { appEnv } from '@/lib/env'
+import { OUTBOUND_CYCLE_QUEUE, type OutboundCycleJobData } from '@/lib/outbound-cycle-queue'
 
-type OutboundCycleJobData = {
-  clientId: number
-  runUrl: string
-  createdAt: string
-}
-
-const OUTBOUND_CYCLE_QUEUE = process.env.OUTBOUND_CYCLE_QUEUE ?? 'xv-outbound-cycle'
 const OUTBOUND_CYCLE_WORKER_CONCURRENCY = Math.max(
   1,
   Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_WORKER_CONCURRENCY ?? '1', 10) || 1, 3)
 )
 
 let cycleWorker: Worker<OutboundCycleJobData> | null = null
-
-function hourlyJobId(clientId: number, runUrl: string): string {
-  const hourBucket = new Date().toISOString().slice(0, 13)
-  const hash = crypto
-    .createHash('sha256')
-    .update(`${clientId}:${hourBucket}:${runUrl}`)
-    .digest('hex')
-    .slice(0, 20)
-
-  return `daily-outbound:${clientId}:${hourBucket}:${hash}`
-}
-
-export async function enqueueOutboundCycleJob(input: {
-  clientId: number
-  runUrl: string
-}): Promise<{ queue: string; jobId: string | undefined; dedupeKey: string }> {
-  const queue = new Queue<OutboundCycleJobData>(OUTBOUND_CYCLE_QUEUE, {
-    connection: { url: appEnv.redisUrl() },
-  })
-  const dedupeKey = hourlyJobId(input.clientId, input.runUrl)
-
-  try {
-    const job = await queue.add(
-      'daily_outbound_cycle',
-      {
-        clientId: input.clientId,
-        runUrl: input.runUrl,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        jobId: dedupeKey,
-        attempts: 2,
-        backoff: {
-          type: 'exponential',
-          delay: 60_000,
-        },
-        removeOnComplete: 200,
-        removeOnFail: 200,
-      }
-    )
-
-    return {
-      queue: OUTBOUND_CYCLE_QUEUE,
-      jobId: job.id === undefined ? undefined : String(job.id),
-      dedupeKey,
-    }
-  } finally {
-    await queue.close()
-  }
-}
 
 async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
   const secret = appEnv.cronSecret()

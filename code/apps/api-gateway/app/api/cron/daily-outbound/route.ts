@@ -27,7 +27,7 @@ import { leadScoutToContacts, scoutOpenLeads, verifyOpenLeadEvidenceTimeboxed } 
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
-import { enqueueOutboundCycleJob } from '@/lib/outbound-cycle-worker'
+import { enqueueOutboundCycleJob } from '@/lib/outbound-cycle-queue'
 import { reconcileBootstrapSendingDomain } from '@/lib/bootstrap-sending-domain'
 import {
   buildSovereignCopyForLead,
