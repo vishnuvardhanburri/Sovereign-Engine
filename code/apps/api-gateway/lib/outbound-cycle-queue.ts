@@ -18,7 +18,7 @@ function hourlyJobId(clientId: number, runUrl: string): string {
     .digest('hex')
     .slice(0, 20)
 
-  return `daily-outbound:${clientId}:${hourBucket}:${hash}`
+  return `daily-outbound-${clientId}-${hourBucket}-${hash}`
 }
 
 export async function enqueueOutboundCycleJob(input: {
