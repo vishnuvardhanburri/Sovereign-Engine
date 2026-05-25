@@ -37,9 +37,11 @@ int_between() {
 echo "[render-start] booting Sovereign Engine"
 echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
 echo "[render-start] secrets DATABASE_URL=$(mask_presence "${DATABASE_URL:-}") REDIS_URL=$(mask_presence "${REDIS_URL:-}") SMTP_HOST=$(mask_presence "${SMTP_HOST:-}") SMTP_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}")"
+memory_profile="$(printf '%s' "${WEB_MEMORY_PROFILE:-small}" | tr '[:upper:]' '[:lower:]' | tr -d '"'\'' ')"
 effective_imap_host="${IMAP_HOST:-${SMTP_HOST:-}}"
 effective_imap_accounts="${IMAP_ACCOUNTS:-${SMTP_ACCOUNTS:-}}"
-echo "[render-start] inbound env WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-true} IMAP_HOST=$(mask_presence "${IMAP_HOST:-}") IMAP_ACCOUNTS=$(mask_presence "${IMAP_ACCOUNTS:-}") SMTP_FALLBACK_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}") EFFECTIVE_IMAP_HOST=$(mask_presence "$effective_imap_host") EFFECTIVE_IMAP_ACCOUNTS=$(mask_presence "$effective_imap_accounts") IMAP_PORT=${IMAP_PORT:-993} IMAP_SECURE=${IMAP_SECURE:-true}"
+echo "[render-start] memory_profile=${memory_profile}"
+echo "[render-start] inbound env WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-false} IMAP_HOST=$(mask_presence "${IMAP_HOST:-}") IMAP_ACCOUNTS=$(mask_presence "${IMAP_ACCOUNTS:-}") SMTP_FALLBACK_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}") EFFECTIVE_IMAP_HOST=$(mask_presence "$effective_imap_host") EFFECTIVE_IMAP_ACCOUNTS=$(mask_presence "$effective_imap_accounts") IMAP_PORT=${IMAP_PORT:-993} IMAP_SECURE=${IMAP_SECURE:-true}"
 
 node scripts/sync-env.mjs
 pnpm db:init
@@ -61,10 +63,18 @@ if enabled_flag "${WEB_EMBED_SENDER_WORKER:-}"; then
   # Render free/small services must keep the web process alive first. One embedded
   # sender with modest concurrency can still clear 200/day without starving Next.js.
   sender_replica_max="$(int_between "${SENDER_WORKER_REPLICA_MAX:-1}" 1 1 8)"
-  sender_concurrency_max="$(int_between "${SENDER_WORKER_CONCURRENCY_MAX:-4}" 4 1 20)"
+  sender_concurrency_default=1
+  sender_concurrency_max_default=1
+  worker_pg_pool_default=1
+  if [ "$memory_profile" != "small" ]; then
+    sender_concurrency_default=4
+    sender_concurrency_max_default=4
+    worker_pg_pool_default=2
+  fi
+  sender_concurrency_max="$(int_between "${SENDER_WORKER_CONCURRENCY_MAX:-$sender_concurrency_max_default}" "$sender_concurrency_max_default" 1 20)"
   sender_replicas="$(int_between "${WEB_EMBED_SENDER_WORKER_REPLICAS:-${SENDER_REPLICAS:-}}" 1 1 "$sender_replica_max")"
-  sender_concurrency="$(int_between "${SENDER_WORKER_CONCURRENCY:-}" 4 1 "$sender_concurrency_max")"
-  worker_pg_pool_max="$(int_between "${SENDER_WORKER_PG_POOL_MAX:-${PG_POOL_MAX:-}}" 2 1 10)"
+  sender_concurrency="$(int_between "${SENDER_WORKER_CONCURRENCY:-}" "$sender_concurrency_default" 1 "$sender_concurrency_max")"
+  worker_pg_pool_max="$(int_between "${SENDER_WORKER_PG_POOL_MAX:-${PG_POOL_MAX:-}}" "$worker_pg_pool_default" 1 10)"
   echo "[render-start] starting embedded sender-worker replicas=${sender_replicas} concurrency=${sender_concurrency} worker_pg_pool_max=${worker_pg_pool_max}"
   i=1
   while [ "$i" -le "$sender_replicas" ]; do
@@ -80,18 +90,20 @@ fi
 
 if enabled_flag "${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true}"; then
   echo "[render-start] starting embedded outbound-cycle-worker"
-  pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts &
+  OUTBOUND_CYCLE_TIMEOUT_MS="${OUTBOUND_CYCLE_TIMEOUT_MS:-45000}" \
+    OUTBOUND_CYCLE_WORKER_CONCURRENCY="${OUTBOUND_CYCLE_WORKER_CONCURRENCY:-1}" \
+    pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts &
 else
   echo "[render-start] embedded outbound-cycle-worker disabled"
 fi
 
-if [ -n "$effective_imap_host" ] && [ -n "$effective_imap_accounts" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-true}"; then
+if [ -n "$effective_imap_host" ] && [ -n "$effective_imap_accounts" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-false}"; then
   echo "[render-start] starting embedded inbound-worker"
   IMAP_HOST="$effective_imap_host" \
     IMAP_ACCOUNTS="$effective_imap_accounts" \
     pnpm -C workers/inbound-worker start &
 else
-  echo "[render-start] embedded inbound-worker disabled or missing IMAP config (WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-true} EFFECTIVE_IMAP_HOST=$(mask_presence "$effective_imap_host") EFFECTIVE_IMAP_ACCOUNTS=$(mask_presence "$effective_imap_accounts"))"
+  echo "[render-start] embedded inbound-worker disabled or missing IMAP config (WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-false} EFFECTIVE_IMAP_HOST=$(mask_presence "$effective_imap_host") EFFECTIVE_IMAP_ACCOUNTS=$(mask_presence "$effective_imap_accounts"))"
 fi
 
 echo "[render-start] starting api-gateway on 0.0.0.0:${PORT:-3000}"
