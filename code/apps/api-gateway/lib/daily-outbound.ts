@@ -50,8 +50,8 @@ const DEFAULT_MAPS_LIMIT = 100
 const DEFAULT_SEND_LIMIT = 1
 const MAX_SHEET_LIMIT = 500
 const MAX_MAPS_LIMIT = 500
-const DEFAULT_LEAD_SCOUT_LIMIT = 3
-const MAX_LEAD_SCOUT_LIMIT = 3
+const DEFAULT_LEAD_SCOUT_LIMIT = 25
+const MAX_LEAD_SCOUT_LIMIT = 100
 const MAX_APPROVE_LIMIT = 1_000_000
 const DEFAULT_GROWTH_APPROVAL_FLOOR = 1_000_000
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
@@ -300,12 +300,15 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   const mapsLimit = clampInteger(
     input.query.mapsLimit ?? input.env.GOOGLE_MAPS_DAILY_LIMIT,
     DEFAULT_MAPS_LIMIT,
-    1,
+    0,
     MAX_MAPS_LIMIT
   )
   const runMapsImport = resolveDailyBoolean(
     input.query.mapsImport ?? input.env.DAILY_OUTBOUND_RUN_MAPS,
-    resolveDailyBoolean(input.env.GOOGLE_MAPS_SOURCE_ENABLED, false)
+    resolveDailyBoolean(
+      input.env.GOOGLE_MAPS_SOURCE_ENABLED ?? input.env.GOOGLE_MAPS_SOURCE_ENABLE,
+      false
+    )
   )
   const leadScoutLimit = clampInteger(
     input.query.leadScoutLimit ?? input.env.LEAD_SCOUT_DAILY_LIMIT,
@@ -324,7 +327,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     'Daily queueing is capped by reputation health and domain capacity',
     'If Google Sheet intake fails, the system falls back to existing approved contacts',
   ]
-  if (runMapsImport) {
+  if (runMapsImport && mapsLimit > 0) {
     guardrails.push(
       'Google Maps/Apify intake imports public business leads only after evidence filtering'
     )
@@ -387,7 +390,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     sendLimit,
     runSheetImport: Boolean(sheetUrl),
     runMapsImport: Boolean(
-      runMapsImport && (mapsDatasetId || input.env.APIFY_API_TOKEN)
+      runMapsImport && mapsLimit > 0 && (mapsDatasetId || input.env.APIFY_API_TOKEN)
     ),
     runLeadScout,
     runResearchApproval: true,

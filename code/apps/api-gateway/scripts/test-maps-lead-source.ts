@@ -164,6 +164,7 @@ assert.deepEqual(
     location: 'United States',
     limit: 12,
     placesPerSearch: 12,
+    explicitOnly: 'true',
   }),
   {
     searchStringsArray: ['lead generation agency', 'RevOps agency'],
@@ -175,6 +176,19 @@ assert.deepEqual(
     skipClosedPlaces: true,
   }
 )
+
+const expandedExplicitActorInput = buildApifyGoogleMapsActorInput({
+  searches: 'lead generation agency, RevOps agency',
+  location: 'United States',
+  limit: 12,
+  placesPerSearch: 12,
+})
+assert.ok(Array.isArray(expandedExplicitActorInput.searchStringsArray))
+assert.ok((expandedExplicitActorInput.searchStringsArray as string[]).length > 30)
+assert.ok(
+  (expandedExplicitActorInput.searchStringsArray as string[]).includes('lead generation agency')
+)
+assert.ok((expandedExplicitActorInput.searchStringsArray as string[]).includes('cold email agency'))
 
 const hybridActorInput = buildApifyGoogleMapsActorInput({ limit: 100 })
 assert.ok(Array.isArray(hybridActorInput.searchStringsArray))

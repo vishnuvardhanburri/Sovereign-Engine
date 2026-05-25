@@ -60,6 +60,7 @@ type TelegramNotification =
       evidenceBacked: number
       datasetId?: string | null
       source?: string | null
+      rejectionReasons?: Record<string, number> | null
     }
   | {
       type: 'hunter_domain_search'
@@ -148,6 +149,16 @@ function clip(value: string | null | undefined, max = 240): string {
   return `${text.slice(0, max - 1)}...`
 }
 
+function formatTopReasons(reasons?: Record<string, number> | null): string | null {
+  const top = Object.entries(reasons ?? {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `${reason}: ${count}`)
+
+  return top.length ? `Top rejected: ${clip(top.join(', '), 120)}` : null
+}
+
 function cleanTelegramText(text: string): string {
   return text
     .replace(/━━━━━━━━━━━━━━━━━━━━━━━/g, '------------------------------')
@@ -233,31 +244,32 @@ export function formatTelegramNotification(input: TelegramNotification, options?
 
   if (input.type === 'maps_import') {
     return [
-      '🗺️ *Google Maps Lead Intake*',
-      '━━━━━━━━━━━━━━━━━━━━━━━',
-      `👥 *Imported Leads:* *${input.imported}*`,
-      `📋 *Prepared:* ${input.prepared}`,
-      `🛡️ *Evidence-Backed:* *${input.evidenceBacked}*`,
-      `🚫 *Filtered/Rejected:* ${input.rejected}`,
-      input.source ? `🔌 *Source:* ${clip(input.source, 80)}` : null,
-      input.datasetId ? `📦 *Dataset ID:* ${clip(input.datasetId, 80)}` : null,
-      '━━━━━━━━━━━━━━━━━━━━━━━',
-      '🚦 *Status:* Approvals and validation gate required before sending.',
+      '*Google Maps Lead Intake*',
+      '------------------------------',
+      `Imported: *${input.imported}*`,
+      `Prepared: ${input.prepared}`,
+      `Evidence-backed: *${input.evidenceBacked}*`,
+      `Rejected: ${input.rejected}`,
+      formatTopReasons(input.rejectionReasons),
+      input.source ? `Source: ${clip(input.source, 80)}` : null,
+      input.datasetId ? `Dataset: ${clip(input.datasetId, 80)}` : null,
+      '------------------------------',
+      'Status: Approvals and validation gate required before sending.',
     ].filter(Boolean).join('\n')
   }
 
   if (input.type === 'lead_scout') {
     return [
-      '🕵️‍♂️ *Autonomous Lead Scout*',
-      '━━━━━━━━━━━━━━━━━━━━━━━',
-      `🔎 *Scanned Prospects:* ${input.scanned}`,
-      `🛡️ *Evidence-Backed:* *${input.evidenceBacked}*`,
-      `👥 *Imported:* *${input.imported}*`,
-      `🚫 *Blocked Unverified:* ${input.blockedUnverified}`,
-      input.industry ? `🏢 *Industry:* ${clip(input.industry, 60)}` : null,
-      input.persona ? `🎯 *Persona:* ${clip(input.persona, 60)}` : null,
-      '━━━━━━━━━━━━━━━━━━━━━━━',
-      '🚦 *Status:* Exact public evidence required before approval.',
+      '*Autonomous Lead Scout*',
+      '------------------------------',
+      `Scanned prospects: ${input.scanned}`,
+      `Evidence-backed: *${input.evidenceBacked}*`,
+      `Imported: *${input.imported}*`,
+      `Blocked unverified: ${input.blockedUnverified}`,
+      input.industry ? `Industry: ${clip(input.industry, 60)}` : null,
+      input.persona ? `Persona: ${clip(input.persona, 60)}` : null,
+      '------------------------------',
+      'Status: Exact public evidence required before approval.',
     ].filter(Boolean).join('\n')
   }
 

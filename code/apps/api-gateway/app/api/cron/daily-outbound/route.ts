@@ -655,6 +655,7 @@ async function runMapsImport(input: {
         evidenceBacked: prepared.summary.evidenceBacked,
         datasetId: resolved.datasetId || resolved.taskId || null,
         source: 'apify_google_maps',
+        rejectionReasons,
       })
     }
 

@@ -127,7 +127,7 @@ const autonomousScoutPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(autonomousScoutPlan.runLeadScout, true)
-assert.equal(autonomousScoutPlan.leadScoutLimit, 3)
+assert.equal(autonomousScoutPlan.leadScoutLimit, 25)
 assert.ok(
   autonomousScoutPlan.guardrails.includes(
     'Autonomous lead scout imports only exact public-contact evidence when enabled'
@@ -146,7 +146,7 @@ const mapsPlan = buildDailyOutboundPlan({
 
 assert.equal(mapsPlan.runMapsImport, true)
 assert.equal(mapsPlan.mapsDatasetId, 'dataset-123')
-assert.equal(mapsPlan.mapsLimit, 100)
+assert.equal(mapsPlan.mapsLimit, 250)
 assert.ok(
   mapsPlan.guardrails.includes(
     'Google Maps/Apify intake imports public business leads only after evidence filtering'
@@ -203,6 +203,20 @@ const disabledMapsPlan = buildDailyOutboundPlan({
 })
 
 assert.equal(disabledMapsPlan.runMapsImport, false)
+
+const zeroMapsLimitPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    DAILY_OUTBOUND_RUN_MAPS: 'true',
+    APIFY_API_TOKEN: 'token-only',
+  },
+  query: {
+    mapsLimit: '0',
+  },
+})
+
+assert.equal(zeroMapsLimitPlan.mapsLimit, 0)
+assert.equal(zeroMapsLimitPlan.runMapsImport, false)
 
 const disabledAutonomousScoutPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,

@@ -176,6 +176,7 @@ export function buildApifyGoogleMapsActorInput(input?: {
   limit?: unknown
   inputJson?: unknown
   placesPerSearch?: unknown
+  explicitOnly?: unknown
 }): ApifyActorInput {
   if (input?.inputJson && typeof input.inputJson === 'object' && !Array.isArray(input.inputJson)) {
     return input.inputJson as ApifyActorInput
@@ -191,20 +192,22 @@ export function buildApifyGoogleMapsActorInput(input?: {
   }
 
   const explicitSearches = asStringArray(input?.searches)
+  const explicitOnly = ['1', 'true', 'yes', 'on'].includes(
+    asString(input?.explicitOnly || process.env.APIFY_GOOGLE_MAPS_USE_EXPLICIT_ONLY).toLowerCase()
+  )
   const rawLocations = asStringArray(input?.location)
   const primaryLocation = rawLocations[0] || 'United States'
   const marketBoosts = rawLocations.length > 1 ? rawLocations : DEFAULT_HYBRID_MARKETS
+  const hybridSearches = [
+    ...DEFAULT_HYBRID_MAPS_SEARCHES,
+    ...DEFAULT_HYBRID_MAPS_SEARCHES.slice(0, 12).flatMap((query) =>
+      marketBoosts.slice(0, 4).map((market) => `${query} ${market}`)
+    ),
+  ]
   const searches =
-    explicitSearches.length > 0
+    explicitSearches.length > 0 && explicitOnly
       ? explicitSearches
-      : Array.from(
-          new Set([
-            ...DEFAULT_HYBRID_MAPS_SEARCHES,
-            ...DEFAULT_HYBRID_MAPS_SEARCHES.slice(0, 12).flatMap((query) =>
-              marketBoosts.slice(0, 4).map((market) => `${query} ${market}`)
-            ),
-          ])
-        )
+      : Array.from(new Set([...explicitSearches, ...hybridSearches]))
   const totalLimit = Math.max(1, Math.min(Number(input?.limit ?? 100), 500))
   const placesPerSearch = Math.max(
     1,

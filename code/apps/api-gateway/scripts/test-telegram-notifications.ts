@@ -21,7 +21,7 @@ const sent = formatTelegramNotification({
   providerMessageId: 'msg_123',
 })
 
-assert.match(sent, /Email sent/)
+assert.match(sent, /Email Sent/)
 assert.match(sent, /s\*\*\*s@verified-agency\.com/)
 assert.doesNotMatch(sent, /sales@verified-agency\.com/)
 
@@ -34,9 +34,9 @@ const importMessage = formatTelegramNotification({
   sheetUrl: 'https://docs.google.com/spreadsheets/d/demo/edit',
 })
 
-assert.match(importMessage, /Google Sheet import/)
-assert.match(importMessage, /Imported: 12/)
-assert.match(importMessage, /Evidence-backed: 9/)
+assert.match(importMessage, /Google Sheet Import/i)
+assert.match(importMessage.replace(/\n/g, ' '), /Imported Leads:.*12/)
+assert.match(importMessage.replace(/\n/g, ' '), /Evidence-Backed:.*9/)
 
 const mapsMessage = formatTelegramNotification({
   type: 'maps_import',
@@ -48,9 +48,25 @@ const mapsMessage = formatTelegramNotification({
   source: 'apify_google_maps',
 })
 
-assert.match(mapsMessage, /Google Maps lead intake/)
-assert.match(mapsMessage, /Imported: 7/)
+assert.match(mapsMessage, /Google Maps Lead Intake/i)
+assert.match(mapsMessage.replace(/\n/g, ' '), /Imported:.*7/)
 assert.match(mapsMessage, /Dataset: dataset_123/)
+
+const mapsRejectedMessage = formatTelegramNotification({
+  type: 'maps_import',
+  imported: 0,
+  prepared: 0,
+  rejected: 16,
+  evidenceBacked: 0,
+  source: 'apify_google_maps',
+  rejectionReasons: {
+    missing_email: 10,
+    irrelevant_maps_category: 4,
+    duplicate_domain: 2,
+  },
+})
+
+assert.match(mapsRejectedMessage, /Top rejected: missing_email: 10/)
 
 const dailyMessage = formatTelegramNotification({
   type: 'daily_outbound',
