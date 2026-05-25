@@ -510,6 +510,7 @@ async function processAccount(account: ImapAccount) {
           metadata: {
             event_code: 'EMAIL_REPLIED',
             source: 'imap',
+            matched_to_outbound: Boolean(ctx),
             message_id: messageId,
             in_reply_to: inReplyTo || undefined,
             references: references.length ? references : undefined,

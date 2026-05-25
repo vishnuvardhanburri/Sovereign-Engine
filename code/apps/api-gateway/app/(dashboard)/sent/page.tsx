@@ -21,7 +21,7 @@ import { Search, Send, TrendingUp, AlertTriangle, Mail, Reply } from 'lucide-rea
 
 type SentItem = {
   id: number
-  type: 'sent' | 'failed' | 'bounce'
+  type: 'sent' | 'failed' | 'bounce' | 'reply'
   createdAt: string
   campaignId: number | null
   campaignName: string | null
@@ -84,6 +84,7 @@ type CopyPreviewResponse = {
 
 function statusBadge(type: SentItem['type']) {
   if (type === 'sent') return <Badge className="bg-green-500/10 text-green-500">Sent</Badge>
+  if (type === 'reply') return <Badge className="bg-blue-500/10 text-blue-500">Reply</Badge>
   if (type === 'bounce') return <Badge className="bg-red-500/10 text-red-500">Bounced</Badge>
   return <Badge className="bg-amber-500/10 text-amber-500">Failed</Badge>
 }
@@ -186,7 +187,9 @@ export default function SentMailPage() {
         x.subject.toLowerCase().includes(needle) ||
         (x.campaignName ?? '').toLowerCase().includes(needle) ||
         (x.provider ?? '').toLowerCase().includes(needle) ||
-        (x.error ?? '').toLowerCase().includes(needle)
+        (x.error ?? '').toLowerCase().includes(needle) ||
+        x.type.toLowerCase().includes(needle) ||
+        (x.bodyText ?? '').toLowerCase().includes(needle)
       )
     })
   }, [data, q])
@@ -519,7 +522,9 @@ export default function SentMailPage() {
                 </div>
               ) : (
                 <div className="text-sm bg-muted/40 border rounded-md p-3 space-y-2">
-                  <p className="font-medium">Message body no longer retained</p>
+                  <p className="font-medium">
+                    {selected.type === 'reply' ? 'Reply body unavailable' : 'Message body no longer retained'}
+                  </p>
                   <p className="text-muted-foreground">
                     This older event keeps delivery proof only. Full email bodies are redacted after
                     the operational review window so storage stays clean.

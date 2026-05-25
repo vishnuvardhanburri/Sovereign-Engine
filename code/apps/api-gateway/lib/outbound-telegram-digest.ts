@@ -20,7 +20,7 @@ export type OutboundTelegramDigest = {
   /** Heuristic next-action recommendation based on current system state */
   nextAction: string
   lastEvents: Array<{
-    type: 'sent' | 'failed' | 'bounced'
+    type: 'sent' | 'failed' | 'bounced' | 'reply'
     email: string
     subject: string
     reason?: string
@@ -59,6 +59,12 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
          FROM events
          WHERE client_id = $1
            AND event_type IN ('sent','failed','bounce','reply','bounced')
+           AND (
+             event_type <> 'reply'
+             OR contact_id IS NOT NULL
+             OR queue_job_id IS NOT NULL
+             OR campaign_id IS NOT NULL
+           )
            AND created_at >= NOW() - INTERVAL '7 days'
          GROUP BY 1, 2`,
         [clientId]
@@ -211,20 +217,32 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       `SELECT
          e.event_type,
          e.created_at::text,
-         COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), co.email) AS to_email,
+         CASE
+           WHEN e.event_type = 'reply' THEN COALESCE(NULLIF(e.metadata->>'from_email',''), co.email)
+           ELSE COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), co.email)
+         END AS to_email,
          COALESCE(NULLIF(e.metadata->>'subject',''), NULLIF(e.metadata->>'email_subject','')) AS subject,
-         COALESCE(NULLIF(e.metadata->>'error',''), NULLIF(e.metadata->>'reason','')) AS error
+         CASE
+           WHEN e.event_type = 'reply' THEN NULLIF(e.metadata->>'body','')
+           ELSE COALESCE(NULLIF(e.metadata->>'error',''), NULLIF(e.metadata->>'reason',''))
+         END AS error
        FROM events e
        LEFT JOIN contacts co ON co.id = e.contact_id AND co.client_id = e.client_id
        WHERE e.client_id = $1
-         AND e.event_type IN ('sent','failed','bounce','bounced')
+         AND (
+           e.event_type IN ('sent','failed','bounce','bounced')
+           OR (
+             e.event_type = 'reply'
+             AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
+           )
+         )
        ORDER BY e.created_at DESC
        LIMIT 8`,
       [clientId]
     )
 
     const lastEvents = lastEventsRes.rows.map((r) => ({
-      type: (r.event_type === 'bounce' || r.event_type === 'bounced' ? 'bounced' : r.event_type) as 'sent' | 'failed' | 'bounced',
+      type: (r.event_type === 'bounce' || r.event_type === 'bounced' ? 'bounced' : r.event_type) as 'sent' | 'failed' | 'bounced' | 'reply',
       email: r.to_email ?? '',
       subject: (r.subject ?? '').slice(0, 80),
       reason: r.error ?? undefined,

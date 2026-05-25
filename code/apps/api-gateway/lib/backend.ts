@@ -2531,15 +2531,16 @@ export async function listReplies(clientId: number, input: PaginationInput = {})
          e.campaign_id,
          e.contact_id,
          e.created_at AS date,
-         c.email AS from_email,
-         COALESCE(c.name, e.metadata->>'from_name', c.email) AS from_name,
+         COALESCE(c.email, NULLIF(e.metadata->>'from_email', '')) AS from_email,
+         COALESCE(c.name, NULLIF(e.metadata->>'from_name', ''), NULLIF(e.metadata->>'from_email', ''), c.email) AS from_name,
          COALESCE(e.metadata->>'subject', 'Reply received') AS subject,
          COALESCE(e.metadata->>'reply_status', 'unread') AS status,
          e.metadata
        FROM events e
-       LEFT JOIN contacts c ON c.id = e.contact_id
+       LEFT JOIN contacts c ON c.id = e.contact_id AND c.client_id = e.client_id
        WHERE e.client_id = $1
          AND e.event_type = 'reply'
+         AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
        ORDER BY e.created_at DESC
        LIMIT $2 OFFSET $3`,
       [clientId, limit, offset]
@@ -2548,7 +2549,8 @@ export async function listReplies(clientId: number, input: PaginationInput = {})
       `SELECT COUNT(*)::text AS count
        FROM events
        WHERE client_id = $1
-         AND event_type = 'reply'`,
+         AND event_type = 'reply'
+         AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)`,
       [clientId]
     ),
   ])
@@ -2563,15 +2565,16 @@ export async function getReply(clientId: number, replyId: number) {
        e.campaign_id,
        e.contact_id,
        e.created_at AS date,
-       c.email AS from_email,
-       COALESCE(c.name, e.metadata->>'from_name', c.email) AS from_name,
+       COALESCE(c.email, NULLIF(e.metadata->>'from_email', '')) AS from_email,
+       COALESCE(c.name, NULLIF(e.metadata->>'from_name', ''), NULLIF(e.metadata->>'from_email', ''), c.email) AS from_name,
        COALESCE(e.metadata->>'subject', 'Reply received') AS subject,
        COALESCE(e.metadata->>'reply_status', 'unread') AS status,
        e.metadata
      FROM events e
-     LEFT JOIN contacts c ON c.id = e.contact_id
+     LEFT JOIN contacts c ON c.id = e.contact_id AND c.client_id = e.client_id
      WHERE e.client_id = $1
        AND e.event_type = 'reply'
+       AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
        AND e.id = $2`,
     [clientId, replyId]
   )

@@ -34,17 +34,30 @@ export async function GET(request: NextRequest) {
            NULL::text AS campaign_name,
            NULL::bigint AS queue_job_id,
            NULL::text AS provider_message_id,
-           COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), NULLIF(e.metadata->>'recipient','')) AS to_email,
-           COALESCE(NULLIF(e.metadata->>'from_email',''), NULLIF(e.metadata->>'from','')) AS from_email,
+           CASE
+             WHEN e.event_type = 'reply' THEN COALESCE(NULLIF(e.metadata->>'from_email',''), NULLIF(e.metadata->>'from',''), c.email)
+             ELSE COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''), NULLIF(e.metadata->>'recipient',''), c.email)
+           END AS to_email,
+           CASE
+             WHEN e.event_type = 'reply' THEN COALESCE(NULLIF(e.metadata->>'to_email',''), NULLIF(e.metadata->>'to',''))
+             ELSE COALESCE(NULLIF(e.metadata->>'from_email',''), NULLIF(e.metadata->>'from',''))
+           END AS from_email,
            COALESCE(NULLIF(e.metadata->>'subject',''), NULLIF(e.metadata->>'email_subject','')) AS subject,
            COALESCE(NULLIF(e.metadata->>'error',''), NULLIF(e.metadata->>'reason','')) AS error,
-           e.metadata->>'body_text' AS body_text,
+           COALESCE(NULLIF(e.metadata->>'body_text',''), NULLIF(e.metadata->>'body','')) AS body_text,
            e.metadata->>'body_html' AS body_html,
            COALESCE(NULLIF(e.metadata->>'provider',''), NULLIF(e.metadata->>'sending_provider','')) AS provider,
            NULLIF(e.metadata->>'offer_type','') AS offer_type
          FROM events e
+         LEFT JOIN contacts c ON c.id = e.contact_id AND c.client_id = e.client_id
          WHERE e.client_id = $1
-           AND e.event_type IN ('sent','failed','bounce')
+           AND (
+             e.event_type IN ('sent','failed','bounce')
+             OR (
+               e.event_type = 'reply'
+               AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
+             )
+           )
          ORDER BY e.created_at DESC
          LIMIT $2`,
         [clientId, limit]
@@ -69,9 +82,17 @@ export async function GET(request: NextRequest) {
            COUNT(*) FILTER (WHERE event_type = 'sent' AND created_at >= NOW() - INTERVAL '24h')::text AS sent_24h,
            COUNT(*) FILTER (WHERE event_type = 'failed' AND created_at >= NOW() - INTERVAL '24h')::text AS failed_24h,
            COUNT(*) FILTER (WHERE event_type = 'bounce' AND created_at >= NOW() - INTERVAL '24h')::text AS bounced_24h,
-           COUNT(*) FILTER (WHERE event_type = 'reply' AND created_at >= NOW() - INTERVAL '24h')::text AS replies_24h,
+           COUNT(*) FILTER (
+             WHERE event_type = 'reply'
+               AND created_at >= NOW() - INTERVAL '24h'
+               AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)
+           )::text AS replies_24h,
            COUNT(*) FILTER (WHERE event_type = 'sent' AND created_at >= NOW() - INTERVAL '7 days')::text AS sent_7d,
-           COUNT(*) FILTER (WHERE event_type = 'reply' AND created_at >= NOW() - INTERVAL '7 days')::text AS replies_7d,
+           COUNT(*) FILTER (
+             WHERE event_type = 'reply'
+               AND created_at >= NOW() - INTERVAL '7 days'
+               AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)
+           )::text AS replies_7d,
            COUNT(*) FILTER (
              WHERE event_type = 'sent'
                AND created_at >= NOW() - INTERVAL '24h'

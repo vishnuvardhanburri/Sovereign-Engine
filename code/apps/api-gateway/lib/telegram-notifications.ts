@@ -123,7 +123,7 @@ type TelegramNotification =
       followUpsStopped24h?: number
       queuedNow?: number
       lastEvents?: Array<{
-        type: 'sent' | 'failed' | 'bounced'
+        type: 'sent' | 'failed' | 'bounced' | 'reply'
         email: string
         subject: string
         reason?: string
@@ -339,9 +339,10 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       const nextAction = (input as any).nextAction as string | undefined
 
       const lastLines = (input.lastEvents ?? []).slice(0, 4).map((ev) => {
-        const icon = ev.type === 'sent' ? '✅' : ev.type === 'failed' ? '❌' : '⚠️'
+        const label = ev.type === 'sent' ? 'SENT' : ev.type === 'failed' ? 'FAILED' : ev.type === 'reply' ? 'REPLY' : 'BOUNCED'
         const reason = ev.reason ? ` (${clip(ev.reason, 55)})` : ''
-        return `${icon} ${clip(ev.subject, 55)}${reason}`
+        const who = ev.email ? `${maskEmail(ev.email, fullEmails)} ` : ''
+        return `${label} ${who}${clip(ev.subject, 55)}${reason}`
       })
 
       const lines: (string | null)[] = [

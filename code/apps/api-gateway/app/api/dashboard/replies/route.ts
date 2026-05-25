@@ -1,21 +1,31 @@
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
+import { resolveClientId } from '@/lib/client-context'
+import type { NextRequest } from 'next/server'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const clientId = await resolveClientId({ headers: request.headers })
+  const matchedReplyWhere =
+    `client_id = $1
+     AND event_type = 'reply'
+     AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)`
+
   // Minimal proof endpoint: recent replies + rollups.
   const total = await query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
      FROM events
-     WHERE event_type = 'reply'`
+     WHERE ${matchedReplyWhere}`,
+    [clientId]
   )
 
   const perCampaign = await query<{ campaign_id: number | null; count: string }>(
     `SELECT campaign_id, COUNT(*)::text AS count
      FROM events
-     WHERE event_type = 'reply'
+     WHERE ${matchedReplyWhere}
      GROUP BY campaign_id
      ORDER BY COUNT(*) DESC
-     LIMIT 20`
+     LIMIT 20`,
+    [clientId]
   )
 
   const recent = await query<{
@@ -27,9 +37,10 @@ export async function GET() {
   }>(
     `SELECT id, created_at, campaign_id, queue_job_id, metadata
      FROM events
-     WHERE event_type = 'reply'
+     WHERE ${matchedReplyWhere}
      ORDER BY created_at DESC
-     LIMIT 50`
+     LIMIT 50`,
+    [clientId]
   )
 
   return NextResponse.json({
@@ -51,4 +62,3 @@ export async function GET() {
     })),
   })
 }
-

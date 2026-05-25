@@ -616,9 +616,9 @@ function toReply(row: unknown): Reply {
           {
             id: `${parsed.id}-0`,
             from: parsed.from_email,
-            to: '',
+            to: String((metadata as { to_email?: unknown }).to_email ?? ''),
             subject: parsed.subject,
-            body: '',
+            body: String((metadata as { body?: unknown; body_text?: unknown }).body ?? (metadata as { body_text?: unknown }).body_text ?? ''),
             date: new Date(parsed.date),
             isIncoming: true,
           },
