@@ -309,6 +309,15 @@ export async function GET(request: NextRequest) {
       ok: true,
       clientId,
       generatedAt: new Date().toISOString(),
+      build: {
+        git_commit:
+          process.env.RENDER_GIT_COMMIT ||
+          process.env.GIT_COMMIT ||
+          process.env.VERCEL_GIT_COMMIT_SHA ||
+          null,
+        git_branch: process.env.RENDER_GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF || null,
+        service_id: process.env.RENDER_SERVICE_ID || null,
+      },
       infrastructure_latency: {
         redis_set_ms: redisSet.latencyMs,
         redis_get_ms: redisGet.latencyMs,
