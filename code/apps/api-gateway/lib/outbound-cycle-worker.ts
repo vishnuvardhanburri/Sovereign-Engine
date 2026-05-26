@@ -19,16 +19,11 @@ function localRunUrl(rawUrl: string): string {
   if (forcePublicFetch) return url.toString()
 
   // The cycle worker runs inside the same Render web service as Next.js.
-  // Fetching the public onrender.com hostname from inside that container can
-  // fail or bounce through the edge. Use the local listener for reliability.
-  if (url.hostname.endsWith('.onrender.com') || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-    const port = process.env.PORT || '10000'
-    url.protocol = 'http:'
-    url.hostname = '127.0.0.1'
-    url.port = port
-  }
-
-  return url.toString()
+  // Next can serialize the incoming origin as https://0.0.0.0:$PORT, which
+  // breaks because the local listener is HTTP. Preserve path/query only and
+  // always call the local listener unless explicitly overridden.
+  const internalBase = process.env.OUTBOUND_CYCLE_INTERNAL_BASE || `http://127.0.0.1:${process.env.PORT || '10000'}`
+  return new URL(`${url.pathname}${url.search}`, internalBase).toString()
 }
 
 async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
