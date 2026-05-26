@@ -24,13 +24,23 @@ function hourlyJobId(clientId: number, runUrl: string): string {
 export async function enqueueOutboundCycleJob(input: {
   clientId: number
   runUrl: string
-}): Promise<{ queue: string; jobId: string | undefined; dedupeKey: string }> {
+}): Promise<{ queue: string; jobId: string | undefined; dedupeKey: string; replacedFailed: boolean }> {
   const queue = new Queue<OutboundCycleJobData>(OUTBOUND_CYCLE_QUEUE, {
     connection: { url: appEnv.redisUrl() },
   })
   const dedupeKey = hourlyJobId(input.clientId, input.runUrl)
+  let replacedFailed = false
 
   try {
+    const existing = await queue.getJob(dedupeKey)
+    if (existing) {
+      const state = await existing.getState().catch(() => 'unknown')
+      if (state === 'failed') {
+        await existing.remove()
+        replacedFailed = true
+      }
+    }
+
     const job = await queue.add(
       'daily_outbound_cycle',
       {
@@ -54,6 +64,7 @@ export async function enqueueOutboundCycleJob(input: {
       queue: OUTBOUND_CYCLE_QUEUE,
       jobId: job.id === undefined ? undefined : String(job.id),
       dedupeKey,
+      replacedFailed,
     }
   } finally {
     await queue.close()

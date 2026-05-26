@@ -1650,6 +1650,7 @@ export async function GET(request: NextRequest) {
           `client=${clientId}`,
           `queue=${queued.queue}`,
           `job=${queued.jobId ?? queued.dedupeKey}`,
+          `replacedFailed=${queued.replacedFailed ? 1 : 0}`,
           'worker=embedded',
           `ts=${new Date().toISOString()}`,
         ].join(' '),
