@@ -21,9 +21,20 @@ function reqEnv(name: string) {
   return v
 }
 
+function intEnv(name: string, fallback: number, min: number, max: number) {
+  const value = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
 const app = Fastify({ logger: true })
 
-const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+const pool = new Pool({
+  connectionString: reqEnv('DATABASE_URL'),
+  max: intEnv('PG_POOL_MAX', 5, 1, 20),
+  idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+  connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+})
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
 const db: DbExecutor = async (sql, params = []) => {

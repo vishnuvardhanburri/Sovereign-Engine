@@ -9,6 +9,7 @@
     "start": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway start",
     "lint": "pnpm -C apps/api-gateway lint",
     "db:init": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway db:init",
+    "db:check": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway db:check",
     "db:rls": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway tenant:rls",
     "audit:anchor": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway audit:anchor",
     "secret:rotate": "node scripts/sync-env.mjs && pnpm -C apps/api-gateway secret:rotate",

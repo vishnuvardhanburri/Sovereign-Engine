@@ -3,9 +3,20 @@ import { validatorEnv } from './config'
 
 let pool: Pool | null = null
 
+function intEnv(name: string, fallback: number, min: number, max: number): number {
+  const value = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
 export function getPool(): Pool {
   if (!pool) {
-    pool = new Pool({ connectionString: validatorEnv.databaseUrl() })
+    pool = new Pool({
+      connectionString: validatorEnv.databaseUrl(),
+      max: intEnv('PG_POOL_MAX', 3, 1, 10),
+      idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+      connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+    })
   }
   return pool
 }
@@ -59,4 +70,3 @@ export async function insertValidation(row: {
     ]
   )
 }
-

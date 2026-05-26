@@ -15,6 +15,7 @@
     "test:next-level": "tsx scripts/test-next-level-features.ts",
     "demo:next-level": "tsx scripts/demo-next-level.ts",
     "db:init": "tsx scripts/init-db.ts",
+    "db:check": "tsx scripts/db-provider-check.ts",
     "tenant:rls": "tsx scripts/apply-tenant-rls.ts",
     "audit:anchor": "tsx scripts/create-audit-anchor.ts",
     "secret:rotate": "tsx scripts/rotate-master-key.ts",

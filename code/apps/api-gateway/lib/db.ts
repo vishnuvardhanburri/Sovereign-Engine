@@ -1,19 +1,47 @@
-import { Pool, PoolClient, QueryResult } from 'pg'
+import { Pool, PoolClient, PoolConfig, QueryResult } from 'pg'
 import { appEnv } from '@/lib/env'
 
 let pool: Pool | undefined
 
-function getPool(): Pool {
+function intEnv(name: string, fallback: number, min: number, max: number): number {
+  const value = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function boolEnv(name: string, fallback = false): boolean {
+  const value = process.env[name]
+  if (!value) return fallback
+  return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
+}
+
+function databaseSsl(connectionString: string): PoolConfig['ssl'] {
+  try {
+    const sslmode = new URL(connectionString).searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode === 'disable') return undefined
+    if (sslmode === 'require' || sslmode === 'verify-ca' || sslmode === 'verify-full') {
+      return { rejectUnauthorized: boolEnv('PG_SSL_REJECT_UNAUTHORIZED', false) }
+    }
+  } catch {
+    // appEnv.databaseUrl validates the URL before this is called.
+  }
+
+  if (process.env.NODE_ENV === 'production' || boolEnv('PG_SSL', false)) {
+    return { rejectUnauthorized: boolEnv('PG_SSL_REJECT_UNAUTHORIZED', false) }
+  }
+
+  return undefined
+}
+
+export function getPool(): Pool {
   if (!pool) {
+    const connectionString = appEnv.databaseUrl()
     pool = new Pool({
-      connectionString: appEnv.databaseUrl(),
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-      ssl:
-        process.env.NODE_ENV === 'production'
-          ? { rejectUnauthorized: false }
-          : undefined,
+      connectionString,
+      max: intEnv('PG_POOL_MAX', 5, 1, 20),
+      idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+      connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+      ssl: databaseSsl(connectionString),
     })
 
     pool.on('error', (error: unknown) => {

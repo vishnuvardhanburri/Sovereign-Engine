@@ -23,6 +23,10 @@ function intEnv(name: string, def: number) {
   return Number.isFinite(n) ? n : def
 }
 
+function boundedIntEnv(name: string, def: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, intEnv(name, def)))
+}
+
 async function main() {
   const enabled = boolEnv('OPTIMIZER_ENABLED', false)
   if (!enabled) {
@@ -34,7 +38,12 @@ async function main() {
   const intervalMs = intEnv('OPTIMIZER_INTERVAL_MS', 10 * 60_000)
   const mode = (process.env.OPTIMIZER_MODE ?? 'observe') as 'observe' | 'apply'
 
-  const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+  const pool = new Pool({
+    connectionString: reqEnv('DATABASE_URL'),
+    max: boundedIntEnv('PG_POOL_MAX', 2, 1, 10),
+    idleTimeoutMillis: boundedIntEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+    connectionTimeoutMillis: boundedIntEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+  })
   const redis = new IORedis(reqEnv('REDIS_URL'))
 
   const db: DbExecutor = async (sql, params = []) => {
@@ -60,4 +69,3 @@ main().catch((err) => {
   console.error('[optimizer-worker] fatal', err)
   process.exit(1)
 })
-

@@ -16,6 +16,12 @@ function reqEnv(name: string) {
   return v
 }
 
+function intEnv(name: string, fallback: number, min: number, max: number) {
+  const value = Number.parseInt(String(process.env[name] ?? ''), 10)
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
 function readJsonArray(name: string): any[] {
   const raw = process.env[name]
   if (!raw) return []
@@ -220,7 +226,12 @@ async function recordConversationIntelligenceDirect(input: {
   )
 }
 
-const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+const pool = new Pool({
+  connectionString: reqEnv('DATABASE_URL'),
+  max: intEnv('PG_POOL_MAX', 2, 1, 10),
+  idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
+  connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+})
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
 const IMAP_HOST = reqEnv('IMAP_HOST')

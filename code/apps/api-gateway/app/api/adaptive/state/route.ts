@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import IORedis from 'ioredis'
-import { Pool } from 'pg'
 import { loadDomainSignals, computeAdaptiveThroughput, type AdaptiveState, type ProviderSignals } from '@sovereign/adaptive-controller'
+import { getPool } from '@/lib/db'
 
 function reqEnv(name: string) {
   const v = process.env[name]
@@ -10,7 +10,7 @@ function reqEnv(name: string) {
 }
 
 const REGION = process.env.XV_REGION ?? 'local'
-const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
+const pool = getPool()
 let redis: IORedis | null = null
 
 function getRedis() {
