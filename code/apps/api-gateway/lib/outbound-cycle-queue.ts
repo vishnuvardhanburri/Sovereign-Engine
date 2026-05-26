@@ -39,6 +39,7 @@ export async function enqueueOutboundCycleJob(input: {
         createdAt: new Date().toISOString(),
       },
       {
+        jobId: dedupeKey,
         attempts: 2,
         backoff: {
           type: 'exponential',

@@ -13,13 +13,33 @@ const OUTBOUND_CYCLE_TIMEOUT_MS = Math.max(
 
 let cycleWorker: Worker<OutboundCycleJobData> | null = null
 
+function localRunUrl(rawUrl: string): string {
+  const url = new URL(rawUrl)
+  const forcePublicFetch = String(process.env.OUTBOUND_CYCLE_PUBLIC_FETCH ?? '').toLowerCase() === 'true'
+  if (forcePublicFetch) return url.toString()
+
+  // The cycle worker runs inside the same Render web service as Next.js.
+  // Fetching the public onrender.com hostname from inside that container can
+  // fail or bounce through the edge. Use the local listener for reliability.
+  if (url.hostname.endsWith('.onrender.com') || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    const port = process.env.PORT || '10000'
+    url.protocol = 'http:'
+    url.hostname = '127.0.0.1'
+    url.port = port
+  }
+
+  return url.toString()
+}
+
 async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
   const secret = appEnv.cronSecret()
   const startedAt = Date.now()
+  const runUrl = localRunUrl(job.data.runUrl)
 
   console.log('[outbound-cycle-worker] cycle started', {
     jobId: job.id,
     clientId: job.data.clientId,
+    localFetch: runUrl !== job.data.runUrl,
   })
 
   const controller = new AbortController()
@@ -29,7 +49,7 @@ async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
   let elapsedMs = 0
 
   try {
-    response = await fetch(job.data.runUrl, {
+    response = await fetch(runUrl, {
       method: 'GET',
       headers: {
         'user-agent': 'Sovereign-Engine-Outbound-Cycle-Worker/1.0',
