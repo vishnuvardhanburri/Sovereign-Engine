@@ -7,8 +7,7 @@ export async function GET(request: NextRequest) {
   const clientId = await resolveClientId({ headers: request.headers })
   const matchedReplyWhere =
     `client_id = $1
-     AND event_type = 'reply'
-     AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)`
+     AND event_type = 'reply'`
 
   // Minimal proof endpoint: recent replies + rollups.
   const total = await query<{ count: string }>(

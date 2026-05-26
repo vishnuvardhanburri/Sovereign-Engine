@@ -1773,6 +1773,82 @@ CREATE TABLE IF NOT EXISTS telemetry_snapshots (
 CREATE INDEX IF NOT EXISTS idx_telemetry_snapshots_client_type_created
   ON telemetry_snapshots (client_id, snapshot_type, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS worker_heartbeats (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  worker_name TEXT NOT NULL,
+  instance_id TEXT NOT NULL,
+  client_id BIGINT REFERENCES clients(id) ON DELETE CASCADE,
+  queue_name TEXT NOT NULL DEFAULT 'control',
+  status TEXT NOT NULL DEFAULT 'healthy' CHECK (status IN ('starting', 'healthy', 'degraded', 'stopped')),
+  metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (worker_name, instance_id, queue_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_heartbeats_recent
+  ON worker_heartbeats (last_seen_at DESC, status);
+
+CREATE TABLE IF NOT EXISTS circuit_breaker_state (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'closed' CHECK (state IN ('closed', 'open', 'half_open')),
+  reason TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  opened_at TIMESTAMPTZ,
+  opened_until TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, scope)
+);
+
+CREATE INDEX IF NOT EXISTS idx_circuit_breaker_state_client
+  ON circuit_breaker_state (client_id, state, opened_until);
+
+CREATE TABLE IF NOT EXISTS dead_letter_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT REFERENCES clients(id) ON DELETE CASCADE,
+  queue_name TEXT NOT NULL,
+  job_id TEXT,
+  job_name TEXT,
+  attempts_made INT NOT NULL DEFAULT 0,
+  error_message TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  replay_status TEXT NOT NULL DEFAULT 'pending' CHECK (replay_status IN ('pending', 'replayed', 'ignored')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  replayed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_dead_letter_events_replay
+  ON dead_letter_events (client_id, replay_status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS crm_sync_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  source_connection_id UUID REFERENCES source_connections(id) ON DELETE SET NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  provider TEXT NOT NULL CHECK (provider IN ('hubspot', 'salesforce', 'pipedrive', 'notion', 'airtable', 'webhook')),
+  local_entity_type TEXT NOT NULL,
+  local_entity_id TEXT NOT NULL,
+  remote_entity_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'synced', 'conflict', 'failed', 'skipped')),
+  idempotency_key TEXT,
+  conflict_policy TEXT NOT NULL DEFAULT 'latest_wins',
+  error TEXT,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_sync_events_idempotency
+  ON crm_sync_events (client_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crm_sync_events_status
+  ON crm_sync_events (client_id, provider, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS conversation_intelligence (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,

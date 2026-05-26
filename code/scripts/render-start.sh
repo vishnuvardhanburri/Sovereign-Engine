@@ -35,7 +35,7 @@ int_between() {
 }
 
 echo "[render-start] booting Sovereign Engine"
-echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
+echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} WEB_EMBED_AUTONOMOUS_OPS_WORKER=${WEB_EMBED_AUTONOMOUS_OPS_WORKER:-auto} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
 echo "[render-start] secrets DATABASE_URL=$(mask_presence "${DATABASE_URL:-}") REDIS_URL=$(mask_presence "${REDIS_URL:-}") SMTP_HOST=$(mask_presence "${SMTP_HOST:-}") SMTP_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}")"
 memory_profile="$(printf '%s' "${WEB_MEMORY_PROFILE:-small}" | tr '[:upper:]' '[:lower:]' | tr -d '"'\'' ')"
 effective_imap_host="${IMAP_HOST:-${SMTP_HOST:-}}"
@@ -95,6 +95,18 @@ if enabled_flag "${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true}"; then
     pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts &
 else
   echo "[render-start] embedded outbound-cycle-worker disabled"
+fi
+
+auto_ops_default=false
+if [ "$memory_profile" != "small" ]; then
+  auto_ops_default=true
+fi
+if enabled_flag "${WEB_EMBED_AUTONOMOUS_OPS_WORKER:-$auto_ops_default}"; then
+  echo "[render-start] starting embedded autonomous-ops-worker"
+  AUTONOMOUS_OPS_CONCURRENCY="${AUTONOMOUS_OPS_CONCURRENCY:-1}" \
+    pnpm --dir apps/api-gateway exec tsx scripts/autonomous-ops-worker.ts &
+else
+  echo "[render-start] embedded autonomous-ops-worker disabled (set WEB_EMBED_AUTONOMOUS_OPS_WORKER=true to enable)"
 fi
 
 if [ -n "$effective_imap_host" ] && [ -n "$effective_imap_accounts" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-false}"; then

@@ -133,6 +133,93 @@ function extractFailedRecipients(body: string) {
   })
 }
 
+function classifyReplyBody(subject: string, body: string) {
+  const text = `${subject}\n${body}`.toLowerCase()
+  if (/(book|demo|calendar|call|meeting|interested|pricing|license|licensing|partnership|partner)/.test(text)) {
+    return {
+      classification: text.includes('partner') ? 'partnership_intent' : text.includes('licens') ? 'licensing_interest' : 'meeting_intent',
+      sentiment: 'positive',
+      opportunityScore: 85,
+      recommendedAction: 'book_call',
+    }
+  }
+  if (/(not interested|unsubscribe|remove me|stop emailing|no thanks)/.test(text)) {
+    return {
+      classification: 'not_interested',
+      sentiment: 'negative',
+      opportunityScore: 0,
+      recommendedAction: 'stop_sequence',
+    }
+  }
+  if (/(out of office|ooo|automatic reply|auto-reply|away from office)/.test(text)) {
+    return {
+      classification: 'auto_reply',
+      sentiment: 'neutral',
+      opportunityScore: 5,
+      recommendedAction: 'wait',
+    }
+  }
+  if (/(concern|expensive|budget|already use|not now|later|question)/.test(text)) {
+    return {
+      classification: 'objection',
+      sentiment: 'neutral',
+      opportunityScore: 45,
+      recommendedAction: 'operator_review',
+    }
+  }
+  return {
+    classification: 'neutral',
+    sentiment: 'neutral',
+    opportunityScore: 25,
+    recommendedAction: 'review',
+  }
+}
+
+async function recordConversationIntelligenceDirect(input: {
+  clientId: number
+  contactId: number | null
+  messageId: string
+  fromEmail: string
+  subject: string
+  body: string
+}) {
+  const analysis = classifyReplyBody(input.subject, input.body)
+  await db(
+    `INSERT INTO conversation_intelligence (
+       client_id,
+       contact_id,
+       message_id,
+       from_email,
+       subject,
+       classification,
+       sentiment,
+       opportunity_score,
+       recommended_action,
+       evidence
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+     ON CONFLICT (client_id, message_id) WHERE message_id IS NOT NULL DO UPDATE
+     SET classification = EXCLUDED.classification,
+         sentiment = EXCLUDED.sentiment,
+         opportunity_score = EXCLUDED.opportunity_score,
+         recommended_action = EXCLUDED.recommended_action,
+         evidence = EXCLUDED.evidence,
+         updated_at = now()`,
+    [
+      input.clientId,
+      input.contactId,
+      input.messageId,
+      input.fromEmail,
+      input.subject,
+      analysis.classification,
+      analysis.sentiment,
+      analysis.opportunityScore,
+      analysis.recommendedAction,
+      JSON.stringify({ source: 'inbound_worker', body_preview: truncateForMetadata(input.body, 500) }),
+    ]
+  )
+}
+
 const pool = new Pool({ connectionString: reqEnv('DATABASE_URL') })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
@@ -521,6 +608,15 @@ async function processAccount(account: ImapAccount) {
           },
         }
       )
+
+      await recordConversationIntelligenceDirect({
+        clientId,
+        contactId: ctx?.contactId ?? null,
+        messageId,
+        fromEmail,
+        subject,
+        body,
+      })
 
       if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
     }
