@@ -65,8 +65,8 @@ assert(
   'balanced queue should reserve about half for direct offers'
 )
 assert(
-  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,2,4,7',
-  'default sequence should use Day 0, Day 2, Day 4, Day 7 cadence'
+  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,3,5,8',
+  'default sequence should use Day 1, Day 3, Day 5, Day 8 cadence'
 )
 assert(
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.at(-1)?.subject === 'closing the loop',

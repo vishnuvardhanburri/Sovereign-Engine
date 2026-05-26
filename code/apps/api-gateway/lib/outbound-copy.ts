@@ -243,7 +243,7 @@ export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
   },
   {
     id: 'sovereign-stack-step-2',
-    day: 2,
+    day: 3,
     subject: 'following up',
     body: `Hi {{FirstName}},
 
@@ -272,7 +272,7 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-3',
-    day: 4,
+    day: 5,
     subject: 'worth a quick look?',
     body: `Hi {{FirstName}},
 
@@ -302,7 +302,7 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-4',
-    day: 7,
+    day: 8,
     subject: 'closing the loop',
     body: `Hi {{FirstName}},
 

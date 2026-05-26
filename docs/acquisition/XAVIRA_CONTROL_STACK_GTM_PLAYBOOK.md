@@ -358,7 +358,7 @@ Xavira Tech Labs
 
 If this is not relevant, reply "no" and I will not follow up.
 
-### Follow-up 1: Day 2
+### Follow-up 1: Day 3
 
 Subject: following up
 
@@ -380,7 +380,7 @@ Happy to share a quick infrastructure review if useful.
 Best,
 Vishnu
 
-### Follow-up 2: Day 4
+### Follow-up 2: Day 5
 
 Subject: worth a quick look?
 
@@ -403,7 +403,7 @@ Happy to show a short walkthrough if relevant.
 Best,
 Vishnu
 
-### Follow-up 3: Day 7
+### Follow-up 3: Day 8
 
 Subject: closing the loop
 
@@ -673,6 +673,73 @@ Maintenance covers updates, support, deployment help, operational monitoring, fi
 
 ## 10. Outbound Execution Playbook
 
+### Daily execution targets
+
+Targets are measured by booked conversations and qualified opportunities, not raw volume.
+
+- 100 cold emails/day maximum target while sender health allows it.
+- 30 LinkedIn DMs/day from verified operator accounts.
+- 10 personalized follow-ups/day.
+- 5 Loom/demo sends/day for warm or curious prospects.
+- 2-5 booked calls/week as the operating goal.
+
+### Lead priority order
+
+Tier 1:
+
+- outbound agencies
+- lead-gen firms
+- RevOps agencies
+
+Tier 2:
+
+- outbound-heavy B2B SaaS
+- AI infrastructure startups
+- cybersecurity SaaS
+
+Tier 3:
+
+- enterprise consultancies
+- compliance companies
+- MSSPs
+
+### Lead qualification
+
+Only target companies that:
+
+- rely on outbound
+- hire SDRs
+- use Apollo, Instantly, Smartlead, or similar outbound execution tools
+- scale outbound aggressively
+- likely have deliverability pain
+- have 10-200 employees
+- are funded or revenue-generating
+
+Avoid:
+
+- local SMBs
+- ecommerce
+- freelancers
+- tiny agencies
+- irrelevant companies
+
+### Personalization structure
+
+Each email should include:
+
+- company name
+- small observation
+- outbound/reputation angle
+- infrastructure angle
+- low-pressure CTA
+
+Do not:
+
+- over-personalize heavily
+- write long essays
+- sound desperate
+- sound hype-driven
+
 ### Daily workflow
 
 1. Run autonomous source intake from Maps/Apify, public website evidence, and owned seed sources.
@@ -687,18 +754,75 @@ Maintenance covers updates, support, deployment help, operational monitoring, fi
 
 ### Follow-up cadence
 
-- Day 0: operational pain + audit ask.
-- Day 4: risk follow-up.
-- Day 7: value/price explanation.
-- Day 11: soft loop close.
-- Day 16: final note.
+- Day 1: initial outreach.
+- Day 3: follow-up 1.
+- Day 5: follow-up 2.
+- Day 8: soft breakup.
+
+### Inbox management
+
+Separate inbox intent:
+
+- outbound sending
+- support
+- licensing
+- partnerships
+- demos
+
+Monitor:
+
+- bounce rate
+- reply rate
+- spam placement
+- provider throttling
 
 ### Reply handling
 
-- Interested: ask one qualifying question and offer two booking windows.
-- Not now: ask permission to check back in 60-90 days.
+- Interested: book call immediately.
+- Curious: send Loom/demo.
+- Not now: move to later follow-up.
+- No response: complete sequence.
 - Wrong person: ask for the owner of RevOps, growth, security, or partnerships.
 - Not interested: stop immediately and suppress.
+
+### Call flow
+
+1. Understand outbound problems.
+2. Identify infrastructure pain.
+3. Show dashboard.
+4. Explain operational layer.
+5. Explain deployment.
+6. Explain pricing.
+7. Confirm next steps.
+
+### Most important sales rules
+
+Do:
+
+- sound operationally mature
+- focus on infrastructure risk
+- explain operational reliability
+- emphasize governance and visibility
+- explain domain protection
+
+Do not:
+
+- flex send volume
+- say "millions of emails"
+- sound like spam software
+- oversell AI
+- sound desperate
+
+### Success metrics
+
+Do not optimize for emails sent alone. Optimize for:
+
+- demos booked
+- replies generated
+- audits closed
+- infrastructure deployments
+- recurring retainers
+- licensing conversations
 
 ## 11. Commercialization Framework
 
