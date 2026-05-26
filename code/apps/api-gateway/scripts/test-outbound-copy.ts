@@ -8,6 +8,7 @@ import {
   renderSovereignHtmlEmail,
   renderSovereignTemplate,
   SOVEREIGN_BOOKING_URL,
+  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS,
   sovereignDealValueUsd,
   sovereignBodyForLead,
   sovereignSubjectForLead,
@@ -62,6 +63,14 @@ assert(
 assert(
   balanced.filter((lead) => inferSovereignOfferType(lead) === 'direct').length === 2,
   'balanced queue should reserve about half for direct offers'
+)
+assert(
+  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,2,4,7',
+  'default sequence should use Day 0, Day 2, Day 4, Day 7 cadence'
+)
+assert(
+  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.at(-1)?.subject === 'closing the loop',
+  'final sequence step should be the soft breakup'
 )
 assert(
   sovereignSubjectForLead(directLead).includes('deliverability'),

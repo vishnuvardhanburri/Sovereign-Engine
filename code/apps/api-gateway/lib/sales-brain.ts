@@ -49,7 +49,7 @@ const AGENCY_RULES = [
 ]
 
 const FOLLOW_UP_RULES = [
-  'Sequence steps: Day 1 deliverability pain, Day 4 stability follow-up, Day 7 operational risk, Day 11 licensing context, Day 16 soft breakup.',
+  'Sequence steps: Day 0 deliverability pain, Day 2 stability follow-up, Day 4 operational visibility follow-up, Day 7 soft breakup.',
   'Stop follow-ups on replies, bounces, unsubscribes, invalid validation, or suppression match.',
   'Follow-ups should add clarity, not pressure; never guilt or threaten.',
 ]

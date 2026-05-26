@@ -243,22 +243,21 @@ export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
   },
   {
     id: 'sovereign-stack-step-2',
-    day: 4,
+    day: 2,
     subject: 'following up',
     body: `Hi {{FirstName}},
 
-Just following up on my earlier note.
+Just wanted to follow up on my earlier note.
 
-The goal is not to sell another outbound tool.
+A lot of outbound teams look healthy initially, but once sending volume increases:
+* inbox placement drops
+* provider throttling increases
+* reply rates collapse
+* domains slowly burn
 
-We focus specifically on:
-* infrastructure stability
-* reputation protection
-* deliverability monitoring
-* operational visibility
-* safer outbound scaling
+That operational layer is exactly what we focus on at Xavira Tech Labs.
 
-Happy to share a quick walkthrough if useful.
+Happy to share a quick infrastructure review if useful.
 
 ${sovereignBookingCtaText()}
 
@@ -273,21 +272,22 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-3',
-    day: 7,
+    day: 4,
     subject: 'worth a quick look?',
     body: `Hi {{FirstName}},
 
-Wanted to send one more practical note.
+Wanted to send one final follow-up.
 
-A lot of outbound systems look fine until:
-* inbox placement collapses
-* domains burn
-* providers throttle aggressively
-* reply rates drop suddenly
+We built Sovereign Engine specifically for:
+* outbound infrastructure visibility
+* provider-aware monitoring
+* reputation protection
+* safer outbound scaling
+* operational governance
 
-That operational layer is exactly what we built Xavira Control Stack to monitor and control.
+Most teams only notice deliverability problems after performance drops.
 
-If useful, I can share the dashboard walkthrough, infrastructure review, and licensing details.
+Happy to show a short walkthrough if relevant.
 
 ${sovereignBookingCtaText()}
 
@@ -302,40 +302,13 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-4',
-    day: 11,
-    subject: 'enterprise infrastructure licensing',
-    body: `Hi {{FirstName}},
-
-For context, the internal Xavira Control Stack enterprise license is $25,000.
-
-It includes Sovereign Engine, Sovereign Shield, dashboards, desktop/mobile operational apps, deployment rights, internal operational usage, and onboarding assistance.
-
-Designed for organizations that need outbound infrastructure control, AI governance, realtime operational monitoring, infrastructure visibility, and reputation monitoring.
-
-Happy to discuss deployment scope if relevant.
-
-${sovereignBookingCtaText()}
-
-Best,
-Vishnu
-Xavira Tech Labs
-Xavira Control Stack
-
-{{physical_address}}
-
-If this is not relevant, reply "no" and I will not follow up.`,
-  },
-  {
-    id: 'sovereign-stack-step-5',
-    day: 16,
+    day: 7,
     subject: 'closing the loop',
     body: `Hi {{FirstName}},
 
 I will close the loop here.
 
-Completely understand if timing is not right.
-
-If outbound infrastructure, deliverability stability, or AI operational governance becomes relevant later, happy to reconnect.
+If outbound reliability, infrastructure governance, or deliverability monitoring becomes relevant later, happy to reconnect.
 
 Wishing you and {{Company}} continued growth.
 
