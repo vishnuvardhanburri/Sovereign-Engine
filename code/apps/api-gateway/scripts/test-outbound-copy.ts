@@ -64,12 +64,12 @@ assert(
   'balanced queue should reserve about half for direct offers'
 )
 assert(
-  sovereignSubjectForLead(directLead).includes('outbound deliverability'),
-  'direct subject should use requested copy'
+  sovereignSubjectForLead(directLead).includes('deliverability'),
+  'direct subject should lead with deliverability pain'
 )
 assert(
-  sovereignSubjectForLead(agencyLead).includes('White-label outbound'),
-  'agency subject should use requested copy'
+  sovereignSubjectForLead(agencyLead).includes('white-label outbound'),
+  'agency subject should use premium white-label copy'
 )
 
 const directBody = renderSovereignTemplate(
@@ -77,15 +77,15 @@ const directBody = renderSovereignTemplate(
   directLead,
   'Xavira Tech Labs, India'
 )
-assert(directBody.includes('Sovereign Stack'), 'direct body should mention Sovereign Stack')
+assert(directBody.includes('Xavira Control Stack'), 'direct body should mention Xavira Control Stack')
 assert(directBody.includes(SOVEREIGN_BOOKING_URL), 'direct body should include booking link')
 assert(
-  directBody.includes('$25,000 one-time license'),
-  'direct body should mention the $25,000 license'
+  directBody.includes('Gmail/Outlook throttling'),
+  'direct body should name concrete deliverability pain'
 )
 assert(
-  directBody.includes('expected win') || directBody.includes('Expected win'),
-  'direct body should explain the buyer outcome'
+  directBody.includes('short outbound infrastructure review'),
+  'direct body should offer a low-friction infrastructure review'
 )
 assert(directBody.includes('Example SaaS'), 'direct body should render company')
 assert(!directBody.includes('{{'), 'direct body should render all placeholders')
@@ -93,6 +93,7 @@ assert(
   buildSovereignPainLine(directLead).includes('Example SaaS'),
   'pain line should be company-specific'
 )
+assert(!/Quick check/i.test(sovereignSubjectForLead(directLead)), 'subjects should avoid generic quick-check wording')
 
 const directHtml = renderSovereignHtmlEmail(directBody)
 assert(directHtml.includes(`href="${SOVEREIGN_BOOKING_URL}"`), 'html should include booking button URL')
@@ -103,16 +104,17 @@ const genericInboxBody = renderSovereignTemplate(
   { first_name: 'hello', company: 'Inbox Co' },
   'Xavira Tech Labs, India'
 )
-assert(genericInboxBody.startsWith('Hey there,'), 'generic inboxes should not render as names')
-assert(!genericInboxBody.includes('Hey hello,'), 'generic inbox local parts should be suppressed')
+assert(genericInboxBody.startsWith('Hi there,'), 'generic inboxes should not render as names')
+assert(!genericInboxBody.includes('Hi hello,'), 'generic inbox local parts should be suppressed')
 
 const agencyBody = renderSovereignTemplate(
   sovereignBodyForLead(agencyLead),
   agencyLead,
   'Xavira Tech Labs, India'
 )
-assert(agencyBody.includes('$100k one-time'), 'agency body should mention $100k master license')
-assert(agencyBody.includes('white-labeled deployments'), 'agency body should mention white-label value')
+assert(agencyBody.includes('$75,000+'), 'agency body should mention commercial license range')
+assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
+assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
 assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')
 
@@ -140,7 +142,10 @@ async function main() {
     useOpenRouter: false,
   })
   assert(rendered.html.includes('Book 20-min audit'), 'built copy should include HTML CTA')
-  assert(rendered.text.includes('Worth a quick audit'), 'built copy should use the new pain-led ask')
+  assert(
+    rendered.text.includes('short outbound infrastructure review'),
+    'built copy should use the new pain-led review ask'
+  )
 
   console.log('outbound copy tests passed')
 }

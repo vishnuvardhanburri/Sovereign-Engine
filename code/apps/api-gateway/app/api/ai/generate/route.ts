@@ -46,12 +46,12 @@ export async function POST(request: NextRequest) {
       const generated = await tryOpenRouterJson({
         task: action,
         system:
-          'You write compliant B2B outbound personalization for Sovereign Stack. Return JSON only. Avoid spam claims, bypass language, fake revenue, or unverifiable statements.',
+          'You write compliant B2B outbound personalization for Xavira Control Stack. Return JSON only. Avoid spam claims, bypass language, fake revenue, or unverifiable statements.',
         user: JSON.stringify({
           recipientData: body.recipientData ?? {},
           campaignContext: body.campaignContext ?? {},
           requiredOffer:
-            'Sovereign Stack: $25k one-time license combining outbound deliverability OS and private AI security gateway.',
+            'Xavira Control Stack: $25k internal enterprise license combining Sovereign Engine outbound operations control plane and Sovereign Shield private AI governance layer.',
         }),
         fallback,
       })
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           company: body.company ?? body.recipientData?.company ?? null,
           industry: body.industry ?? body.campaignContext?.industry ?? null,
           offer:
-            'Sovereign Stack: outbound deliverability OS plus private AI security gateway. Direct license $25k; agency master license $100k.',
+            'Xavira Control Stack: outbound operations control plane plus private AI governance layer. Internal license $25k; white-label commercial license $75k-$100k+.',
         }),
         fallback,
       })
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
           'You coach compliant B2B outbound. Return JSON only with coaching, suggestions, warnings, and nextBestActions.',
         user: JSON.stringify({
           draft: body.draft ?? body.content ?? '',
-          goal: 'Book a demo or risk audit for Sovereign Stack',
+          goal: 'Book a demo or operational audit for Xavira Control Stack',
         }),
         fallback,
       })

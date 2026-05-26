@@ -69,7 +69,7 @@ type CopyPreviewItem = {
   subject: string
   text: string
   html: string
-  source: 'template' | 'openrouter' | 'gemini'
+  source: 'template' | 'openrouter'
   error: string | null
 }
 
@@ -244,14 +244,14 @@ export default function SentMailPage() {
             icon={<Mail className="w-4 h-4" />}
             label="Agency $100k (24h)"
             value={s.agencySent24h}
-            sub="Agency Master License"
+            sub="White-label Commercial License"
             accent="purple"
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
             label="Direct $25k (24h)"
             value={s.directSent24h}
-            sub="Sovereign Stack"
+            sub="Xavira Control Stack"
             accent="blue"
           />
           <StatCard
@@ -298,9 +298,7 @@ export default function SentMailPage() {
                         <Badge variant="outline" className="text-xs">
                           {preview.source === 'template'
                             ? 'Base template'
-                            : preview.source === 'gemini'
-                              ? 'Gemini drafted'
-                              : 'AI generated'}
+                            : 'AI generated'}
                         </Badge>
                       </div>
                       <p className="mt-2 text-sm font-medium">{preview.label}</p>
@@ -490,7 +488,7 @@ export default function SentMailPage() {
                   <div><span className="text-muted-foreground">Provider:</span> {selected.provider}</div>
                 ) : null}
                 {selected.offerType ? (
-                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '$100k Agency Master License' : '$25k Sovereign Stack'}</div>
+                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '$75k-$100k+ White-label Commercial License' : '$25k Xavira Control Stack'}</div>
                 ) : null}
                 {selected.error ? (
                   <div className="text-amber-600 break-words"><span className="text-muted-foreground">Error:</span> {selected.error}</div>

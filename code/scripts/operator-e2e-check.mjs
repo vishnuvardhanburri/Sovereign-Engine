@@ -62,10 +62,10 @@ async function checkPricingCopy() {
   const { response, text } = await fetchText('/pricing')
   const ok =
     response.ok &&
-    text.includes('Sovereign Stack') &&
+    text.includes('Xavira Control Stack') &&
     text.includes('25,000') &&
-    text.includes('Agency Master')
-  record(ok, 'pricing positioning', ok ? 'Sovereign Stack $25K/$100K copy visible' : `HTTP ${response.status}`)
+    text.includes('White-label')
+  record(ok, 'pricing positioning', ok ? 'Xavira Control Stack licensing copy visible' : `HTTP ${response.status}`)
 }
 
 async function checkHealth() {

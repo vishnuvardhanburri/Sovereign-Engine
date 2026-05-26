@@ -1,5 +1,4 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
-import { tryGeminiJson } from '@/lib/ai/gemini'
 import { appEnv } from '@/lib/env'
 import { buildSalesBrainContext } from '@/lib/sales-brain'
 
@@ -20,10 +19,10 @@ export type SovereignCopyLead = {
 }
 
 export const SOVEREIGN_STACK_DIRECT_SUBJECT =
-  'Quick check on your outbound deliverability + AI compliance?'
+  'quick deliverability question'
 
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
-  'White-label outbound + AI security product for your agency'
+  'white-label outbound infrastructure'
 
 export const SOVEREIGN_BOOKING_URL = 'https://cal.com/vishnuvardhanburri/30min'
 
@@ -54,7 +53,7 @@ export type SovereignRenderedCopy = {
   subject: string
   text: string
   html: string
-  source: 'template' | 'openrouter' | 'gemini'
+  source: 'template' | 'openrouter'
   error?: string
 }
 
@@ -167,26 +166,29 @@ export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchC
 }
 
 export function sovereignDirectEmail1Body(): string {
-  return `Hey {{FirstName}},
+  return `Hi {{FirstName}},
 
 {{pain_line}}
 
-The business case is simple: if {{Company}} is paying for outbound but replies slow down, every campaign gets more expensive while pipeline quality drops.
+Quick question - are you still seeing stable inbox placement at current sending volume, or starting to hit reputation/spam-folder issues?
 
-Sovereign Stack is a $25,000 one-time license built to protect that ROI:
-* Sovereign Engine keeps domains, pacing, follow-ups, and inbox placement under control
-* Sovereign Shield keeps AI personalization private, masks PII, and leaves audit proof
+A lot of outbound-heavy teams run into the same operational problems once volume scales:
+* Gmail/Outlook throttling
+* domain burn
+* queue instability
+* weak follow-up visibility
+* AI personalization touching sensitive data without enough governance
 
-The expected win: fewer burned domains, safer AI usage, cleaner follow-ups, and a controlled outbound system instead of another fragile tool stack.
+At Xavira Tech Labs, we built Xavira Control Stack - Sovereign Engine plus Sovereign Shield - to monitor and stabilize outbound operations before those issues become expensive.
 
-Worth a quick audit for {{Company}}?
+If useful, I can run a short outbound infrastructure review for {{Company}} and show where the risk sits.
 
 ${sovereignBookingCtaText()}
 
-Best regards,
+Best,
 Vishnu
+Founder - Xavira Tech Labs
 Xavira Tech Labs
-Sovereign Stack
 
 {{physical_address}}
 
@@ -194,29 +196,38 @@ If this is not relevant, reply "no" and I will not follow up.`
 }
 
 export function sovereignAgencyEmail1Body(): string {
-  return `Hey {{FirstName}},
+  return `Hi {{FirstName}},
 
 {{pain_line}}
 
-Your clients can buy more leads, but if domains burn or AI workflows leak sensitive data, campaigns stall and retainers get questioned.
+I came across {{Company}} and noticed you operate around outbound, growth, RevOps, or client acquisition infrastructure.
 
-The profit case: Sovereign Stack lets you sell infrastructure, not just services.
+At Xavira Tech Labs, we built:
+* Sovereign Engine
+* Sovereign Shield
 
-Sovereign Stack Agency Master License - $100k one-time:
-* Unlimited white-labeled deployments
-* You charge clients $15k-$35k each
-* We handle core licensing & backend updates
+Together they form Xavira Control Stack - enterprise outbound infrastructure and operational governance for teams that need more than campaign execution.
 
-The expected win: recover the license with 5-8 client deployments, improve campaign reliability, and add a premium AI governance layer your competitors are not packaging yet.
+We are opening a limited number of white-label commercial licensing conversations:
+* white-label rights
+* reseller rights
+* commercial deployment rights
+* branding customization
+* multi-client deployment support
+* optional $3k-$10k/month maintenance and operations support
 
-Want to see the white-label demo for {{Company}}?
+The reason to buy: it gives agencies and operators a premium infrastructure product to deploy for clients, not just another outbound service line.
+
+Commercial licensing typically starts at $75,000+ when white-label and reseller rights are included.
+
+Would be open to a short conversation if this aligns with {{Company}}'s roadmap?
 
 ${sovereignBookingCtaText()}
 
-Best regards,
+Best,
 Vishnu
 Xavira Tech Labs
-Sovereign Stack
+Xavira Control Stack
 
 {{physical_address}}
 
@@ -233,23 +244,28 @@ export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
   {
     id: 'sovereign-stack-step-2',
     day: 4,
-    subject: 'Re: Your outbound + AI risk',
-    body: `Hey {{FirstName}},
+    subject: 'following up',
+    body: `Hi {{FirstName}},
 
-Following up.
+Just following up on my earlier note.
 
-We're helping outbound teams and agencies worldwide stabilize their infrastructure while adding strong AI governance - especially important in EU and India right now.
+The goal is not to sell another outbound tool.
 
-Curious - are you currently facing any deliverability drops or concerns around AI data leakage?
+We focus specifically on:
+* infrastructure stability
+* reputation protection
+* deliverability monitoring
+* operational visibility
+* safer outbound scaling
 
-Happy to run a free 15-min risk check for {{Company}} if useful.
+Happy to share a quick walkthrough if useful.
 
 ${sovereignBookingCtaText()}
 
-Best regards,
+Best,
 Vishnu
 Xavira Tech Labs
-Sovereign Stack
+Xavira Control Stack
 
 {{physical_address}}
 
@@ -258,23 +274,27 @@ If this is not relevant, reply "no" and I will not follow up.`,
   {
     id: 'sovereign-stack-step-3',
     day: 7,
-    subject: '$25k Sovereign Stack + payment plan option',
-    body: `Hey {{FirstName}},
+    subject: 'worth a quick look?',
+    body: `Hi {{FirstName}},
 
-Last note on this.
+Wanted to send one more practical note.
 
-We're offering the Sovereign Stack at $25,000 one-time (includes 12 months updates + deployment support).
+A lot of outbound systems look fine until:
+* inbox placement collapses
+* domains burn
+* providers throttle aggressively
+* reply rates drop suddenly
 
-We can also split it into 3 payments of ~$8,500 if that helps.
+That operational layer is exactly what we built Xavira Control Stack to monitor and control.
 
-Would you like to see the dashboard live and get a custom risk report for your current setup?
+If useful, I can share the dashboard walkthrough, infrastructure review, and licensing details.
 
 ${sovereignBookingCtaText()}
 
-Best regards,
+Best,
 Vishnu
 Xavira Tech Labs
-Sovereign Stack
+Xavira Control Stack
 
 {{physical_address}}
 
@@ -283,19 +303,23 @@ If this is not relevant, reply "no" and I will not follow up.`,
   {
     id: 'sovereign-stack-step-4',
     day: 11,
-    subject: '{{Company}} outbound infrastructure',
-    body: `Hey {{FirstName}},
+    subject: 'enterprise infrastructure licensing',
+    body: `Hi {{FirstName}},
 
-Still interested in protecting your outbound revenue and locking down AI usage?
+For context, the internal Xavira Control Stack enterprise license is $25,000.
 
-No pressure - just let me know if you want the 20-min demo or if I should stop following up.
+It includes Sovereign Engine, Sovereign Shield, dashboards, desktop/mobile operational apps, deployment rights, internal operational usage, and onboarding assistance.
+
+Designed for organizations that need outbound infrastructure control, AI governance, realtime operational monitoring, infrastructure visibility, and reputation monitoring.
+
+Happy to discuss deployment scope if relevant.
 
 ${sovereignBookingCtaText()}
 
-Best regards,
+Best,
 Vishnu
 Xavira Tech Labs
-Sovereign Stack
+Xavira Control Stack
 
 {{physical_address}}
 
@@ -304,21 +328,23 @@ If this is not relevant, reply "no" and I will not follow up.`,
   {
     id: 'sovereign-stack-step-5',
     day: 16,
-    subject: 'Final note - Sovereign Stack for {{Company}}',
-    body: `Hey {{FirstName}},
+    subject: 'closing the loop',
+    body: `Hi {{FirstName}},
 
-Last email.
+I will close the loop here.
 
-If you're planning to scale outbound this year, Sovereign Stack is one of the highest-ROI infrastructure decisions you can make right now.
+Completely understand if timing is not right.
 
-Reply "DEMO" if you want to schedule a quick call.
+If outbound infrastructure, deliverability stability, or AI operational governance becomes relevant later, happy to reconnect.
+
+Wishing you and {{Company}} continued growth.
 
 ${sovereignBookingCtaText()}
 
-Thanks,
+Best,
 Vishnu
 Xavira Tech Labs
-Sovereign Stack
+Xavira Control Stack
 
 {{physical_address}}
 
@@ -546,17 +572,12 @@ export async function buildSovereignCopyForLead(
     options.physicalAddress
   )
   const openRouterApiKey = appEnv.openRouterApiKey()
-  const geminiApiKey = appEnv.geminiApiKey()
   const shouldUseOpenRouter =
     options.useOpenRouter ??
     (Boolean(openRouterApiKey) &&
-      envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, true))
-  const shouldUseGemini =
-    options.useOpenRouter ??
-    (Boolean(geminiApiKey) &&
-      envEnabled(process.env.OUTBOUND_GEMINI_COPY, true))
+      envEnabled(process.env.OUTBOUND_OPENROUTER_COPY, false))
 
-  if (!shouldUseOpenRouter && !shouldUseGemini) {
+  if (!shouldUseOpenRouter) {
     const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
@@ -588,33 +609,33 @@ export async function buildSovereignCopyForLead(
     offer:
       offerType === 'agency'
         ? {
-            name: 'Sovereign Stack Agency Master License',
-            price: '$100k one-time',
+            name: 'Xavira Control Stack White-Label Commercial License',
+            price: '$75k-$100k+',
             positioning:
-              'white-label outbound protection plus private AI governance for agencies',
+              'white-label outbound operations and private AI governance infrastructure for agencies, RevOps firms, MSSPs, and consultancies',
             bullets: [
-              'Unlimited white-labeled deployments',
-              'Agency can charge clients $15k-$35k each',
-              'Core licensing and backend updates handled by Xavira Tech Labs',
+              'White-label rights, reseller rights, and commercial deployment rights',
+              'Branding customization across dashboards and control surfaces',
+              'Xavira core updates, deployment support, and maintenance options',
             ],
           }
         : {
-            name: 'Sovereign Stack',
-            price: '$25,000 one-time license',
+            name: 'Xavira Control Stack Internal Enterprise License',
+            price: '$25,000',
             positioning:
-              'outbound deliverability protection plus private AI security gateway',
+              'owned outbound operations control plane plus private AI governance layer',
             bullets: [
-              'Adaptive deliverability OS for domain and inbox placement protection',
-              'Private AI Security Gateway for prompt-injection protection and PII masking',
-              'Self-hosted, audit-ready, works above Instantly, Smartlead, Apollo, and similar tools',
+              'Sovereign Engine for domain health, queue pressure, follow-ups, and delivery proof',
+              'Sovereign Shield for private AI handling, PII masking, and audit evidence',
+              'Deployment-ready dashboards, desktop apps, mobile apps, and operating reports',
             ],
           },
-    requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Sovereign Stack'],
+    requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Xavira Control Stack'],
     physicalAddress: options.physicalAddress,
     fallbackSubject,
     writingRules: [
       'Start directly with the most specific verified context available. Avoid "hope you are well" and generic intros.',
-      'Use a lower-case, short subject when possible; no salesy words, no excessive punctuation.',
+      'Use a lower-case, short subject when possible; no salesy words, no excessive punctuation, no spam-trigger wording.',
       'Use at most one evidence-backed personalization line.',
       'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
       'Lead with the company pain before mentioning the product.',
@@ -623,11 +644,11 @@ export async function buildSovereignCopyForLead(
       'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
       'Keep the email short, useful, and human; avoid brochure language.',
       'Use one clear ask and one booking link only.',
-      'Explain the product benefit in simple words: safer outbound, cleaner follow-ups, reduced AI data leak risk.',
+      'Explain the product benefit in simple words: owned control, safer outbound, cleaner follow-ups, reduced AI data leak risk, and stronger client trust.',
     ],
   })
   const aiSystem =
-    'You write compliant B2B outbound email copy for a legitimate business interest outreach workflow. Return JSON only with subject and body. Use the supplied Sovereign Sales Brain rules. Do not invent facts, customer names, revenue claims, urgency, or fake personalization. Write like a real operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no fake competitor claims. Keep it under 150 words. Include a polite opt-out line. Structure: direct evidence hook, operational pain, why Sovereign Stack helps, low-friction audit CTA.'
+    'You write compliant B2B enterprise outbound email copy for a legitimate business interest workflow. Return JSON only with subject and body. Use the supplied Sovereign Sales Brain rules. Position Xavira Tech Labs as a premium infrastructure vendor. Do not invent facts, customer names, revenue claims, urgency, fake personalization, or competitor customer claims. Write like a serious operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no bypass language. Keep it under 150 words. Include a polite opt-out line. Structure: verified evidence hook, operational pain, why Xavira Control Stack helps, low-friction audit CTA.'
 
   const result = shouldUseOpenRouter
     ? await tryOpenRouterJson<{
@@ -654,53 +675,16 @@ export async function buildSovereignCopyForLead(
           reason: 'openrouter_disabled',
         },
         error: 'openrouter_disabled',
-      }
+  }
 
   if (result.source !== 'openrouter') {
-    const gemini = shouldUseGemini
-      ? await tryGeminiJson<{
-          subject?: string
-          body?: string
-          reason?: string
-        }>({
-          task: 'sovereign_outbound_copy',
-          system: aiSystem,
-          user: aiPayload,
-          fallback: {
-            subject: fallbackSubject,
-            body: fallbackText,
-            reason: 'fallback_template',
-          },
-          apiKey: geminiApiKey,
-          timeoutMs: 6_000,
-        })
-      : {
-          source: 'fallback' as const,
-          data: {
-            subject: fallbackSubject,
-            body: fallbackText,
-            reason: 'gemini_disabled',
-          },
-          error: 'gemini_disabled',
-        }
-
-    if (gemini.source === 'gemini') {
-      const text = cleanBody(gemini.data.body, fallbackText, options.physicalAddress)
-      return {
-        subject: cleanSubject(gemini.data.subject, fallbackSubject),
-        text,
-        html: renderSovereignHtmlEmail(text),
-        source: 'gemini',
-      }
-    }
-
     const text = withSovereignBookingCta(fallbackText)
     return {
       subject: fallbackSubject,
       text,
       html: renderSovereignHtmlEmail(text),
       source: 'template',
-      error: [result.error, gemini.error].filter(Boolean).join(';'),
+      error: result.error,
     }
   }
 

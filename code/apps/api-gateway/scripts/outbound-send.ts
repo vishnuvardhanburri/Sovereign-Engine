@@ -152,7 +152,7 @@ async function main() {
   }
 
   console.log(`Prepared ${leads.length} lead(s). Mode: ${dryRun ? 'dry-run' : 'real-queue'}`)
-  console.log(`Subject: ${subjectOverride ?? 'Sovereign Stack default by lead type'}`)
+  console.log(`Subject: ${subjectOverride ?? 'Xavira Control Stack default by lead type'}`)
   if (!dryRun && process.env.SEND_ALLOW_UNKNOWN_VALIDATION !== 'false') {
     console.warn('Warning: validation provider is not enforced. Keep this to tiny test batches only.')
   }

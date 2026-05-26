@@ -6,7 +6,7 @@ const plans = [
     price: '$25,000',
     description: 'For agencies, SaaS teams, and growth operators that want a private outbound and AI security infrastructure layer.',
     features: [
-      'One-time Sovereign Stack license',
+      'Internal Xavira Control Stack license',
       'Outbound reputation command center',
       'AI security and PII-risk positioning pack',
       'Self-hosted or managed deployment path',
@@ -14,12 +14,12 @@ const plans = [
     ],
   },
   {
-    name: 'Agency Master License',
-    price: '$100,000',
-    description: 'For agencies that want to white-label Sovereign Stack as a premium client infrastructure offer.',
+    name: 'White-label Commercial License',
+    price: '$75,000-$100,000+',
+    description: 'For agencies that want to white-label Xavira Control Stack as a premium client infrastructure offer.',
     features: [
-      'White-label positioning and handoff pack',
-      'Unlimited client deployment rights under one agency',
+      'White-label, reseller, and commercial deployment rights',
+      'Multi-client deployment rights under one commercial license',
       'Outbound infrastructure plus AI-risk audit offer',
       'Agency sales scripts and client onboarding templates',
       'Built to recover cost across 5-8 client deployments',
@@ -56,8 +56,8 @@ const operatorConnects = [
 ]
 
 export const metadata = {
-  title: 'Pricing | Sovereign Stack',
-  description: 'Pricing for Sovereign Stack, outbound revenue protection and AI security infrastructure.',
+  title: 'Pricing | Xavira Control Stack',
+  description: 'Pricing for Xavira Control Stack, outbound operations and AI governance infrastructure.',
 }
 
 export default function PricingPage() {
@@ -69,7 +69,7 @@ export default function PricingPage() {
             <ShieldCheck size={16} /> Outbound + AI Security Infrastructure
           </div>
           <h1 className="text-4xl font-black tracking-tight md:text-6xl">
-            Sovereign Stack protects outbound revenue and AI usage in one license.
+            Xavira Control Stack protects outbound revenue and AI usage in one license.
           </h1>
           <p className="mt-5 text-lg leading-8 text-slate-300">
             Stop burning domains, reduce deliverability surprises, and give teams a private
@@ -106,7 +106,7 @@ export default function PricingPage() {
         <div className="mt-12 grid gap-5 md:grid-cols-2">
           <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-6">
             <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-emerald-200">
-              <ShieldCheck size={16} /> Included in Sovereign Stack
+              <ShieldCheck size={16} /> Included in Xavira Control Stack
             </div>
             <ul className="mt-5 space-y-3 text-sm text-slate-200">
               {platformIncludes.map((item) => (
