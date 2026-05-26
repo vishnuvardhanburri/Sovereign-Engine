@@ -20,7 +20,8 @@
     "secret:rotate": "tsx scripts/rotate-master-key.ts",
     "env:check": "tsx scripts/env-check.ts",
     "user:create": "tsx scripts/create-user.ts",
-    "public-api-key:create": "tsx scripts/create-public-api-key.ts"
+    "public-api-key:create": "tsx scripts/create-public-api-key.ts",
+    "test:autonomous-foundation": "tsx scripts/test-autonomous-foundation.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

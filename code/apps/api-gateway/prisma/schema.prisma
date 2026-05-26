@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TenantLicense {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId              BigInt   @map("client_id")
+  licenseType           String   @map("license_type")
+  status                String   @default("active")
+  seats                 Int      @default(3)
+  childTenantLimit      Int      @default(0) @map("child_tenant_limit")
+  apiMonthlyLimit       Int      @default(10000) @map("api_monthly_limit")
+  ingestionMonthlyLimit Int      @default(25000) @map("ingestion_monthly_limit")
+  sendMonthlyLimit      Int      @default(5000) @map("send_monthly_limit")
+  features              Json     @default("{}")
+  commercialTerms       Json     @default("{}") @map("commercial_terms")
+  startsAt              DateTime @default(now()) @map("starts_at") @db.Timestamptz
+  renewsAt              DateTime? @map("renews_at") @db.Timestamptz
+  expiresAt             DateTime? @map("expires_at") @db.Timestamptz
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([clientId, licenseType])
+  @@map("tenant_licenses")
+}
+
+model SourceConnection {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId           BigInt   @map("client_id")
+  sourceType         String   @map("source_type")
+  name               String
+  status             String   @default("active")
+  authType           String   @default("none") @map("auth_type")
+  encryptedSecretId  BigInt?  @map("encrypted_secret_id")
+  config             Json     @default("{}")
+  cursorState        Json     @default("{}") @map("cursor_state")
+  rateLimitPerMinute Int      @default(60) @map("rate_limit_per_minute")
+  sourceTrust        Decimal  @default(0.700) @map("source_trust") @db.Decimal(4, 3)
+  lastSuccessAt      DateTime? @map("last_success_at") @db.Timestamptz
+  lastError          String?  @map("last_error")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([clientId, sourceType, name])
+  @@index([clientId, status, sourceType])
+  @@map("source_connections")
+}
+
+model IngestionJob {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId           BigInt   @map("client_id")
+  sourceConnectionId String?  @map("source_connection_id") @db.Uuid
+  sourceType         String   @map("source_type")
+  status             String   @default("queued")
+  idempotencyKey     String   @map("idempotency_key")
+  requestedBy        String   @default("system") @map("requested_by")
+  inputRef           String?  @map("input_ref")
+  totalRecords       Int      @default(0) @map("total_records")
+  acceptedRecords    Int      @default(0) @map("accepted_records")
+  rejectedRecords    Int      @default(0) @map("rejected_records")
+  enrichedRecords    Int      @default(0) @map("enriched_records")
+  failureCount       Int      @default(0) @map("failure_count")
+  metadata           Json     @default("{}")
+  startedAt          DateTime? @map("started_at") @db.Timestamptz
+  completedAt        DateTime? @map("completed_at") @db.Timestamptz
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([clientId, idempotencyKey])
+  @@index([clientId, status, createdAt])
+  @@map("ingestion_jobs")
+}
+
+model OperationalEvent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId        BigInt   @map("client_id")
+  eventType       String   @map("event_type")
+  eventVersion    Int      @default(1) @map("event_version")
+  aggregateType   String   @map("aggregate_type")
+  aggregateId     String   @map("aggregate_id")
+  actorType       String   @default("system") @map("actor_type")
+  actorId         String?  @map("actor_id")
+  idempotencyKey  String?  @map("idempotency_key")
+  payload         Json     @default("{}")
+  metadata        Json     @default("{}")
+  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([clientId, createdAt])
+  @@index([clientId, aggregateType, aggregateId, createdAt])
+  @@map("operational_events")
+}
+
+model ProviderLane {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId             BigInt   @map("client_id")
+  provider             String
+  lane                 String
+  status               String   @default("active")
+  maxPerMinute         Int      @default(1) @map("max_per_minute")
+  maxPerHour           Int      @default(20) @map("max_per_hour")
+  maxPerDay            Int      @default(100) @map("max_per_day")
+  throttleFactor       Decimal  @default(1.0000) @map("throttle_factor") @db.Decimal(5, 4)
+  emergencyBrakeActive Boolean  @default(false) @map("emergency_brake_active")
+  bounceRate24h        Decimal  @default(0) @map("bounce_rate_24h") @db.Decimal(5, 4)
+  failureRate24h       Decimal  @default(0) @map("failure_rate_24h") @db.Decimal(5, 4)
+  replyRate7d          Decimal  @default(0) @map("reply_rate_7d") @db.Decimal(5, 4)
+  telemetry            Json     @default("{}")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([clientId, provider, lane])
+  @@index([clientId, status, provider])
+  @@map("provider_lanes")
+}
+
+model ConversationIntelligence {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId          BigInt   @map("client_id")
+  contactId         BigInt?  @map("contact_id")
+  messageId         String?  @map("message_id")
+  fromEmail         String   @map("from_email")
+  subject           String?
+  classification    String  @default("unknown")
+  sentiment         String  @default("neutral")
+  objectionType     String? @map("objection_type")
+  opportunityScore  Decimal @default(0) @map("opportunity_score") @db.Decimal(5, 2)
+  recommendedAction String  @default("review") @map("recommended_action")
+  evidence          Json    @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([clientId, classification, createdAt])
+  @@map("conversation_intelligence")
+}

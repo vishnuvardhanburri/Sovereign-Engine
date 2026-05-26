@@ -1457,3 +1457,487 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS segment_tags TEXT[];
 INSERT INTO autonomous_campaigns (id, name, status, config) 
 VALUES ('demo-campaign-1', 'Demo Autonomous Campaign', 'learning', '{"industry": "technology", "target_audience": "developers"}')
 ON CONFLICT (id) DO NOTHING;
+
+-- Xavira Autonomous Enterprise Communication OS foundation.
+-- This block is intentionally idempotent: Render deploys and local bootstraps can run it repeatedly.
+CREATE TABLE IF NOT EXISTS tenant_licenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  license_type TEXT NOT NULL CHECK (
+    license_type IN ('internal_enterprise', 'white_label_commercial', 'maintenance', 'trial')
+  ),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (
+    status IN ('active', 'trialing', 'past_due', 'suspended', 'expired', 'cancelled')
+  ),
+  seats INT NOT NULL DEFAULT 3,
+  child_tenant_limit INT NOT NULL DEFAULT 0,
+  api_monthly_limit INT NOT NULL DEFAULT 10000,
+  ingestion_monthly_limit INT NOT NULL DEFAULT 25000,
+  send_monthly_limit INT NOT NULL DEFAULT 5000,
+  features JSONB NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms JSONB NOT NULL DEFAULT '{}'::jsonb,
+  starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  renews_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, license_type)
+);
+
+CREATE TABLE IF NOT EXISTS usage_meter_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  meter_type TEXT NOT NULL CHECK (
+    meter_type IN (
+      'api_call',
+      'ingestion_record',
+      'send_attempt',
+      'ai_inference',
+      'crm_sync',
+      'workflow_action',
+      'websocket_event'
+    )
+  ),
+  quantity INT NOT NULL DEFAULT 1 CHECK (quantity >= 0),
+  source TEXT NOT NULL DEFAULT 'system',
+  idempotency_key TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_meter_events_idempotency
+  ON usage_meter_events (client_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_usage_meter_events_client_type_created
+  ON usage_meter_events (client_id, meter_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  session_hash TEXT NOT NULL,
+  ip_hash TEXT,
+  user_agent_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'expired')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, session_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_sessions_client_status
+  ON tenant_sessions (client_id, status, expires_at);
+
+CREATE TABLE IF NOT EXISTS source_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  source_type TEXT NOT NULL CHECK (
+    source_type IN (
+      'apollo',
+      'hubspot',
+      'salesforce',
+      'smartlead',
+      'instantly',
+      'linkedin_enrichment',
+      'website_research',
+      'webhook',
+      'rest',
+      'csv'
+    )
+  ),
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (
+    status IN ('active', 'paused', 'degraded', 'revoked', 'error')
+  ),
+  auth_type TEXT NOT NULL DEFAULT 'none' CHECK (auth_type IN ('none', 'api_key', 'oauth', 'basic', 'webhook_secret')),
+  encrypted_secret_id BIGINT REFERENCES encrypted_secrets(id) ON DELETE SET NULL,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  cursor_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  rate_limit_per_minute INT NOT NULL DEFAULT 60,
+  source_trust NUMERIC(4,3) NOT NULL DEFAULT 0.700,
+  last_success_at TIMESTAMPTZ,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, source_type, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_connections_client_status
+  ON source_connections (client_id, status, source_type);
+
+CREATE TABLE IF NOT EXISTS ingestion_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  source_connection_id UUID REFERENCES source_connections(id) ON DELETE SET NULL,
+  source_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (
+    status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'partial')
+  ),
+  idempotency_key TEXT NOT NULL,
+  requested_by TEXT NOT NULL DEFAULT 'system',
+  input_ref TEXT,
+  total_records INT NOT NULL DEFAULT 0,
+  accepted_records INT NOT NULL DEFAULT 0,
+  rejected_records INT NOT NULL DEFAULT 0,
+  enriched_records INT NOT NULL DEFAULT 0,
+  failure_count INT NOT NULL DEFAULT 0,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_client_status_created
+  ON ingestion_jobs (client_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS raw_source_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  ingestion_job_id UUID NOT NULL REFERENCES ingestion_jobs(id) ON DELETE CASCADE,
+  source_type TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  raw_payload JSONB NOT NULL,
+  normalized_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  processing_status TEXT NOT NULL DEFAULT 'accepted' CHECK (
+    processing_status IN ('accepted', 'duplicate', 'rejected', 'normalized', 'enriched')
+  ),
+  rejection_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, source_type, external_id, payload_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_raw_source_records_job
+  ON raw_source_records (ingestion_job_id, processing_status);
+
+CREATE TABLE IF NOT EXISTS ingestion_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  ingestion_job_id UUID REFERENCES ingestion_jobs(id) ON DELETE CASCADE,
+  raw_record_id UUID REFERENCES raw_source_records(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  event_version INT NOT NULL DEFAULT 1,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_events_client_created
+  ON ingestion_events (client_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ingestion_failures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  ingestion_job_id UUID REFERENCES ingestion_jobs(id) ON DELETE CASCADE,
+  raw_record_id UUID REFERENCES raw_source_records(id) ON DELETE SET NULL,
+  stage TEXT NOT NULL,
+  error_code TEXT NOT NULL,
+  error_message TEXT NOT NULL,
+  retry_count INT NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_failures_retry
+  ON ingestion_failures (client_id, resolved_at, next_retry_at);
+
+CREATE TABLE IF NOT EXISTS organization_intelligence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  company_domain TEXT NOT NULL,
+  company_name TEXT,
+  industry TEXT,
+  employee_count INT,
+  revenue_band TEXT,
+  outbound_maturity_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  infrastructure_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  ai_governance_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  licensing_probability_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_enriched_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, company_domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_organization_intelligence_scores
+  ON organization_intelligence (client_id, licensing_probability_score DESC, infrastructure_score DESC);
+
+CREATE TABLE IF NOT EXISTS contact_intelligence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  contact_id BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  role_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  deliverability_risk_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  agency_fit_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  enterprise_value_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  priority_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  priority_lane TEXT NOT NULL DEFAULT 'standard' CHECK (
+    priority_lane IN ('agency_white_label', 'enterprise_internal', 'standard', 'nurture', 'suppress')
+  ),
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_scored_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_intelligence_priority
+  ON contact_intelligence (client_id, priority_score DESC, priority_lane);
+
+CREATE TABLE IF NOT EXISTS provider_lanes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook', 'yahoo', 'icloud', 'other')),
+  lane TEXT NOT NULL CHECK (lane IN ('standard', 'low_risk', 'recovery', 'paused')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'throttled', 'recovery', 'paused')),
+  max_per_minute INT NOT NULL DEFAULT 1,
+  max_per_hour INT NOT NULL DEFAULT 20,
+  max_per_day INT NOT NULL DEFAULT 100,
+  throttle_factor NUMERIC(5,4) NOT NULL DEFAULT 1.0000,
+  emergency_brake_active BOOLEAN NOT NULL DEFAULT FALSE,
+  bounce_rate_24h NUMERIC(5,4) NOT NULL DEFAULT 0,
+  failure_rate_24h NUMERIC(5,4) NOT NULL DEFAULT 0,
+  reply_rate_7d NUMERIC(5,4) NOT NULL DEFAULT 0,
+  last_recovery_at TIMESTAMPTZ,
+  telemetry JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, provider, lane)
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_lanes_client_status
+  ON provider_lanes (client_id, status, provider);
+
+CREATE TABLE IF NOT EXISTS operational_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  event_version INT NOT NULL DEFAULT 1,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id TEXT NOT NULL,
+  actor_type TEXT NOT NULL DEFAULT 'system' CHECK (actor_type IN ('system', 'user', 'api_key', 'worker')),
+  actor_id TEXT,
+  idempotency_key TEXT,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_operational_events_idempotency
+  ON operational_events (client_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_operational_events_client_created
+  ON operational_events (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operational_events_aggregate
+  ON operational_events (client_id, aggregate_type, aggregate_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION prevent_operational_event_mutation()
+RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'operational_events is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_operational_events_no_update'
+  ) THEN
+    CREATE TRIGGER trg_operational_events_no_update
+      BEFORE UPDATE ON operational_events
+      FOR EACH ROW EXECUTE FUNCTION prevent_operational_event_mutation();
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_operational_events_no_delete'
+  ) THEN
+    CREATE TRIGGER trg_operational_events_no_delete
+      BEFORE DELETE ON operational_events
+      FOR EACH ROW EXECUTE FUNCTION prevent_operational_event_mutation();
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS telemetry_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  snapshot_type TEXT NOT NULL,
+  metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_telemetry_snapshots_client_type_created
+  ON telemetry_snapshots (client_id, snapshot_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS conversation_intelligence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  contact_id BIGINT REFERENCES contacts(id) ON DELETE SET NULL,
+  message_id TEXT,
+  from_email TEXT NOT NULL,
+  subject TEXT,
+  classification TEXT NOT NULL DEFAULT 'unknown' CHECK (
+    classification IN (
+      'interested',
+      'meeting_intent',
+      'partnership_intent',
+      'licensing_interest',
+      'objection',
+      'not_interested',
+      'bounce',
+      'auto_reply',
+      'neutral',
+      'unknown'
+    )
+  ),
+  sentiment TEXT NOT NULL DEFAULT 'neutral' CHECK (
+    sentiment IN ('positive', 'neutral', 'negative')
+  ),
+  objection_type TEXT,
+  opportunity_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  recommended_action TEXT NOT NULL DEFAULT 'review',
+  evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_intelligence_message
+  ON conversation_intelligence (client_id, message_id)
+  WHERE message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_conversation_intelligence_client_class
+  ON conversation_intelligence (client_id, classification, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS workflow_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'paused', 'archived')),
+  version INT NOT NULL DEFAULT 1,
+  trigger_type TEXT NOT NULL,
+  conditions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  rollback_plan JSONB NOT NULL DEFAULT '{}'::jsonb,
+  governance_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_by TEXT NOT NULL DEFAULT 'system',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, name, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_definitions_client_status
+  ON workflow_definitions (client_id, status, trigger_type);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  workflow_id UUID NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (
+    status IN ('queued', 'running', 'completed', 'failed', 'rolled_back', 'cancelled')
+  ),
+  trigger_event_id UUID REFERENCES operational_events(id) ON DELETE SET NULL,
+  input JSONB NOT NULL DEFAULT '{}'::jsonb,
+  output JSONB NOT NULL DEFAULT '{}'::jsonb,
+  error TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_client_status
+  ON workflow_runs (client_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS local_ai_models (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT REFERENCES clients(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'ollama',
+  model_name TEXT NOT NULL,
+  endpoint_url TEXT NOT NULL DEFAULT 'http://localhost:11434',
+  task_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'degraded', 'disabled')),
+  priority INT NOT NULL DEFAULT 100,
+  max_tokens INT NOT NULL DEFAULT 2048,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, provider, model_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_ai_models_status
+  ON local_ai_models (client_id, status, priority DESC);
+
+CREATE TABLE IF NOT EXISTS ai_governance_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id BIGINT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  model_id UUID REFERENCES local_ai_models(id) ON DELETE SET NULL,
+  task_type TEXT NOT NULL,
+  policy_version TEXT NOT NULL DEFAULT 'xavira-governance-v1',
+  route TEXT NOT NULL DEFAULT 'deterministic_fallback' CHECK (
+    route IN ('ollama', 'deterministic_fallback', 'external_optional', 'blocked')
+  ),
+  prompt_hash TEXT,
+  pii_masked BOOLEAN NOT NULL DEFAULT FALSE,
+  compliance_verdict TEXT NOT NULL DEFAULT 'allow' CHECK (
+    compliance_verdict IN ('allow', 'review', 'block')
+  ),
+  risk_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+  evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_governance_events_client_created
+  ON ai_governance_events (client_id, created_at DESC);
+
+INSERT INTO tenant_licenses (
+  client_id,
+  license_type,
+  status,
+  seats,
+  child_tenant_limit,
+  api_monthly_limit,
+  ingestion_monthly_limit,
+  send_monthly_limit,
+  features,
+  commercial_terms
+)
+VALUES (
+  1,
+  'internal_enterprise',
+  'active',
+  5,
+  0,
+  50000,
+  250000,
+  10000,
+  '{"sovereign_engine":true,"sovereign_shield":true,"autonomous_ingestion":true,"local_ai":true,"command_center":true}'::jsonb,
+  '{"package":"internal_enterprise","price_usd":25000,"maintenance_monthly_usd_range":[3000,10000]}'::jsonb
+)
+ON CONFLICT (client_id, license_type) DO NOTHING;
+
+INSERT INTO provider_lanes (client_id, provider, lane, max_per_minute, max_per_hour, max_per_day)
+SELECT 1, provider, lane, max_per_minute, max_per_hour, max_per_day
+FROM (
+  VALUES
+    ('gmail', 'standard', 1, 20, 100),
+    ('gmail', 'low_risk', 1, 10, 50),
+    ('outlook', 'standard', 1, 20, 100),
+    ('outlook', 'low_risk', 1, 10, 50),
+    ('yahoo', 'standard', 1, 12, 60),
+    ('icloud', 'standard', 1, 12, 60),
+    ('other', 'standard', 1, 30, 150)
+) AS defaults(provider, lane, max_per_minute, max_per_hour, max_per_day)
+ON CONFLICT (client_id, provider, lane) DO NOTHING;
+
+INSERT INTO local_ai_models (client_id, provider, model_name, endpoint_url, task_types, priority)
+VALUES (
+  1,
+  'ollama',
+  'llama3.1:8b',
+  'http://localhost:11434',
+  '["reply_classification","copy_governance","risk_analysis","lead_scoring"]'::jsonb,
+  100
+)
+ON CONFLICT (client_id, provider, model_name) DO NOTHING;
