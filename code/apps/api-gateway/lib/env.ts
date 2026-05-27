@@ -7,20 +7,26 @@ const required = (name: string): string => {
 }
 
 function validateDatabaseUrl(raw: string): string {
-  const value = raw.trim()
+  const rawValue = raw.trim()
+  const fromLines =
+    rawValue
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^DATABASE_URL\s*=|^postgres(?:ql)?:\/\//i.test(line)) ?? rawValue
+  const unquote = (value: string) => {
+    const trimmed = value.trim()
+    const isDoubleQuoted = trimmed.startsWith('"') && trimmed.endsWith('"')
+    const isSingleQuoted = trimmed.startsWith("'") && trimmed.endsWith("'")
+    return isDoubleQuoted || isSingleQuoted ? trimmed.slice(1, -1).trim() : trimmed
+  }
+  const value = unquote(unquote(fromLines).replace(/^DATABASE_URL\s*=\s*/i, '')).replace(/\s+/g, '')
 
-  // Guard against common .env footguns: inline comments, quotes, whitespace.
+  // Guard against common .env footguns while tolerating Render paste mistakes.
   if (!value) {
     throw new Error('DATABASE_URL is empty')
   }
-  if (/\s/.test(value)) {
-    throw new Error('DATABASE_URL must not contain spaces')
-  }
   if (value.includes('#')) {
     throw new Error('DATABASE_URL must be a single clean line (no # comments)')
-  }
-  if (value.startsWith('"') || value.endsWith('"') || value.startsWith("'") || value.endsWith("'")) {
-    throw new Error('DATABASE_URL must not be wrapped in quotes')
   }
 
   try {
