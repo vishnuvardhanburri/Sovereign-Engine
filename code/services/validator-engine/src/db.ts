@@ -1,4 +1,4 @@
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { validatorEnv } from './config'
 
 let pool: Pool | null = null
@@ -9,13 +9,45 @@ function intEnv(name: string, fallback: number, min: number, max: number): numbe
   return Math.min(max, Math.max(min, value))
 }
 
+function boolEnv(name: string, fallback = false) {
+  const value = process.env[name]
+  if (!value) return fallback
+  return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
+}
+
+function pgSsl(connectionString: string): PoolConfig['ssl'] {
+  try {
+    const sslmode = new URL(connectionString).searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode === 'disable') return undefined
+    if (sslmode === 'require' || sslmode === 'verify-ca' || sslmode === 'verify-full') {
+      return { rejectUnauthorized: boolEnv('PG_SSL_REJECT_UNAUTHORIZED', false) }
+    }
+  } catch {}
+
+  return process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+}
+
+function pgConnectionString(connectionString: string) {
+  try {
+    const url = new URL(connectionString)
+    const sslmode = url.searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode && sslmode !== 'disable') {
+      url.searchParams.delete('sslmode')
+      return url.toString()
+    }
+  } catch {}
+  return connectionString
+}
+
 export function getPool(): Pool {
   if (!pool) {
+    const databaseUrl = validatorEnv.databaseUrl()
     pool = new Pool({
-      connectionString: validatorEnv.databaseUrl(),
+      connectionString: pgConnectionString(databaseUrl),
       max: intEnv('PG_POOL_MAX', 3, 1, 10),
       idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
       connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+      ssl: pgSsl(databaseUrl),
     })
   }
   return pool

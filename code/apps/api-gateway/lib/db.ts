@@ -33,11 +33,29 @@ function databaseSsl(connectionString: string): PoolConfig['ssl'] {
   return undefined
 }
 
+function databaseConnectionString(connectionString: string): string {
+  try {
+    const url = new URL(connectionString)
+    const sslmode = url.searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode && sslmode !== 'disable') {
+      // node-postgres currently treats sslmode=require like verify-full in some
+      // paths, which breaks managed poolers with self-signed chains. We control
+      // TLS explicitly through the `ssl` Pool option instead.
+      url.searchParams.delete('sslmode')
+      return url.toString()
+    }
+  } catch {
+    // appEnv.databaseUrl validates the URL before this is called.
+  }
+
+  return connectionString
+}
+
 export function getPool(): Pool {
   if (!pool) {
     const connectionString = appEnv.databaseUrl()
     pool = new Pool({
-      connectionString,
+      connectionString: databaseConnectionString(connectionString),
       max: intEnv('PG_POOL_MAX', 5, 1, 20),
       idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
       connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),

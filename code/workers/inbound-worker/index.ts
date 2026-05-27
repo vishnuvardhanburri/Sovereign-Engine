@@ -4,7 +4,7 @@ import { ImapFlow } from 'imapflow'
 // @ts-ignore
 import { simpleParser } from 'mailparser'
 import IORedis from 'ioredis'
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { ingestEvent } from '@sovereign/tracking-engine'
 import type { DbExecutor } from '@sovereign/types'
 
@@ -20,6 +20,36 @@ function intEnv(name: string, fallback: number, min: number, max: number) {
   const value = Number.parseInt(String(process.env[name] ?? ''), 10)
   if (!Number.isFinite(value)) return fallback
   return Math.min(max, Math.max(min, value))
+}
+
+function boolEnv(name: string, fallback = false) {
+  const value = process.env[name]
+  if (!value) return fallback
+  return value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'
+}
+
+function pgSsl(connectionString: string): PoolConfig['ssl'] {
+  try {
+    const sslmode = new URL(connectionString).searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode === 'disable') return undefined
+    if (sslmode === 'require' || sslmode === 'verify-ca' || sslmode === 'verify-full') {
+      return { rejectUnauthorized: boolEnv('PG_SSL_REJECT_UNAUTHORIZED', false) }
+    }
+  } catch {}
+
+  return process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+}
+
+function pgConnectionString(connectionString: string) {
+  try {
+    const url = new URL(connectionString)
+    const sslmode = url.searchParams.get('sslmode')?.toLowerCase()
+    if (sslmode && sslmode !== 'disable') {
+      url.searchParams.delete('sslmode')
+      return url.toString()
+    }
+  } catch {}
+  return connectionString
 }
 
 function readJsonArray(name: string): any[] {
@@ -226,11 +256,13 @@ async function recordConversationIntelligenceDirect(input: {
   )
 }
 
+const DATABASE_URL = reqEnv('DATABASE_URL')
 const pool = new Pool({
-  connectionString: reqEnv('DATABASE_URL'),
+  connectionString: pgConnectionString(DATABASE_URL),
   max: intEnv('PG_POOL_MAX', 2, 1, 10),
   idleTimeoutMillis: intEnv('PG_POOL_IDLE_TIMEOUT_MS', 30_000, 1_000, 10 * 60_000),
   connectionTimeoutMillis: intEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+  ssl: pgSsl(DATABASE_URL),
 })
 const redis = new IORedis(reqEnv('REDIS_URL'))
 
