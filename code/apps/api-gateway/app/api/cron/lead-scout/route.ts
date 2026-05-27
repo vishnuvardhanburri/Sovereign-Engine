@@ -16,8 +16,19 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 function numberFromEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name] ?? fallback)
+  const raw = process.env[name]?.trim()
+  const value = Number(raw || fallback)
   return Number.isFinite(value) ? value : fallback
+}
+
+function numberFromParam(request: NextRequest, names: string[], envName: string, fallback: number): number {
+  for (const name of names) {
+    const raw = request.nextUrl.searchParams.get(name)?.trim()
+    if (!raw) continue
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return numberFromEnv(envName, fallback)
 }
 
 function leadScoutOffset(limit: number): number {
@@ -71,15 +82,39 @@ export async function GET(request: NextRequest) {
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
       deadlineMs: Math.max(
         5_000,
-        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_DEADLINE_MS', 25_000), 55_000)
+        Math.min(
+          numberFromParam(
+            request,
+            ['leadScoutEvidenceDeadlineMs', 'evidenceDeadlineMs'],
+            'LEAD_SCOUT_EVIDENCE_DEADLINE_MS',
+            25_000
+          ),
+          55_000
+        )
       ),
       maxPagesPerLead: Math.max(
         3,
-        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_MAX_PAGES', 8), 12)
+        Math.min(
+          numberFromParam(
+            request,
+            ['leadScoutEvidenceMaxPages', 'evidenceMaxPages'],
+            'LEAD_SCOUT_EVIDENCE_MAX_PAGES',
+            8
+          ),
+          12
+        )
       ),
       requestTimeoutMs: Math.max(
         800,
-        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS', 2_000), 4_000)
+        Math.min(
+          numberFromParam(
+            request,
+            ['leadScoutEvidenceRequestTimeoutMs', 'evidenceRequestTimeoutMs'],
+            'LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS',
+            2_000
+          ),
+          4_000
+        )
       ),
     })
     const importUnverified = String(process.env.LEAD_SCOUT_IMPORT_UNVERIFIED || '').toLowerCase() === 'true'

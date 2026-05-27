@@ -332,6 +332,46 @@ function leadScoutOffset(limit: number): number {
   return Math.floor(Date.now() / windowMs) * limit
 }
 
+function numberFromValue(value: unknown, fallback: number): number {
+  const raw = typeof value === 'string' ? value.trim() : value
+  if (raw === '' || raw === undefined || raw === null) return fallback
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function resolveLeadScoutEvidenceOptions(input: {
+  deadlineMs?: unknown
+  maxPagesPerLead?: unknown
+  requestTimeoutMs?: unknown
+}) {
+  return {
+    deadlineMs: Math.max(
+      5_000,
+      Math.min(
+        numberFromValue(input.deadlineMs, numberFromValue(process.env.LEAD_SCOUT_EVIDENCE_DEADLINE_MS, 25_000)),
+        55_000
+      )
+    ),
+    maxPagesPerLead: Math.max(
+      3,
+      Math.min(
+        numberFromValue(input.maxPagesPerLead, numberFromValue(process.env.LEAD_SCOUT_EVIDENCE_MAX_PAGES, 8)),
+        12
+      )
+    ),
+    requestTimeoutMs: Math.max(
+      800,
+      Math.min(
+        numberFromValue(
+          input.requestTimeoutMs,
+          numberFromValue(process.env.LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS, 2_000)
+        ),
+        4_000
+      )
+    ),
+  }
+}
+
 function compactStage(stage: StageResult): StageResult {
   if (!stage.data) return stage
   const data = stage.data
@@ -435,6 +475,9 @@ async function runLeadScoutStage(input: {
   industry?: string | null
   persona?: string | null
   region?: string | null
+  evidenceDeadlineMs?: string | null
+  evidenceMaxPagesPerLead?: string | null
+  evidenceRequestTimeoutMs?: string | null
 }): Promise<StageResult> {
   try {
     const result = scoutOpenLeads({
@@ -447,18 +490,11 @@ async function runLeadScoutStage(input: {
       offset: leadScoutOffset(input.limit),
     })
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      deadlineMs: Math.max(
-        5_000,
-        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_DEADLINE_MS ?? 25_000), 55_000)
-      ),
-      maxPagesPerLead: Math.max(
-        3,
-        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_MAX_PAGES ?? 8), 12)
-      ),
-      requestTimeoutMs: Math.max(
-        800,
-        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS ?? 2_000), 4_000)
-      ),
+      ...resolveLeadScoutEvidenceOptions({
+        deadlineMs: input.evidenceDeadlineMs,
+        maxPagesPerLead: input.evidenceMaxPagesPerLead,
+        requestTimeoutMs: input.evidenceRequestTimeoutMs,
+      }),
     })
     const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
     const contacts = input.dryRun
@@ -1748,6 +1784,10 @@ export async function GET(request: NextRequest) {
           industry: params.get('industry') || params.get('leadScoutIndustry'),
           persona: params.get('persona') || params.get('leadScoutPersona'),
           region: params.get('region') || params.get('leadScoutRegion'),
+          evidenceDeadlineMs: params.get('leadScoutEvidenceDeadlineMs') || params.get('evidenceDeadlineMs'),
+          evidenceMaxPagesPerLead: params.get('leadScoutEvidenceMaxPages') || params.get('evidenceMaxPages'),
+          evidenceRequestTimeoutMs:
+            params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
         })
       )
     } else {

@@ -12,19 +12,62 @@ function filterImportableLeads<T extends { autoApprovalEligible?: boolean }>(
   return includeUnverified ? leads : leads.filter((lead) => lead.autoApprovalEligible)
 }
 
-function evidenceOptions() {
+function numberFromValue(value: unknown, fallback: number): number {
+  const raw = typeof value === 'string' ? value.trim() : value
+  if (raw === '' || raw === undefined || raw === null) return fallback
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function numberFromSearch(
+  searchParams: URLSearchParams,
+  names: string[],
+  envName: string,
+  fallback: number
+): number {
+  for (const name of names) {
+    const raw = searchParams.get(name)
+    if (raw === null) continue
+    return numberFromValue(raw, fallback)
+  }
+  return numberFromValue(process.env[envName], fallback)
+}
+
+function evidenceOptions(searchParams?: URLSearchParams, body?: Record<string, unknown>) {
+  const queryValue = (names: string[], envName: string, fallback: number) => {
+    for (const name of names) {
+      if (body && Object.prototype.hasOwnProperty.call(body, name)) {
+        return numberFromValue(body[name], fallback)
+      }
+    }
+    return searchParams ? numberFromSearch(searchParams, names, envName, fallback) : numberFromValue(process.env[envName], fallback)
+  }
+
   return {
     deadlineMs: Math.max(
       5_000,
-      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_DEADLINE_MS ?? 25_000), 55_000)
+      Math.min(
+        queryValue(['leadScoutEvidenceDeadlineMs', 'evidenceDeadlineMs'], 'LEAD_SCOUT_EVIDENCE_DEADLINE_MS', 25_000),
+        55_000
+      )
     ),
     maxPagesPerLead: Math.max(
       3,
-      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_MAX_PAGES ?? 8), 12)
+      Math.min(
+        queryValue(['leadScoutEvidenceMaxPages', 'evidenceMaxPages'], 'LEAD_SCOUT_EVIDENCE_MAX_PAGES', 8),
+        12
+      )
     ),
     requestTimeoutMs: Math.max(
       800,
-      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS ?? 2_000), 4_000)
+      Math.min(
+        queryValue(
+          ['leadScoutEvidenceRequestTimeoutMs', 'evidenceRequestTimeoutMs'],
+          'LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS',
+          2_000
+        ),
+        4_000
+      )
     ),
   }
 }
@@ -45,9 +88,8 @@ export async function GET(request: NextRequest) {
       offset: Number(searchParams.get('offset') ?? 0),
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      ...evidenceOptions(),
-    })
+    const verification = evidenceOptions(searchParams)
+    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, verification)
     const shouldImport = searchParams.get('import') === '1'
     const includeUnverified = searchParams.get('include_unverified') === '1'
     if (!shouldImport) {
@@ -56,6 +98,7 @@ export async function GET(request: NextRequest) {
         clientId,
         imported: 0,
         ...result,
+        verification,
         leads: verifiedLeads,
         verifiedEvidenceCount: verifiedLeads.filter((lead) => lead.autoApprovalEligible).length,
       })
@@ -75,6 +118,7 @@ export async function GET(request: NextRequest) {
       imported: contacts.length,
       contacts,
       ...result,
+      verification,
       leads: verifiedLeads,
       verifiedEvidenceCount: importableLeads.length,
       blockedUnverified: verifiedLeads.length - importableLeads.length,
@@ -104,15 +148,15 @@ export async function POST(request: NextRequest) {
       offset: body.offset,
     })
 
-    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      ...evidenceOptions(),
-    })
+    const verification = evidenceOptions(undefined, body)
+    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, verification)
     if (!body.importContacts) {
       return NextResponse.json({
         ok: true,
         clientId,
         imported: 0,
         ...result,
+        verification,
         leads: verifiedLeads,
         verifiedEvidenceCount: verifiedLeads.filter((lead) => lead.autoApprovalEligible).length,
       })
@@ -132,6 +176,7 @@ export async function POST(request: NextRequest) {
       imported: contacts.length,
       contacts,
       ...result,
+      verification,
       leads: verifiedLeads,
       verifiedEvidenceCount: importableLeads.length,
       blockedUnverified: verifiedLeads.length - importableLeads.length,

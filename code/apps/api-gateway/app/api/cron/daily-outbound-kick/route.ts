@@ -33,18 +33,13 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
 function buildRunUrl(request: NextRequest, clientId: number): string {
   const runUrl = new URL('/api/cron/daily-outbound', request.nextUrl.origin)
   const params = request.nextUrl.searchParams
-  // Hourly cron should feed itself from autonomous sources, but not try to
-  // scrape hundreds of places in one worker cycle on a small Render instance.
   const maxMapsLimit = intParam(
-    process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ??
-      process.env.GOOGLE_MAPS_DAILY_LIMIT ??
-      process.env.APIFY_GOOGLE_MAPS_LIMIT ??
-      '25',
-    25,
+    process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ?? null,
+    1_000,
     0,
-    100
+    1_000
   )
-  const maxPlacesPerSearch = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_PLACES_PER_SEARCH ?? null, 8, 1, 20)
+  const maxPlacesPerSearch = intParam(process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_PLACES_PER_SEARCH ?? null, 50, 1, 50)
 
   for (const key of [
     'mode',
@@ -53,8 +48,27 @@ function buildRunUrl(request: NextRequest, clientId: number): string {
     'sendLimit',
     'approveLimit',
     'providerValidationLimit',
+    'leadScout',
+    'leadScoutLimit',
+    'leadScoutIndustry',
+    'leadScoutPersona',
+    'leadScoutRegion',
+    'industry',
+    'persona',
+    'region',
+    'leadScoutEvidenceDeadlineMs',
+    'leadScoutEvidenceMaxPages',
+    'leadScoutEvidenceRequestTimeoutMs',
+    'evidenceDeadlineMs',
+    'evidenceMaxPages',
+    'evidenceRequestTimeoutMs',
+    'hunterSearch',
     'mapsLimit',
     'mapsPlacesPerSearch',
+    'mapsSearches',
+    'mapsLocation',
+    'mapsRegion',
+    'mapsIndustry',
   ]) {
     const value = params.get(key)
     if (!value) continue
