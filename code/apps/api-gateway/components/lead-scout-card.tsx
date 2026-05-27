@@ -23,7 +23,7 @@ interface ScoutLead {
   fitScore: number
   reason: string
   confidence: 'high' | 'medium' | 'low'
-  emailEvidence?: 'public_page_match' | 'public_domain_email' | 'synthetic_role_pattern'
+  emailEvidence?: 'public_page_email_match' | 'public_mailto_match' | 'public_domain_email' | 'synthetic_role_pattern'
   publicEvidenceUrl?: string
   autoApprovalEligible?: boolean
 }
@@ -150,7 +150,7 @@ export function LeadScoutCard() {
           </Select>
           <Input
             min={1}
-            max={100}
+            max={1000}
             type="number"
             value={limit}
             onChange={(event) => setLimit(Number(event.target.value || 25))}

@@ -12,6 +12,23 @@ function filterImportableLeads<T extends { autoApprovalEligible?: boolean }>(
   return includeUnverified ? leads : leads.filter((lead) => lead.autoApprovalEligible)
 }
 
+function evidenceOptions() {
+  return {
+    deadlineMs: Math.max(
+      5_000,
+      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_DEADLINE_MS ?? 25_000), 55_000)
+    ),
+    maxPagesPerLead: Math.max(
+      3,
+      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_MAX_PAGES ?? 8), 12)
+    ),
+    requestTimeoutMs: Math.max(
+      800,
+      Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS ?? 2_000), 4_000)
+    ),
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -29,9 +46,7 @@ export async function GET(request: NextRequest) {
     })
 
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      deadlineMs: 10_000,
-      maxPagesPerLead: 6,
-      requestTimeoutMs: 1_500,
+      ...evidenceOptions(),
     })
     const shouldImport = searchParams.get('import') === '1'
     const includeUnverified = searchParams.get('include_unverified') === '1'
@@ -90,9 +105,7 @@ export async function POST(request: NextRequest) {
     })
 
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      deadlineMs: 10_000,
-      maxPagesPerLead: 6,
-      requestTimeoutMs: 1_500,
+      ...evidenceOptions(),
     })
     if (!body.importContacts) {
       return NextResponse.json({

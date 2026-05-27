@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       searchParams: request.nextUrl.searchParams,
       headers: request.headers,
     })
-    const limit = Math.min(Math.max(numberFromEnv('LEAD_SCOUT_DAILY_LIMIT', 3), 1), 3)
+    const limit = Math.min(Math.max(numberFromEnv('LEAD_SCOUT_DAILY_LIMIT', 250), 1), 1_000)
     const offset = leadScoutOffset(limit)
 
     const result = scoutOpenLeads({
@@ -69,9 +69,18 @@ export async function GET(request: NextRequest) {
     })
 
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      deadlineMs: 6_000,
-      maxPagesPerLead: 3,
-      requestTimeoutMs: 1_200,
+      deadlineMs: Math.max(
+        5_000,
+        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_DEADLINE_MS', 25_000), 55_000)
+      ),
+      maxPagesPerLead: Math.max(
+        3,
+        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_MAX_PAGES', 8), 12)
+      ),
+      requestTimeoutMs: Math.max(
+        800,
+        Math.min(numberFromEnv('LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS', 2_000), 4_000)
+      ),
     })
     const importUnverified = String(process.env.LEAD_SCOUT_IMPORT_UNVERIFIED || '').toLowerCase() === 'true'
     const importableLeads = importUnverified

@@ -34,7 +34,7 @@ export interface OpenLead {
   fitScore: number
   reason: string
   confidence: 'high' | 'medium' | 'low'
-  emailEvidence?: 'public_page_match' | 'public_domain_email' | 'synthetic_role_pattern'
+  emailEvidence?: 'public_page_email_match' | 'public_mailto_match' | 'public_domain_email' | 'synthetic_role_pattern'
   publicEvidenceUrl?: string
   autoApprovalEligible?: boolean
 }
@@ -160,19 +160,25 @@ const COMPANY_SEEDS: CompanySeed[] = [
 ]
 
 const PERSONA_MAILBOXES: Record<LeadScoutPersona, string[]> = {
-  founder: ['founders', 'founder', 'hello', 'contact'],
-  growth: ['growth', 'marketing', 'demandgen', 'hello'],
-  partnerships: ['partnerships', 'partners', 'bizdev', 'hello'],
-  sales: ['sales', 'revenue', 'hello', 'contact'],
-  operations: ['ops', 'operations', 'admin', 'hello'],
+  founder: ['hello', 'contact', 'team'],
+  growth: ['growth', 'marketing', 'hello'],
+  partnerships: ['partners', 'partnerships', 'hello'],
+  sales: ['sales', 'hello', 'contact'],
+  operations: ['operations', 'ops', 'hello'],
 }
 
 const PUBLIC_EVIDENCE_PATHS = [
   '/',
+  '/contact/',
   '/contact',
   '/contact-us',
+  '/contact-us/',
   '/contact/sales',
   '/sales',
+  '/sales/',
+  '/demo',
+  '/get-in-touch',
+  '/connect',
   '/about',
   '/about-us',
   '/company',
@@ -182,6 +188,8 @@ const PUBLIC_EVIDENCE_PATHS = [
   '/partner',
   '/connect',
 ]
+
+const SITEMAP_PATHS = ['/sitemap.xml', '/sitemap_index.xml']
 
 const PUBLIC_EVIDENCE_LINK_KEYWORDS = [
   'about',
@@ -196,6 +204,12 @@ const PUBLIC_EVIDENCE_LINK_KEYWORDS = [
   'sales',
   'team',
 ]
+
+const HIGH_SIGNAL_PATH_RE =
+  /\b(?:contact|contact-us|get-in-touch|sales|demo|partners?|partnerships?|team|about|company|connect)\b/i
+
+const HIGH_SIGNAL_TEXT_RE =
+  /\b(?:book\s+a\s+demo|contact\s+(?:sales|us)|get\s+in\s+touch|partner(?:ship)?s?|growth|sales\s+team|business\s+development|go[-\s]?to[-\s]?market|revenue\s+operations|outbound|lead\s+generation|deliverability|cybersecurity|ai\s+governance|compliance)\b/i
 
 const BLOCKED_PUBLIC_EMAIL_PREFIXES = new Set([
   'abuse',
@@ -241,7 +255,7 @@ function normalizeRegion(input?: string): string {
 function clampLimit(value?: number): number {
   const limit = Number(value ?? 25)
   if (!Number.isFinite(limit)) return 25
-  return Math.min(Math.max(Math.trunc(limit), 1), 100)
+  return Math.min(Math.max(Math.trunc(limit), 1), 1_000)
 }
 
 function clampOffset(value?: number): number {
@@ -281,12 +295,78 @@ function publicUrl(domain: string, path: string): string {
   return `https://${domain}${path}`
 }
 
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&commat;|&commat/gi, '@')
+    .replace(/&period;|&period/gi, '.')
+    .replace(/&dot;|&dot/gi, '.')
+    .replace(/&amp;/gi, '&')
+    .replace(/&nbsp;/gi, ' ')
+}
+
+function decodeJsEscapes(input: string): string {
+  return input
+    .replace(/\\u00([0-9a-f]{2})/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/\\x([0-9a-f]{2})/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/%40/gi, '@')
+    .replace(/%2e/gi, '.')
+}
+
+function safeDecodeURIComponent(input: string): string {
+  try {
+    return decodeURIComponent(input)
+  } catch {
+    return input
+  }
+}
+
+function decodeCloudflareEmail(hex: string): string | null {
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length < 4) return null
+  const key = parseInt(hex.slice(0, 2), 16)
+  let decoded = ''
+  for (let index = 2; index < hex.length; index += 2) {
+    decoded += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16) ^ key)
+  }
+  return decoded.includes('@') ? decoded : null
+}
+
+function stripHtmlTags(input: string): string {
+  return input
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+}
+
+function expandEvidenceText(html: string): string {
+  const cloudflareEmails = Array.from(html.matchAll(/data-cfemail=["']([0-9a-f]+)["']/gi))
+    .map((match) => decodeCloudflareEmail(String(match[1] || '')))
+    .filter((email): email is string => Boolean(email))
+  const mailtoEmails = Array.from(html.matchAll(/mailto:([^"'\s?]+)/gi)).map((match) =>
+    safeDecodeURIComponent(String(match[1] || ''))
+  )
+  const decoded = decodeJsEscapes(decodeHtmlEntities(html))
+  const noTags = stripHtmlTags(decoded)
+  const compacted = decoded.replace(/<\/?(?:span|strong|b|i|em|small|a|u)[^>]*>/gi, '')
+
+  return [
+    html,
+    decoded,
+    noTags,
+    compacted,
+    cloudflareEmails.join('\n'),
+    mailtoEmails.join('\n'),
+  ].join('\n')
+}
+
 function extractDomainEmails(html: string, domain: string): string[] {
   const normalizedDomain = domain.toLowerCase()
-  const decodedHtml = html
+  const evidenceText = expandEvidenceText(html)
+  const decodedHtml = evidenceText
     .replace(/\s*(?:\[at\]|\(at\)|\sat\s)\s*/gi, '@')
     .replace(/\s*(?:\[dot\]|\(dot\)|\sdot\s)\s*/gi, '.')
-  const matches = `${html}\n${decodedHtml}`.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? []
+  const matches = `${evidenceText}\n${decodedHtml}`.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? []
   const unique = new Set<string>()
 
   for (const match of matches) {
@@ -298,6 +378,16 @@ function extractDomainEmails(html: string, domain: string): string[] {
   }
 
   return Array.from(unique)
+}
+
+function extractMailtoEmails(html: string, domain: string): string[] {
+  const normalizedDomain = domain.toLowerCase()
+  return Array.from(html.matchAll(/mailto:([^"'\s?]+)/gi))
+    .map((match) => safeDecodeURIComponent(String(match[1] || '')).toLowerCase())
+    .filter((email) => {
+      const [prefix, emailDomain] = email.split('@')
+      return Boolean(prefix && emailDomain === normalizedDomain && !BLOCKED_PUBLIC_EMAIL_PREFIXES.has(prefix))
+    })
 }
 
 function pickPublicEmail(emails: string[], persona: LeadScoutPersona): string | null {
@@ -313,8 +403,8 @@ function isSamePublicDomain(hostname: string, domain: string): boolean {
 }
 
 function extractEvidenceLinks(html: string, domain: string): string[] {
-  const urls = new Set<string>()
-  const hrefs = html.matchAll(/href=["']([^"']+)["']/gi)
+  const urls = new Map<string, number>()
+  const hrefs = html.matchAll(/(?:href|data-href)=["']([^"']+)["']/gi)
 
   for (const match of hrefs) {
     const rawHref = String(match[1] || '').trim()
@@ -328,16 +418,66 @@ function extractEvidenceLinks(html: string, domain: string): string[] {
       if (!isSamePublicDomain(url.hostname, domain)) continue
 
       const candidate = `${url.pathname}${url.search}`.toLowerCase()
-      if (!PUBLIC_EVIDENCE_LINK_KEYWORDS.some((keyword) => candidate.includes(keyword))) continue
+      const nearbyText = html
+        .slice(Math.max(0, (match.index ?? 0) - 160), Math.min(html.length, (match.index ?? 0) + 260))
+        .toLowerCase()
+      const keywordHit = PUBLIC_EVIDENCE_LINK_KEYWORDS.some((keyword) => candidate.includes(keyword))
+      const signalHit = HIGH_SIGNAL_TEXT_RE.test(stripHtmlTags(nearbyText))
+      if (!keywordHit && !signalHit) continue
 
       url.hash = ''
-      urls.add(url.toString())
+      const score =
+        (keywordHit ? 20 : 0) +
+        (signalHit ? 12 : 0) +
+        (HIGH_SIGNAL_PATH_RE.test(candidate) ? 20 : 0) -
+        Math.min(candidate.length / 80, 8)
+      urls.set(url.toString(), Math.max(urls.get(url.toString()) ?? 0, score))
     } catch {
       // Ignore malformed marketing links; discovery should never block the operator flow.
     }
   }
 
-  return Array.from(urls).slice(0, 8)
+  return Array.from(urls.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([url]) => url)
+    .slice(0, 16)
+}
+
+function extractSitemapEvidenceLinks(xml: string, domain: string): string[] {
+  const urls = new Map<string, number>()
+  const locs = xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)
+
+  for (const match of locs) {
+    const rawUrl = decodeHtmlEntities(String(match[1] || '').trim())
+    if (!rawUrl) continue
+
+    try {
+      const url = new URL(rawUrl)
+      if (!isSamePublicDomain(url.hostname, domain)) continue
+      const path = url.pathname.toLowerCase()
+      if (!PUBLIC_EVIDENCE_LINK_KEYWORDS.some((keyword) => path.includes(keyword))) continue
+      url.hash = ''
+      const score = (HIGH_SIGNAL_PATH_RE.test(path) ? 30 : 10) - Math.min(path.length / 100, 6)
+      urls.set(url.toString(), Math.max(urls.get(url.toString()) ?? 0, score))
+    } catch {
+      // Ignore malformed sitemap entries.
+    }
+  }
+
+  return Array.from(urls.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([url]) => url)
+    .slice(0, 20)
+}
+
+function scoreEvidencePage(url: string, html: string): number {
+  const parsed = new URL(url)
+  const pathScore = HIGH_SIGNAL_PATH_RE.test(parsed.pathname) ? 40 : 0
+  const text = stripHtmlTags(expandEvidenceText(html)).slice(0, 20_000)
+  const textScore = HIGH_SIGNAL_TEXT_RE.test(text) ? 25 : 0
+  const mailtoScore = /mailto:/i.test(html) ? 20 : 0
+  const emailScore = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(expandEvidenceText(html)) ? 30 : 0
+  return pathScore + textScore + mailtoScore + emailScore
 }
 
 async function fetchEvidencePage(url: string, timeoutMs: number): Promise<string | null> {
@@ -345,8 +485,10 @@ async function fetchEvidencePage(url: string, timeoutMs: number): Promise<string
     const response = await fetch(url, {
       headers: {
         Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.8',
         'User-Agent': 'SovereignEngineLeadVerifier/1.0',
       },
+      cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),
     })
 
@@ -359,6 +501,40 @@ async function fetchEvidencePage(url: string, timeoutMs: number): Promise<string
   }
 }
 
+async function fetchTextResource(url: string, timeoutMs: number): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/xml,text/xml,text/plain,*/*',
+        'Accept-Language': 'en-US,en;q=0.8',
+        'User-Agent': 'SovereignEngineLeadVerifier/1.0',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) return null
+    return await response.text()
+  } catch {
+    return null
+  }
+}
+
+async function discoverSitemapUrls(domain: string, deadlineAt: number, requestTimeoutMs: number): Promise<string[]> {
+  const urls = new Set<string>()
+  for (const path of SITEMAP_PATHS) {
+    const remainingMs = deadlineAt - Date.now()
+    if (remainingMs <= 0) break
+
+    const xml = await fetchTextResource(publicUrl(domain, path), Math.min(requestTimeoutMs, remainingMs))
+    if (!xml) continue
+    for (const url of extractSitemapEvidenceLinks(xml, domain)) {
+      urls.add(url)
+    }
+  }
+
+  return Array.from(urls)
+}
+
 async function verifySingleOpenLeadEvidence(
   lead: OpenLead,
   input: {
@@ -369,14 +545,29 @@ async function verifySingleOpenLeadEvidence(
 ): Promise<OpenLead> {
   const persona = personaFromTitle(lead.title)
   const inferredEmail = lead.email.toLowerCase()
-
-  const urls = PUBLIC_EVIDENCE_PATHS.map((path) => publicUrl(lead.companyDomain, path))
+  const priorityQueue: string[] = []
+  const normalQueue = PUBLIC_EVIDENCE_PATHS.map((path) => publicUrl(lead.companyDomain, path))
   const visited = new Set<string>()
+  const queued = new Set<string>(normalQueue)
+  let sitemapQueued = false
 
-  for (let index = 0; index < urls.length && index < input.maxPagesPerLead; index += 1) {
+  const enqueuePriority = (url: string) => {
+    if (queued.has(url) || visited.has(url)) return
+    queued.add(url)
+    priorityQueue.push(url)
+  }
+
+  const nextUrl = () => priorityQueue.shift() ?? normalQueue.shift() ?? null
+  const minPageScore = Math.max(
+    0,
+    Math.min(Number(process.env.LEAD_SCOUT_MIN_EVIDENCE_PAGE_SCORE ?? 0), 80)
+  )
+
+  for (let pagesChecked = 0; pagesChecked < input.maxPagesPerLead; pagesChecked += 1) {
     if (Date.now() >= input.deadlineAt) break
 
-    const url = urls[index]
+    const url = nextUrl()
+    if (!url) break
     if (visited.has(url)) continue
     visited.add(url)
 
@@ -386,22 +577,50 @@ async function verifySingleOpenLeadEvidence(
     const html = await fetchEvidencePage(url, Math.min(input.requestTimeoutMs, remainingMs))
     if (!html) continue
 
+    const pageScore = scoreEvidencePage(url, html)
+    if (pageScore < minPageScore && url !== publicUrl(lead.companyDomain, '/')) {
+      continue
+    }
+
     if (url === publicUrl(lead.companyDomain, '/')) {
       for (const discoveredUrl of extractEvidenceLinks(html, lead.companyDomain)) {
-        if (!visited.has(discoveredUrl) && urls.length < input.maxPagesPerLead) {
-          urls.push(discoveredUrl)
+        enqueuePriority(discoveredUrl)
+      }
+
+      if (!sitemapQueued && input.maxPagesPerLead >= 4) {
+        sitemapQueued = true
+        const sitemapUrls = await discoverSitemapUrls(
+          lead.companyDomain,
+          input.deadlineAt,
+          Math.min(input.requestTimeoutMs, 1_000)
+        )
+        for (const sitemapUrl of sitemapUrls) {
+          enqueuePriority(sitemapUrl)
         }
       }
     }
 
-    const lowerHtml = html.toLowerCase()
+    const expandedText = expandEvidenceText(html)
+    const lowerHtml = expandedText.toLowerCase()
     if (lowerHtml.includes(inferredEmail)) {
       return {
         ...lead,
-        emailEvidence: 'public_page_match',
+        emailEvidence: 'public_page_email_match',
         publicEvidenceUrl: url,
         autoApprovalEligible: true,
         reason: `${lead.reason} Public evidence confirms ${inferredEmail}.`,
+      }
+    }
+
+    const mailtoEmail = pickPublicEmail(extractMailtoEmails(html, lead.companyDomain), persona)
+    if (mailtoEmail) {
+      return {
+        ...lead,
+        email: mailtoEmail,
+        emailEvidence: 'public_mailto_match',
+        publicEvidenceUrl: url,
+        autoApprovalEligible: true,
+        reason: `${lead.reason} Public mailto evidence found on ${url}.`,
       }
     }
 
@@ -410,7 +629,7 @@ async function verifySingleOpenLeadEvidence(
       return {
         ...lead,
         email: publicEmail,
-        emailEvidence: 'public_domain_email',
+        emailEvidence: 'public_page_email_match',
         publicEvidenceUrl: url,
         autoApprovalEligible: true,
         reason: `${lead.reason} Public contact evidence found on ${url}.`,
@@ -429,20 +648,36 @@ export async function verifyOpenLeadEvidence(
   leads: OpenLead[],
   options: VerifyOpenLeadEvidenceOptions = {}
 ): Promise<OpenLead[]> {
-  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 20_000))
-  const maxPagesPerLead = Math.max(1, Math.min(options.maxPagesPerLead ?? 4, 8))
-  const requestTimeoutMs = Math.max(50, Math.min(options.requestTimeoutMs ?? 1_500, 3_000))
+  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 60_000))
+  const maxPagesPerLead = Math.max(1, Math.min(options.maxPagesPerLead ?? 4, 12))
+  const requestTimeoutMs = Math.max(50, Math.min(options.requestTimeoutMs ?? 1_500, 5_000))
   const deadlineAt = Date.now() + deadlineMs
+  const concurrency = Math.max(
+    1,
+    Math.min(Number(process.env.LEAD_SCOUT_VERIFY_CONCURRENCY ?? 6), 24)
+  )
+  const results = new Array<OpenLead>(leads.length)
+  let cursor = 0
 
-  return Promise.all(
-    leads.map((lead) =>
-      verifySingleOpenLeadEvidence(lead, {
+  async function worker() {
+    while (cursor < leads.length && Date.now() < deadlineAt) {
+      const index = cursor
+      cursor += 1
+      results[index] = await verifySingleOpenLeadEvidence(leads[index], {
         deadlineAt,
         maxPagesPerLead,
         requestTimeoutMs,
       })
-    )
-  )
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, leads.length) }, () => worker()))
+
+  return results.map((result, index) => result ?? {
+    ...leads[index],
+    emailEvidence: 'synthetic_role_pattern',
+    autoApprovalEligible: false,
+  })
 }
 
 function unverifiedOpenLeads(leads: OpenLead[]): OpenLead[] {
@@ -457,7 +692,7 @@ export async function verifyOpenLeadEvidenceTimeboxed(
   leads: OpenLead[],
   options: VerifyOpenLeadEvidenceOptions = {}
 ): Promise<OpenLead[]> {
-  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 20_000))
+  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 60_000))
   const fallback = unverifiedOpenLeads(leads)
   const verification = verifyOpenLeadEvidence(leads, options).catch(() => fallback)
 
@@ -505,6 +740,7 @@ export function scoutOpenLeads(input: LeadScoutRequest = {}): {
     reason: reasonFor(seed, industry),
     confidence: fitScore >= 85 ? 'high' : fitScore >= 70 ? 'medium' : 'low',
     emailEvidence: 'synthetic_role_pattern',
+    publicEvidenceUrl: publicUrl(seed.domain, '/'),
     autoApprovalEligible: false,
   } satisfies OpenLead))
 

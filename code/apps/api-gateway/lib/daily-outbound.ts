@@ -51,7 +51,7 @@ const DEFAULT_SEND_LIMIT = 1
 const MAX_SHEET_LIMIT = 500
 const MAX_MAPS_LIMIT = 500
 const DEFAULT_LEAD_SCOUT_LIMIT = 25
-const MAX_LEAD_SCOUT_LIMIT = 100
+const MAX_LEAD_SCOUT_LIMIT = 1_000
 const MAX_APPROVE_LIMIT = 1_000_000
 const DEFAULT_GROWTH_APPROVAL_FLOOR = 1_000_000
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
@@ -334,7 +334,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   }
   if (runLeadScout) {
     guardrails.push(
-      'Autonomous lead scout imports only exact public-contact evidence when enabled'
+      'Autonomous lead scout crawls public company pages and imports only proof-backed contacts'
     )
   }
   const approveLimit = resolveApproveLimit({

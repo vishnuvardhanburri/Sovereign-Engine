@@ -447,9 +447,18 @@ async function runLeadScoutStage(input: {
       offset: leadScoutOffset(input.limit),
     })
     const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
-      deadlineMs: 6_000,
-      maxPagesPerLead: 3,
-      requestTimeoutMs: 1_200,
+      deadlineMs: Math.max(
+        5_000,
+        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_DEADLINE_MS ?? 25_000), 55_000)
+      ),
+      maxPagesPerLead: Math.max(
+        3,
+        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_MAX_PAGES ?? 8), 12)
+      ),
+      requestTimeoutMs: Math.max(
+        800,
+        Math.min(Number(process.env.LEAD_SCOUT_EVIDENCE_REQUEST_TIMEOUT_MS ?? 2_000), 4_000)
+      ),
     })
     const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
     const contacts = input.dryRun
@@ -887,7 +896,7 @@ async function getResearchPool(clientId: number) {
        CASE
          WHEN verification_status = 'valid' THEN 0
          WHEN COALESCE(custom_fields->>'email_validation_verdict', '') = 'valid' THEN 1
-         WHEN COALESCE(custom_fields->>'email_evidence', '') IN ('provider_validated', 'hunter_domain_search', 'public_page_email_match') THEN 2
+         WHEN COALESCE(custom_fields->>'email_evidence', '') IN ('provider_validated', 'hunter_domain_search', 'public_page_email_match', 'public_mailto_match') THEN 2
          ELSE 3
        END,
        CASE

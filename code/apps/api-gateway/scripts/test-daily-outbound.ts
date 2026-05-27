@@ -130,7 +130,7 @@ assert.equal(autonomousScoutPlan.runLeadScout, true)
 assert.equal(autonomousScoutPlan.leadScoutLimit, 25)
 assert.ok(
   autonomousScoutPlan.guardrails.includes(
-    'Autonomous lead scout imports only exact public-contact evidence when enabled'
+    'Autonomous lead scout crawls public company pages and imports only proof-backed contacts'
   )
 )
 

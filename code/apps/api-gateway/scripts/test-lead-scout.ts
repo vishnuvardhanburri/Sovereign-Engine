@@ -52,8 +52,31 @@ async function main() {
   })
 
   assert.equal(verified.autoApprovalEligible, true)
-  assert.equal(verified.emailEvidence, 'public_page_match')
+  assert.equal(verified.emailEvidence, 'public_page_email_match')
   assert.equal(verified.publicEvidenceUrl, 'https://example.com/')
+
+  globalThis.fetch = async (url) => {
+    const target = String(url)
+    if (target === 'https://example.com/') {
+      return new Response('<a href="/contact-sales">Talk to our sales team</a>', {
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })
+    }
+    return new Response('<html><a href="mailto:sales@example.com">email sales</a></html>', {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    })
+  }
+
+  const [mailtoVerified] = await verifyOpenLeadEvidence([lead({ email: 'partners@example.com' })], {
+    deadlineMs: 1_000,
+    maxPagesPerLead: 4,
+    requestTimeoutMs: 100,
+  })
+
+  assert.equal(mailtoVerified.autoApprovalEligible, true)
+  assert.equal(mailtoVerified.email, 'sales@example.com')
+  assert.equal(mailtoVerified.emailEvidence, 'public_mailto_match')
+  assert.equal(mailtoVerified.publicEvidenceUrl, 'https://example.com/contact-sales')
 
   globalThis.fetch = (_url, init) =>
     new Promise((_resolve, reject) => {
