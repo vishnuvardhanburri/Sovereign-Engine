@@ -738,16 +738,8 @@ export async function verifyOpenLeadEvidenceTimeboxed(
   leads: OpenLead[],
   options: VerifyOpenLeadEvidenceOptions = {}
 ): Promise<OpenLead[]> {
-  const deadlineMs = Math.max(100, Math.min(options.deadlineMs ?? 8_000, 60_000))
   const fallback = unverifiedOpenLeads(leads)
-  const verification = verifyOpenLeadEvidence(leads, options).catch(() => fallback)
-
-  return Promise.race([
-    verification,
-    new Promise<OpenLead[]>((resolve) => {
-      setTimeout(() => resolve(fallback), deadlineMs + 250)
-    }),
-  ])
+  return verifyOpenLeadEvidence(leads, options).catch(() => fallback)
 }
 
 export function scoutOpenLeads(input: LeadScoutRequest = {}): {

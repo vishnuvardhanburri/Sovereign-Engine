@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Activity, Database, GitBranch, RadioTower, ShieldCheck, TrendingUp, Wifi, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
 import { MotionPanel, QueueFlow, StatusPulse, enterpriseEase } from '@/components/enterprise/motion-system'
 import { cn } from '@/lib/utils'
 

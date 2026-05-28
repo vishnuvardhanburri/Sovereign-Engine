@@ -124,6 +124,11 @@ function resolveSendLimit(input: {
   mode: DailyOutboundMode
   recoveryMode: boolean
 }): number {
+  if (String(input.requested ?? '').trim() === '0') {
+    input.guardrails.push('Send limit is 0; discovery and approval can run without queueing email')
+    return 0
+  }
+
   const envLimit = input.env.DAILY_OUTBOUND_SEND_LIMIT
   const growthMaxSendLimit = clampInteger(
     input.env.DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT ||
