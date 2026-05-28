@@ -107,6 +107,7 @@ type TelegramNotification =
       eligibleSenderIdentities?: number
       primaryBlocker?: string | null
       nextAction?: string | null
+      topFailureReason?: string | null
       // Digest fields from getOutboundTelegramDigest
       sentToday?: number
       sent24h?: number
@@ -326,7 +327,8 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       const bounced = input.bounced24h ?? 0
       const replies = input.replies24h ?? 0
       const rr = (input.replyRate24h ?? 0).toFixed(1)
-      const queued = input.queuedNow ?? input.queued ?? 0
+      const queuedThisCycle = input.queued ?? 0
+      const queuedNow = input.queuedNow ?? 0
       const agency = input.agencyQueued ?? 0
       const direct = input.directQueued ?? 0
       const pipeline = input.estimatedPipelineValueUsd
@@ -335,8 +337,11 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       const fu_sent = input.followUpsSent24h ?? 0
       const fu_stopped = input.followUpsStopped24h ?? 0
       const blocker = input.primaryBlocker
-      const topFailure = (input as any).topFailureReason as string | null | undefined
-      const nextAction = (input as any).nextAction as string | undefined
+      const topFailure = input.topFailureReason
+      const computedNextAction =
+        sent === 0 && queuedThisCycle > 0
+          ? `${queuedThisCycle} queued this cycle. Sender worker is processing; check Sent Mail again in 30-60 seconds.`
+          : input.nextAction
 
       const lastLines = (input.lastEvents ?? []).slice(0, 4).map((ev) => {
         const label = ev.type === 'sent' ? 'SENT' : ev.type === 'failed' ? 'FAILED' : ev.type === 'reply' ? 'REPLY' : 'BOUNCED'
@@ -352,7 +357,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
         '━━━━━━━━━━━━━━━━━━━━━━━',
         `📤 Sent today: *${sent}*   ❌ Failed: ${failed}   ⚠️ Bounced: ${bounced}`,
         `💬 Replies: *${replies}* (${rr}% response rate)`,
-        `📋 Queued: ${queued}`,
+        `📋 Queued this cycle: ${queuedThisCycle}   Queue now: ${queuedNow}`,
         agency || direct
           ? `🎯 Mix: ${agency} agency ($100k) / ${direct} direct ($25k)`
           : null,
@@ -364,7 +369,7 @@ export function formatTelegramNotification(input: TelegramNotification, options?
         '━━━━━━━━━━━━━━━━━━━━━━━',
         topFailure ? `❗ Top failure: \`${clip(topFailure, 100)}\`` : null,
         blocker && blocker !== 'ready' ? `🚧 Blocker: ${clip(blocker, 100)}` : null,
-        nextAction ? `💡 Next action: ${clip(nextAction, 200)}` : null,
+        computedNextAction ? `💡 Next action: ${clip(computedNextAction, 200)}` : null,
         lastLines.length ? `\nRecent events:\n${lastLines.join('\n')}` : null,
       ]
 
