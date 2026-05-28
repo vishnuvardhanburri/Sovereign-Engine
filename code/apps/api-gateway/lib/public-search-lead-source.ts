@@ -325,27 +325,32 @@ function decodeBingRedirect(rawHref: string): string {
 
 function parseBingHtml(html: string): SerpApiOrganicResult[] {
   const blocks = html.match(/<li class=["']b_algo["'][\s\S]*?(?=<li class=["']b_algo["']|<li class=["']b_pag["']|<\/ol>)/gi) ?? []
+  const results: SerpApiOrganicResult[] = []
 
-  return blocks
-    .map((block) => {
-      const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i)
-      if (!titleMatch) return null
-      const link = decodeBingRedirect(String(titleMatch[1] || ''))
-      const snippet = stripHtml(String(block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] || ''))
-      return {
-        title: stripHtml(String(titleMatch[2] || '')),
-        link,
-        displayed_link: (() => {
-          try {
-            return new URL(link).hostname
-          } catch {
-            return ''
-          }
-        })(),
-        snippet,
-      }
+  for (const block of blocks) {
+    const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i)
+    if (!titleMatch) continue
+
+    const link = decodeBingRedirect(String(titleMatch[1] || ''))
+    const title = stripHtml(String(titleMatch[2] || ''))
+    if (!title || !link) continue
+
+    const snippet = stripHtml(String(block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] || ''))
+    results.push({
+      title,
+      link,
+      displayed_link: (() => {
+        try {
+          return new URL(link).hostname
+        } catch {
+          return ''
+        }
+      })(),
+      snippet,
     })
-    .filter((result): result is SerpApiOrganicResult => Boolean(result?.title && result.link))
+  }
+
+  return results
 }
 
 async function fetchBingPage(input: {
