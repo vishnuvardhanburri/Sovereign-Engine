@@ -98,7 +98,13 @@ async function main() {
     }) as Promise<Response>
 
   const startedAt = performance.now()
-  const [timedOut] = await verifyOpenLeadEvidence([lead({ email: 'hello@slow.example' })], {
+  const [timedOut] = await verifyOpenLeadEvidence([
+    lead({
+      email: 'hello@slow.invalid',
+      companyDomain: 'slow.invalid',
+      publicEvidenceUrl: 'https://slow.invalid/',
+    }),
+  ], {
     deadlineMs: 250,
     maxPagesPerLead: 4,
     requestTimeoutMs: 100,
@@ -110,7 +116,13 @@ async function main() {
   assert.ok(elapsedMs < 1_000, `expected timeboxed verification, got ${elapsedMs}ms`)
 
   const outerStartedAt = performance.now()
-  const [outerTimedOut] = await verifyOpenLeadEvidenceTimeboxed([lead({ email: 'ops@stuck.example' })], {
+  const [outerTimedOut] = await verifyOpenLeadEvidenceTimeboxed([
+    lead({
+      email: 'ops@stuck.invalid',
+      companyDomain: 'stuck.invalid',
+      publicEvidenceUrl: 'https://stuck.invalid/',
+    }),
+  ], {
     deadlineMs: 150,
     maxPagesPerLead: 8,
     requestTimeoutMs: 3_000,

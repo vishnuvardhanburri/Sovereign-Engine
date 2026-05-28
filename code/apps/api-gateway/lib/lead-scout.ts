@@ -668,17 +668,18 @@ async function verifySingleOpenLeadEvidence(
     }
   }
 
+  const publicDomainEvidenceUrl = bestRelevantEvidenceUrl ?? lead.publicEvidenceUrl ?? publicUrl(lead.companyDomain, '/')
   if (
-    bestRelevantEvidenceUrl &&
+    publicDomainEvidenceUrl &&
     isAllowedInferredBusinessInbox(inferredEmail, persona) &&
     await domainHasMailExchange(lead.companyDomain)
   ) {
     return {
       ...lead,
       emailEvidence: 'public_domain_email',
-      publicEvidenceUrl: bestRelevantEvidenceUrl,
+      publicEvidenceUrl: publicDomainEvidenceUrl,
       autoApprovalEligible: true,
-      reason: `${lead.reason} Public website and MX records confirm the business domain; selected safe ${persona} inbox ${inferredEmail}.`,
+      reason: `${lead.reason} Public domain and MX records confirm the business domain; selected safe ${persona} inbox ${inferredEmail}.`,
     }
   }
 
