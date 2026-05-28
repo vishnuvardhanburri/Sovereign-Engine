@@ -81,6 +81,7 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
     'exact_public_email',
     'hunter_domain_search',
     'maps_public_business_domain_match',
+    'public_domain_email',
     'public_page_email_match',
     'public_mailto_match',
     'provider_validated',

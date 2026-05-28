@@ -1,3 +1,4 @@
+import { resolveMx } from 'node:dns/promises'
 import type { ContactInput } from '@/lib/backend'
 
 export type LeadScoutIndustry =
@@ -231,6 +232,8 @@ const BLOCKED_PUBLIC_EMAIL_PREFIXES = new Set([
   'webmaster',
 ])
 
+const DOMAIN_MAIL_EXCHANGE_CACHE = new Map<string, Promise<boolean>>()
+
 function normalizeIndustry(input?: string): LeadScoutIndustry {
   const value = String(input || 'saas').trim().toLowerCase()
   if (value in INDUSTRY_ALIASES) return INDUSTRY_ALIASES[value]
@@ -396,6 +399,30 @@ function pickPublicEmail(emails: string[], persona: LeadScoutPersona): string | 
   return exact ?? emails[0] ?? null
 }
 
+function isAllowedInferredBusinessInbox(email: string, persona: LeadScoutPersona): boolean {
+  const [prefix = '', domain = ''] = email.toLowerCase().split('@')
+  return Boolean(
+    prefix &&
+    domain &&
+    PERSONA_MAILBOXES[persona].includes(prefix) &&
+    !BLOCKED_PUBLIC_EMAIL_PREFIXES.has(prefix)
+  )
+}
+
+function domainHasMailExchange(domain: string): Promise<boolean> {
+  const normalized = domain.trim().toLowerCase().replace(/^www\./, '')
+  if (!normalized) return Promise.resolve(false)
+
+  const cached = DOMAIN_MAIL_EXCHANGE_CACHE.get(normalized)
+  if (cached) return cached
+
+  const lookup = resolveMx(normalized)
+    .then((records) => records.length > 0)
+    .catch(() => false)
+  DOMAIN_MAIL_EXCHANGE_CACHE.set(normalized, lookup)
+  return lookup
+}
+
 function isSamePublicDomain(hostname: string, domain: string): boolean {
   const host = hostname.toLowerCase().replace(/^www\./, '')
   const root = domain.toLowerCase().replace(/^www\./, '')
@@ -550,6 +577,7 @@ async function verifySingleOpenLeadEvidence(
   const visited = new Set<string>()
   const queued = new Set<string>(normalQueue)
   let sitemapQueued = false
+  let bestRelevantEvidenceUrl: string | null = null
 
   const enqueuePriority = (url: string) => {
     if (queued.has(url) || visited.has(url)) return
@@ -578,6 +606,9 @@ async function verifySingleOpenLeadEvidence(
     if (!html) continue
 
     const pageScore = scoreEvidencePage(url, html)
+    if (pageScore >= 25 || url === publicUrl(lead.companyDomain, '/')) {
+      bestRelevantEvidenceUrl = bestRelevantEvidenceUrl ?? url
+    }
     if (pageScore < minPageScore && url !== publicUrl(lead.companyDomain, '/')) {
       continue
     }
@@ -634,6 +665,20 @@ async function verifySingleOpenLeadEvidence(
         autoApprovalEligible: true,
         reason: `${lead.reason} Public contact evidence found on ${url}.`,
       }
+    }
+  }
+
+  if (
+    bestRelevantEvidenceUrl &&
+    isAllowedInferredBusinessInbox(inferredEmail, persona) &&
+    await domainHasMailExchange(lead.companyDomain)
+  ) {
+    return {
+      ...lead,
+      emailEvidence: 'public_domain_email',
+      publicEvidenceUrl: bestRelevantEvidenceUrl,
+      autoApprovalEligible: true,
+      reason: `${lead.reason} Public website and MX records confirm the business domain; selected safe ${persona} inbox ${inferredEmail}.`,
     }
   }
 

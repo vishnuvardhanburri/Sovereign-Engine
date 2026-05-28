@@ -60,6 +60,20 @@ assert.deepEqual(
 
 assert.deepEqual(
   blockersFor({
+    email: 'hello@apptivo.com',
+    custom_fields: {
+      auto_approval_eligible: true,
+      email_evidence: 'public_domain_email',
+      public_evidence_url: 'https://apptivo.com/contact',
+      reason_to_contact: 'Relevant outbound infrastructure account.',
+    },
+  }),
+  [],
+  'MX-backed public domain inbox evidence can pass the worker guard'
+)
+
+assert.deepEqual(
+  blockersFor({
     email: 'partnerships@fullcast.io',
     custom_fields: {
       auto_approval_eligible: true,

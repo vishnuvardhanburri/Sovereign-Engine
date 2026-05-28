@@ -561,7 +561,7 @@ assert.ok(
   )
 )
 
-assert.ok(
+assert.deepEqual(
   approvedContactQueueBlockers({
     id: 12,
     email: 'hello@realagency.com',
@@ -576,7 +576,9 @@ assert.ok(
       email_evidence: 'public_domain_email',
       public_evidence_url: 'https://realagency.com/contact',
     },
-  }).includes('generic_inbox_requires_email_validation')
+  }),
+  [],
+  'public domain email evidence can pass after website + MX verification'
 )
 
 assert.deepEqual(
