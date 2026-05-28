@@ -106,6 +106,7 @@ const noSheetPlan = buildDailyOutboundPlan({
 
 assert.equal(noSheetPlan.enabled, true)
 assert.equal(noSheetPlan.runSheetImport, false)
+assert.equal(noSheetPlan.runPublicSearch, true)
 assert.equal(noSheetPlan.runLeadScout, false)
 assert.equal(noSheetPlan.runResearchApproval, true)
 assert.equal(noSheetPlan.runQueue, true)
@@ -133,6 +134,46 @@ assert.ok(
     'Autonomous lead scout crawls public company pages and imports only proof-backed contacts'
   )
 )
+
+const publicSearchPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    SERPAPI_API_KEY: 'configured',
+    PUBLIC_SEARCH_DAILY_LIMIT: '900',
+  },
+  query: {},
+})
+
+assert.equal(publicSearchPlan.runPublicSearch, true)
+assert.equal(publicSearchPlan.publicSearchLimit, 900)
+assert.ok(
+  publicSearchPlan.guardrails.includes(
+    'Public search expands discovery through query/domain extraction, then evidence checks decide approval'
+  )
+)
+
+const publicSearchWithoutApiKeyPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {},
+  query: {
+    publicSearchLimit: '125',
+  },
+})
+
+assert.equal(publicSearchWithoutApiKeyPlan.runPublicSearch, true)
+assert.equal(publicSearchWithoutApiKeyPlan.publicSearchLimit, 125)
+
+const disabledPublicSearchPlan = buildDailyOutboundPlan({
+  approvalWindow: healthyWindow,
+  env: {
+    SERPAPI_API_KEY: 'configured',
+  },
+  query: {
+    publicSearch: 'false',
+  },
+})
+
+assert.equal(disabledPublicSearchPlan.runPublicSearch, false)
 
 const mapsPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,

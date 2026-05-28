@@ -15,6 +15,10 @@ import {
 } from '@/lib/maps-lead-source'
 import { buildGoogleSheetCsvUrl, prepareSheetContacts } from '@/lib/sheet-import'
 import {
+  publicSearchLeadsToContacts,
+  searchPublicSearchLeads,
+} from '@/lib/public-search-lead-source'
+import {
   approvedContactQueueBlockers,
   enrichProspectWithProviderValidation,
   enrichProspectWithPublicEmailEvidence,
@@ -40,6 +44,7 @@ import { getSendingCapacityDiagnosis } from '@/lib/sending-capacity-diagnostics'
 type StageResult = {
   stage:
     | 'lead_scout'
+    | 'public_search'
     | 'maps_import'
     | 'sheet_import'
     | 'hunter_domain_search'
@@ -332,6 +337,16 @@ function leadScoutOffset(limit: number): number {
   return Math.floor(Date.now() / windowMs) * limit
 }
 
+function resolvePublicSearchQueries(value: string | null | undefined): string[] | undefined {
+  const raw = String(value || process.env.PUBLIC_SEARCH_QUERIES || process.env.SERPAPI_SEARCHES || '').trim()
+  if (!raw) return undefined
+  return raw
+    .split(/\n|,/)
+    .map((query) => query.trim())
+    .filter(Boolean)
+    .slice(0, 20)
+}
+
 function numberFromValue(value: unknown, fallback: number): number {
   const raw = typeof value === 'string' ? value.trim() : value
   if (raw === '' || raw === undefined || raw === null) return fallback
@@ -384,6 +399,7 @@ function compactStage(stage: StageResult): StageResult {
       scanned: getNumericField(data, 'scanned'),
       evidenceFetches: getNumericField(data, 'evidenceFetches'),
       evidenceMatches: getNumericField(data, 'evidenceMatches'),
+      queriesRun: getNumericField(data, 'queriesRun'),
       providerValidationChecks: getNumericField(data, 'providerValidationChecks'),
       providerValidationValid: getNumericField(data, 'providerValidationValid'),
       providerValidationInvalid: getNumericField(data, 'providerValidationInvalid'),
@@ -404,6 +420,7 @@ function compactStage(stage: StageResult): StageResult {
       datasetId: typeof data.datasetId === 'string' ? data.datasetId : undefined,
       taskId: typeof data.taskId === 'string' ? data.taskId : undefined,
       actorId: typeof data.actorId === 'string' ? data.actorId : undefined,
+      provider: typeof data.provider === 'string' ? data.provider : undefined,
       sourceType: typeof data.sourceType === 'string' ? data.sourceType : undefined,
       estimatedPipelineValueUsd: getNumericField(data, 'estimatedPipelineValueUsd'),
       agencyQueued: getNumericField(data, 'agencyQueued'),
@@ -537,6 +554,97 @@ async function runLeadScoutStage(input: {
   } catch (error) {
     return {
       stage: 'lead_scout',
+      ok: false,
+      status: 0,
+      error: safeError(error),
+    }
+  }
+}
+
+async function runPublicSearchStage(input: {
+  clientId: number
+  dryRun: boolean
+  limit: number
+  industry?: string | null
+  persona?: string | null
+  region?: string | null
+  queries?: string[] | undefined
+  evidenceDeadlineMs?: string | null
+  evidenceMaxPagesPerLead?: string | null
+  evidenceRequestTimeoutMs?: string | null
+}): Promise<StageResult> {
+  try {
+    const apiKey = process.env.SERPAPI_API_KEY || process.env.PUBLIC_SEARCH_SERPAPI_KEY || ''
+
+    const result = await searchPublicSearchLeads({
+      provider: apiKey ? 'serpapi' : 'bing_html',
+      apiKey,
+      industry:
+        input.industry ||
+        pickRotatingValue(process.env.LEAD_SCOUT_INDUSTRIES || process.env.LEAD_SCOUT_INDUSTRY, 'agency'),
+      persona: input.persona || process.env.LEAD_SCOUT_PERSONA || 'founder',
+      region: input.region || process.env.LEAD_SCOUT_REGION || process.env.APIFY_GOOGLE_MAPS_LOCATION || 'United States',
+      limit: input.limit,
+      timeoutMs: numberFromValue(process.env.PUBLIC_SEARCH_TIMEOUT_MS, 55_000),
+      queries: input.queries,
+    })
+    const verifiedLeads = await verifyOpenLeadEvidenceTimeboxed(result.leads, {
+      ...resolveLeadScoutEvidenceOptions({
+        deadlineMs: input.evidenceDeadlineMs,
+        maxPagesPerLead: input.evidenceMaxPagesPerLead,
+        requestTimeoutMs: input.evidenceRequestTimeoutMs,
+      }),
+    })
+    const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+    const contacts = input.dryRun
+      ? []
+      : await importContacts(input.clientId, {
+          contacts: publicSearchLeadsToContacts(importableLeads),
+          verify: false,
+          enrich: false,
+          dedupeByDomain: true,
+        })
+
+    if (!input.dryRun) {
+      void notifyTelegramEvent({
+        type: 'lead_scout',
+        imported: contacts.length,
+        scanned: result.scannedResults,
+        evidenceBacked: importableLeads.length,
+        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        industry: result.industry,
+        persona: result.persona,
+      })
+    }
+
+    return {
+      stage: 'public_search',
+      ok: true,
+      status: 200,
+      data: {
+        dryRun: input.dryRun,
+        provider: result.provider,
+        imported: contacts.length,
+        scanned: result.scannedResults,
+        prepared: result.leads.length,
+        rejected: result.rejected,
+        evidenceBacked: importableLeads.length,
+        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        queriesRun: result.queriesRun,
+        errorsCount: result.errors.length,
+        errorCounts: result.errors.reduce<Record<string, number>>((acc, error) => {
+          acc[error] = (acc[error] ?? 0) + 1
+          return acc
+        }, {}),
+        industry: result.industry,
+        persona: result.persona,
+        region: result.region,
+        guardrails: result.guardrails,
+      },
+    }
+  } catch (error) {
+    return {
+      stage: 'public_search',
       ok: false,
       status: 0,
       error: safeError(error),
@@ -922,17 +1030,18 @@ async function getResearchPool(clientId: number) {
        AND COALESCE(custom_fields->>'send_status', 'not_approved') NOT IN ('approved', 'queued', 'blocked')
        AND COALESCE(verification_status, 'pending') NOT IN ('invalid', 'do_not_mail')
        AND (
-         source IN ('google_sheet_import', 'google_maps_apify', 'hunter_domain_search', 'open_lead_graph', 'owned_open_lead_graph')
+         source IN ('google_sheet_import', 'google_maps_apify', 'hunter_domain_search', 'open_lead_graph', 'owned_open_lead_graph', 'public_search')
          OR COALESCE(custom_fields->>'sheet_import', 'false') = 'true'
          OR COALESCE(custom_fields->>'maps_import', 'false') = 'true'
          OR COALESCE(custom_fields->>'hunter_domain_search', 'false') = 'true'
          OR COALESCE(custom_fields->>'lead_scout', 'false') = 'true'
+         OR COALESCE(custom_fields->>'public_search', 'false') = 'true'
        )
      ORDER BY
        CASE
          WHEN verification_status = 'valid' THEN 0
          WHEN COALESCE(custom_fields->>'email_validation_verdict', '') = 'valid' THEN 1
-         WHEN COALESCE(custom_fields->>'email_evidence', '') IN ('provider_validated', 'hunter_domain_search', 'public_page_email_match', 'public_mailto_match') THEN 2
+         WHEN COALESCE(custom_fields->>'email_evidence', '') IN ('provider_validated', 'hunter_domain_search', 'public_page_email_match', 'public_mailto_match', 'public_domain_email') THEN 2
          ELSE 3
        END,
        CASE
@@ -1739,6 +1848,10 @@ export async function GET(request: NextRequest) {
         mapsDatasetId: params.get('mapsDatasetId') || params.get('datasetId'),
         mapsLimit: params.get('mapsLimit'),
         mapsImport: params.get('mapsImport'),
+        publicSearch: params.get('publicSearch') || params.get('serpApi'),
+        publicSearchLimit: params.get('publicSearchLimit') || params.get('serpApiLimit'),
+        serpApi: params.get('serpApi'),
+        serpApiLimit: params.get('serpApiLimit'),
         leadScout: params.get('leadScout'),
         leadScoutLimit: params.get('leadScoutLimit'),
         approveLimit: params.get('approveLimit'),
@@ -1773,6 +1886,31 @@ export async function GET(request: NextRequest) {
         daily: true,
         plan,
         stages,
+      })
+    }
+
+    if (plan.runPublicSearch) {
+      stages.push(
+        await runPublicSearchStage({
+          clientId: plan.clientId,
+          dryRun: plan.dryRun,
+          limit: plan.publicSearchLimit,
+          industry: params.get('industry') || params.get('publicSearchIndustry') || params.get('leadScoutIndustry'),
+          persona: params.get('persona') || params.get('publicSearchPersona') || params.get('leadScoutPersona'),
+          region: params.get('region') || params.get('publicSearchRegion') || params.get('leadScoutRegion'),
+          queries: resolvePublicSearchQueries(params.get('publicSearchQueries') || params.get('serpApiQueries')),
+          evidenceDeadlineMs: params.get('leadScoutEvidenceDeadlineMs') || params.get('evidenceDeadlineMs'),
+          evidenceMaxPagesPerLead: params.get('leadScoutEvidenceMaxPages') || params.get('evidenceMaxPages'),
+          evidenceRequestTimeoutMs:
+            params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
+        })
+      )
+    } else {
+      stages.push({
+        stage: 'public_search',
+        ok: true,
+        status: 204,
+        skipped: 'public_search_disabled_or_no_provider_key',
       })
     }
 
@@ -1944,6 +2082,7 @@ export async function GET(request: NextRequest) {
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
     const mapsStage = stages.find((stage) => stage.stage === 'maps_import')
+    const publicSearchStage = stages.find((stage) => stage.stage === 'public_search')
     const leadScoutStage = stages.find((stage) => stage.stage === 'lead_scout')
     const hunterStage = stages.find((stage) => stage.stage === 'hunter_domain_search')
     const queued = getNumericField(queuedStage?.data, 'queued')
@@ -1965,6 +2104,11 @@ export async function GET(request: NextRequest) {
         : 'none'
     const leadScoutImported = getNumericField(leadScoutStage?.data, 'imported')
     const leadScoutEvidenceBacked = getNumericField(leadScoutStage?.data, 'evidenceBacked')
+    const publicSearchImported = getNumericField(publicSearchStage?.data, 'imported')
+    const publicSearchPrepared = getNumericField(publicSearchStage?.data, 'prepared')
+    const publicSearchEvidenceBacked = getNumericField(publicSearchStage?.data, 'evidenceBacked')
+    const publicSearchScanned = getNumericField(publicSearchStage?.data, 'scanned')
+    const publicSearchQueriesRun = getNumericField(publicSearchStage?.data, 'queriesRun')
     const hunterImported = getNumericField(hunterStage?.data, 'imported')
     const hunterPrepared = getNumericField(hunterStage?.data, 'prepared')
     const hunterRejected = getNumericField(hunterStage?.data, 'rejected')
@@ -1995,6 +2139,7 @@ export async function GET(request: NextRequest) {
         !stage.ok &&
         stage.stage !== 'sheet_import' &&
         stage.stage !== 'maps_import' &&
+        stage.stage !== 'public_search' &&
         stage.stage !== 'lead_scout'
     )
     const capacityDiagnosis = await getSendingCapacityDiagnosis(plan.clientId, {
@@ -2004,11 +2149,16 @@ export async function GET(request: NextRequest) {
     const digest = await getOutboundTelegramDigest(plan.clientId)
     const generatedAt = new Date().toISOString()
     const summary = {
-      imported: imported + mapsImported + leadScoutImported + hunterImported,
+      imported: imported + mapsImported + publicSearchImported + leadScoutImported + hunterImported,
       sheetImported: imported,
       mapsImported,
       mapsPrepared,
       mapsEvidenceBacked,
+      publicSearchImported,
+      publicSearchPrepared,
+      publicSearchEvidenceBacked,
+      publicSearchScanned,
+      publicSearchQueriesRun,
       leadScoutImported,
       leadScoutEvidenceBacked,
       hunterImported,
@@ -2067,6 +2217,8 @@ export async function GET(request: NextRequest) {
           `ok=${hardFailures.length === 0 ? 1 : 0}`,
           `client=${plan.clientId}`,
           `imported=${summary.imported}`,
+          `public=${publicSearchImported}/${publicSearchEvidenceBacked}/${publicSearchScanned}`,
+          `queries=${publicSearchQueriesRun}`,
           `maps=${mapsImported}/${mapsPrepared}/${mapsScanned}`,
           `mapsSource=${mapsSource}`,
           `approved=${approved}`,
@@ -2112,6 +2264,8 @@ export async function GET(request: NextRequest) {
         sheetImport: plan.runSheetImport,
         mapsImport: plan.runMapsImport,
         mapsLimit: plan.mapsLimit,
+        publicSearch: plan.runPublicSearch,
+        publicSearchLimit: plan.publicSearchLimit,
         leadScout: plan.runLeadScout,
         leadScoutLimit: plan.leadScoutLimit,
         approveLimit: plan.approveLimit,

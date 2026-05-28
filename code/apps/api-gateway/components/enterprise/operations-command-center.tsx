@@ -60,6 +60,18 @@ type ReputationMonitor = {
   }
 }
 
+type DeliveryProof = {
+  summary?: {
+    sentToday?: number
+    sent24h?: number
+    failed24h?: number
+    bounced24h?: number
+    replies24h?: number
+    replyRate24h?: number
+    estimatedPipelineValueUsd?: number
+  }
+}
+
 async function fetchHealth(): Promise<HealthStats> {
   const response = await fetch('/api/health/stats?client_id=1', { cache: 'no-store' })
   if (!response.ok) throw new Error('health unavailable')
@@ -69,6 +81,12 @@ async function fetchHealth(): Promise<HealthStats> {
 async function fetchReputation(): Promise<ReputationMonitor> {
   const response = await fetch('/api/reputation/monitor?client_id=1&investor=1', { cache: 'no-store' })
   if (!response.ok) throw new Error('reputation unavailable')
+  return response.json()
+}
+
+async function fetchDeliveryProof(): Promise<DeliveryProof> {
+  const response = await fetch('/api/dashboard/sent?client_id=1', { cache: 'no-store' })
+  if (!response.ok) throw new Error('delivery proof unavailable')
   return response.json()
 }
 
@@ -93,13 +111,20 @@ function laneTone(status: string) {
 export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'executive' | 'reputation' }) {
   const health = useQuery({ queryKey: ['enterprise-ops-health'], queryFn: fetchHealth, refetchInterval: 3_000 })
   const reputation = useQuery({ queryKey: ['enterprise-ops-reputation'], queryFn: fetchReputation, refetchInterval: 4_000 })
+  const deliveryProof = useQuery({ queryKey: ['enterprise-delivery-proof'], queryFn: fetchDeliveryProof, refetchInterval: 8_000 })
 
   const waiting = Number(health.data?.bullmq?.waiting ?? 0) + Number(health.data?.db_queue?.waiting ?? 0)
   const active = Number(health.data?.bullmq?.active ?? 0) + Number(health.data?.db_queue?.active ?? 0)
   const failed = Number(health.data?.bullmq?.failed ?? 0) + Number(health.data?.db_queue?.failed ?? 0)
   const workerCount = Number(health.data?.workers?.sender?.active ?? 0)
   const concurrency = Number(health.data?.workers?.sender?.totalConcurrency ?? 0)
-  const processed = Number(health.data?.workers?.sender?.totalProcessedSends ?? 0)
+  const sentToday = Number(deliveryProof.data?.summary?.sentToday ?? 0)
+  const sent24h = Number(deliveryProof.data?.summary?.sent24h ?? sentToday)
+  const replies24h = Number(deliveryProof.data?.summary?.replies24h ?? 0)
+  const replyRate24h = Number(deliveryProof.data?.summary?.replyRate24h ?? 0)
+  const failed24h = Number(deliveryProof.data?.summary?.failed24h ?? 0)
+  const bounced24h = Number(deliveryProof.data?.summary?.bounced24h ?? 0)
+  const proofPipeline = Number(deliveryProof.data?.summary?.estimatedPipelineValueUsd ?? 0)
   const redisLatency = Math.max(
     Number(health.data?.infrastructure_latency?.redis_set_ms ?? 0),
     Number(health.data?.infrastructure_latency?.redis_get_ms ?? 0)
@@ -108,10 +133,10 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
   const queuePressure = Math.min(100, Math.round(((waiting + active) / Math.max(concurrency * 40, 1)) * 100))
 
   const risk = useMemo(() => {
-    if (failed > 0 || workerCount === 0) return { label: 'Intervention', tone: 'rose' as const }
+    if (failed > 0 || failed24h + bounced24h > 0 || workerCount === 0) return { label: 'Intervention', tone: 'rose' as const }
     if (queuePressure > 70 || redisLatency > 120 || dbLatency > 120) return { label: 'Watch', tone: 'amber' as const }
     return { label: 'Nominal', tone: 'emerald' as const }
-  }, [dbLatency, failed, queuePressure, redisLatency, workerCount])
+  }, [bounced24h, dbLatency, failed, failed24h, queuePressure, redisLatency, workerCount])
 
   const nodes = health.data?.workers?.sender?.nodes ?? []
   const lanes = reputation.data?.providers ?? []
@@ -141,10 +166,20 @@ export function OperationsCommandCenter({ mode = 'executive' }: { mode?: 'execut
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <MetricTile icon={RadioTower} label="Processed sends" value={numberFmt(processed)} sub={`${workerCount} active sender workers`} />
+            <MetricTile
+              icon={RadioTower}
+              label="Sent today"
+              value={numberFmt(sentToday)}
+              sub={`${sent24h.toLocaleString()} in last 24h · ${replies24h.toLocaleString()} replies · ${(replyRate24h * 100).toFixed(1)}% response`}
+            />
             <MetricTile icon={Zap} label="Sender capacity" value={numberFmt(concurrency)} sub="Total worker concurrency online" />
             <MetricTile icon={Database} label="Infrastructure latency" value={`${Math.max(dbLatency, redisLatency).toFixed(0)}ms`} sub={`DB ${dbLatency.toFixed(1)}ms · Redis ${redisLatency.toFixed(1)}ms`} />
-            <MetricTile icon={TrendingUp} label="Revenue signal" value={moneyFmt(reputation.data?.investor?.netProfitUsd)} sub={`${pct(reputation.data?.investor?.avgInboxPlacementRate)} modeled inbox placement`} />
+            <MetricTile
+              icon={TrendingUp}
+              label="Pipeline signal"
+              value={moneyFmt(proofPipeline || reputation.data?.investor?.netProfitUsd)}
+              sub={`${workerCount} active workers · ${pct(reputation.data?.investor?.avgInboxPlacementRate)} modeled inbox placement`}
+            />
           </div>
 
           <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">

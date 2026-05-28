@@ -10,11 +10,13 @@ export type DailyOutboundPlan = {
   sheetLimit: number
   mapsDatasetId: string
   mapsLimit: number
+  publicSearchLimit: number
   leadScoutLimit: number
   approveLimit: number
   sendLimit: number
   runSheetImport: boolean
   runMapsImport: boolean
+  runPublicSearch: boolean
   runLeadScout: boolean
   runResearchApproval: boolean
   runQueue: boolean
@@ -35,6 +37,10 @@ type PlanInput = {
     mapsDatasetId?: string | null
     mapsLimit?: string | null
     mapsImport?: string | null
+    publicSearch?: string | null
+    publicSearchLimit?: string | null
+    serpApi?: string | null
+    serpApiLimit?: string | null
     leadScout?: string | null
     leadScoutLimit?: string | null
     approveLimit?: string | null
@@ -47,9 +53,11 @@ type PlanInput = {
 const DEFAULT_CLIENT_ID = 1
 const DEFAULT_SHEET_LIMIT = 150
 const DEFAULT_MAPS_LIMIT = 100
+const DEFAULT_PUBLIC_SEARCH_LIMIT = 250
 const DEFAULT_SEND_LIMIT = 1
 const MAX_SHEET_LIMIT = 500
 const MAX_MAPS_LIMIT = 500
+const MAX_PUBLIC_SEARCH_LIMIT = 5_000
 const DEFAULT_LEAD_SCOUT_LIMIT = 25
 const MAX_LEAD_SCOUT_LIMIT = 1_000
 const MAX_APPROVE_LIMIT = 1_000_000
@@ -310,6 +318,19 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       false
     )
   )
+  const publicSearchLimit = clampInteger(
+    input.query.publicSearchLimit ??
+      input.query.serpApiLimit ??
+      input.env.PUBLIC_SEARCH_DAILY_LIMIT ??
+      input.env.SERPAPI_DAILY_LIMIT,
+    DEFAULT_PUBLIC_SEARCH_LIMIT,
+    0,
+    MAX_PUBLIC_SEARCH_LIMIT
+  )
+  const runPublicSearch = resolveDailyBoolean(
+    input.query.publicSearch ?? input.query.serpApi ?? input.env.DAILY_OUTBOUND_RUN_PUBLIC_SEARCH,
+    resolveDailyBoolean(input.env.PUBLIC_SEARCH_SOURCE_ENABLED, true)
+  )
   const leadScoutLimit = clampInteger(
     input.query.leadScoutLimit ?? input.env.LEAD_SCOUT_DAILY_LIMIT,
     DEFAULT_LEAD_SCOUT_LIMIT,
@@ -335,6 +356,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   if (runLeadScout) {
     guardrails.push(
       'Autonomous lead scout crawls public company pages and imports only proof-backed contacts'
+    )
+  }
+  if (runPublicSearch && publicSearchLimit > 0) {
+    guardrails.push(
+      'Public search expands discovery through query/domain extraction, then evidence checks decide approval'
     )
   }
   const approveLimit = resolveApproveLimit({
@@ -363,11 +389,13 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       sheetLimit,
       mapsDatasetId,
       mapsLimit,
+      publicSearchLimit,
       leadScoutLimit,
       approveLimit,
       sendLimit: 0,
       runSheetImport: false,
       runMapsImport: false,
+      runPublicSearch: false,
       runLeadScout: false,
       runResearchApproval: false,
       runQueue: false,
@@ -385,6 +413,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     sheetLimit,
     mapsDatasetId,
     mapsLimit,
+    publicSearchLimit,
     leadScoutLimit,
     approveLimit,
     sendLimit,
@@ -392,6 +421,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     runMapsImport: Boolean(
       runMapsImport && mapsLimit > 0 && (mapsDatasetId || input.env.APIFY_API_TOKEN)
     ),
+    runPublicSearch: Boolean(runPublicSearch && publicSearchLimit > 0),
     runLeadScout,
     runResearchApproval: true,
     runQueue: !dryRun && sendLimit > 0,

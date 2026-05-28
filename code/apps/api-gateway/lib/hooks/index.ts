@@ -290,6 +290,8 @@ export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => api.dashboard.getStats(),
+    refetchInterval: 8000,
+    staleTime: 2000,
     placeholderData: keepPreviousData,
   })
 }
