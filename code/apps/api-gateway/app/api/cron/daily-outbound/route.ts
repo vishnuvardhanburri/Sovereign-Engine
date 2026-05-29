@@ -5,7 +5,7 @@ import { appEnv } from '@/lib/env'
 import { query } from '@/lib/db'
 import { importContacts, runDailyMaintenance, type ContactInput } from '@/lib/backend'
 import { resolveSystemApprovalWindow } from '@/lib/contact-approval-window'
-import { buildDailyOutboundPlan } from '@/lib/daily-outbound'
+import { applyDailyVolumeBand, buildDailyOutboundPlan } from '@/lib/daily-outbound'
 import { searchDomainWithHunter, type HunterDomainEmail } from '@/lib/integrations/hunter'
 import { validateBusinessEmailSyntax } from '@/lib/email-address'
 import {
@@ -148,6 +148,19 @@ function resolveTargetDailyVolume(params: URLSearchParams): number {
       1_000_000
     )
   )
+}
+
+async function getSentToday(clientId: number): Promise<number> {
+  const result = await query<{ sent_today: string }>(
+    `SELECT COUNT(*)::text AS sent_today
+     FROM events
+     WHERE client_id = $1
+       AND event_type = 'sent'
+       AND created_at >= CURRENT_DATE`,
+    [clientId]
+  )
+
+  return Number(result.rows[0]?.sent_today ?? 0)
 }
 
 function asString(value: unknown): string {
@@ -1977,6 +1990,19 @@ export async function GET(request: NextRequest) {
         recoveryMode: params.get('recoveryMode'),
       },
     })
+    const volumeAdjustment = applyDailyVolumeBand({
+      plan,
+      approvalWindow,
+      sentToday: await getSentToday(clientId),
+      env: process.env,
+      query: {
+        minDailyVolume: params.get('minDailyVolume') || params.get('dailyFloor'),
+        maxDailyVolume: params.get('maxDailyVolume') || params.get('dailyCeiling'),
+      },
+    })
+    plan.sendLimit = volumeAdjustment.sendLimit
+    plan.runQueue = volumeAdjustment.runQueue
+    plan.guardrails.push(...volumeAdjustment.guardrails)
     const verbose = envBool(params.get('verbose') || process.env.DAILY_OUTBOUND_VERBOSE_RESPONSE, false)
     const compactResponse = envBool(
       params.get('compact') ||
@@ -2374,6 +2400,11 @@ export async function GET(request: NextRequest) {
       capacityRemaining: capacityDiagnosis.currentRemainingCapacity,
       capacityGap: capacityDiagnosis.targetGap,
       capacityBlocker: capacityDiagnosis.primaryBlocker,
+      dailyFloor: volumeAdjustment.band.minDailyVolume,
+      dailyCeiling: volumeAdjustment.band.maxDailyVolume,
+      dailySentBeforeCycle: volumeAdjustment.sentToday,
+      dailyRemainingToFloor: volumeAdjustment.remainingToMin,
+      dailyRemainingToCeiling: volumeAdjustment.remainingToMax,
     }
 
     void notifyTelegramEvent({
@@ -2414,6 +2445,10 @@ export async function GET(request: NextRequest) {
           `failures=${hardFailures.length}`,
           `capacity=${capacityDiagnosis.currentRemainingCapacity}`,
           `blocker=${capacityDiagnosis.primaryBlocker}`,
+          `floor=${volumeAdjustment.band.minDailyVolume}`,
+          `ceiling=${volumeAdjustment.band.maxDailyVolume}`,
+          `sentBefore=${volumeAdjustment.sentToday}`,
+          `sendLimit=${plan.sendLimit}`,
         ].join(' '),
         {
           status: hardFailures.length === 0 ? 200 : 207,
@@ -2456,6 +2491,13 @@ export async function GET(request: NextRequest) {
         leadScoutLimit: plan.leadScoutLimit,
         approveLimit: plan.approveLimit,
         sendLimit: plan.sendLimit,
+        dailyVolume: {
+          floor: volumeAdjustment.band.minDailyVolume,
+          ceiling: volumeAdjustment.band.maxDailyVolume,
+          sentBeforeCycle: volumeAdjustment.sentToday,
+          remainingToFloor: volumeAdjustment.remainingToMin,
+          remainingToCeiling: volumeAdjustment.remainingToMax,
+        },
       },
       approvalWindow: verbose ? approvalWindow : {
         limit: approvalWindow.limit,

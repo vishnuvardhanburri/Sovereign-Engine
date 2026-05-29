@@ -141,14 +141,18 @@ export function balanceSovereignOfferMix<T extends SovereignCopyLead>(
   const direct = ranked.filter((lead) => inferSovereignOfferType(lead) === 'direct')
   const targetAgency = Math.ceil(normalizedLimit / 2)
   const targetDirect = normalizedLimit - targetAgency
-  const selected = [
-    ...agency.slice(0, targetAgency),
-    ...direct.slice(0, targetDirect),
-  ]
+  const selected: T[] = []
+  const agencySlice = agency.slice(0, targetAgency)
+  const directSlice = direct.slice(0, targetDirect)
+  const maxPairs = Math.max(agencySlice.length, directSlice.length)
+  for (let index = 0; index < maxPairs; index += 1) {
+    if (agencySlice[index]) selected.push(agencySlice[index])
+    if (directSlice[index]) selected.push(directSlice[index])
+  }
   const selectedSet = new Set(selected)
   const remainder = ranked.filter((lead) => !selectedSet.has(lead))
 
-  return rankSovereignLeads([...selected, ...remainder.slice(0, normalizedLimit - selected.length)])
+  return [...selected, ...remainder.slice(0, normalizedLimit - selected.length)]
 }
 
 export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchContext {
@@ -176,18 +180,18 @@ export function sovereignDirectEmail1Body(): string {
 
 {{pain_line}}
 
-Quick question - are you still seeing stable inbox placement at current sending volume, or starting to hit reputation/spam-folder issues?
+The expensive part is not sending more email. It is not knowing which domains, inboxes, follow-ups, and AI-written messages are safe enough to keep running before reply quality drops or Gmail/Outlook throttling starts.
 
-A lot of outbound-heavy teams run into the same operational problems once volume scales:
-* Gmail/Outlook throttling
-* domain burn
-* queue instability
-* weak follow-up visibility
-* AI personalization touching sensitive data without enough governance
+Xavira Control Stack gives the operator one control layer for:
+* Gmail/Outlook sender and domain health
+* queue and follow-up discipline
+* reply, bounce, and suppression visibility
+* AI governance and PII-safe copy checks
+* proof of what was sent, blocked, or stopped
 
-At Xavira Tech Labs, we built Xavira Control Stack - Sovereign Engine plus Sovereign Shield - to monitor and stabilize outbound operations before those issues become expensive.
+The reason teams buy it is simple: if outbound is part of pipeline, infrastructure risk becomes revenue risk.
 
-If useful, I can run a short outbound infrastructure review for {{Company}} and show where the risk sits.
+If {{Company}} is pushing outbound this quarter, I can run a short outbound infrastructure review and show the first 3 risks I would fix before scaling.
 
 ${sovereignBookingCtaText()}
 
@@ -206,27 +210,23 @@ export function sovereignAgencyEmail1Body(): string {
 
 {{pain_line}}
 
-I came across {{Company}} and noticed you operate around outbound, growth, RevOps, or client acquisition infrastructure.
+Most agencies can launch campaigns. Fewer can prove to clients that domain health, sender rotation, suppression, follow-ups, and AI copy governance are controlled.
 
-At Xavira Tech Labs, we built:
-* Sovereign Engine
-* Sovereign Shield
+That is the gap Xavira Control Stack is built to own:
+* Sovereign Engine for outbound operations, queues, reputation, and delivery proof
+* Sovereign Shield for AI governance, PII controls, and audit evidence
 
-Together they form Xavira Control Stack - enterprise outbound infrastructure and operational governance for teams that need more than campaign execution.
-
-We are opening a limited number of white-label commercial licensing conversations:
+For agencies, the commercial value is not another service line. It is a premium infrastructure product you can deploy around clients:
 * white-label rights
 * reseller rights
 * commercial deployment rights
 * branding customization
 * multi-client deployment support
-* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP operations and maintenance support
+* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP/month operations and maintenance support
 
-The reason to buy: it gives agencies and operators a premium infrastructure product to deploy for clients, not just another outbound service line.
+The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP.
 
-Commercial licensing is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP when white-label and reseller rights are included.
-
-Would be open to a short conversation if this aligns with {{Company}}'s roadmap?
+If {{Company}} wants a defensible outbound infrastructure offer instead of only execution, would a short walkthrough be useful?
 
 ${sovereignBookingCtaText()}
 
@@ -493,8 +493,22 @@ export function buildSovereignPainLine(lead: SovereignCopyLead): string {
 
   if (reason) {
     const humanReason = humanizeReasonForPainLine(reason, company)
+    if (/agency|revops|growth|client acquisition|lead generation|outbound/i.test(humanReason)) {
+      return compactSentence(
+        `I noticed ${company} appears tied to outbound or growth operations. When clients depend on outbound, pipeline is protected by sender health, suppression, follow-ups, and AI governance - not just copy.`,
+        `I noticed ${company} works around outbound; that is where sender health and AI governance start deciding client trust.`
+      )
+    }
+
+    if (/security|compliance|governance|ai|infrastructure|devtools|saas/i.test(humanReason)) {
+      return compactSentence(
+        `I noticed ${company} appears relevant to AI, security, or infrastructure buyers. In that market, outbound only works when the system behind it feels controlled, auditable, and safe.`,
+        `I noticed ${company} sells into trust-heavy buyers; outbound quality depends on infrastructure control, not just messaging.`
+      )
+    }
+
     return compactSentence(
-      `I noticed ${humanReason}. That is exactly where domain health, follow-up control, and AI data safety can either protect pipeline or quietly leak revenue.`,
+      `I noticed ${humanReason}. That is exactly where domain health, follow-up control, and AI data safety either protect pipeline or quietly leak revenue.`,
       `I noticed ${company} is working around outbound, where domain health and AI data safety can quietly decide reply quality.`
     )
   }

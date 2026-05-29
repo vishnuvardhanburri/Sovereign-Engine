@@ -23,6 +23,21 @@ export type DailyOutboundPlan = {
   guardrails: string[]
 }
 
+export type DailyVolumeBand = {
+  minDailyVolume: number
+  maxDailyVolume: number
+}
+
+export type DailyVolumeAdjustment = {
+  sendLimit: number
+  runQueue: boolean
+  band: DailyVolumeBand
+  sentToday: number
+  remainingToMin: number
+  remainingToMax: number
+  guardrails: string[]
+}
+
 type EnvLike = Record<string, string | undefined>
 type DailyOutboundMode = 'conservative' | 'growth'
 
@@ -65,6 +80,8 @@ const DEFAULT_GROWTH_APPROVAL_FLOOR = 1_000_000
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
 const DEFAULT_GROWTH_MAX_SEND_LIMIT = 100
 const ABSOLUTE_GROWTH_MAX_SEND_LIMIT = 800
+const DEFAULT_MIN_DAILY_VOLUME = 125
+const DEFAULT_MAX_DAILY_VOLUME = 199
 
 export function resolveDailyBoolean(value: string | undefined | null, fallback: boolean): boolean {
   const normalized = String(value ?? '').trim().toLowerCase()
@@ -249,6 +266,128 @@ function resolveSendLimit(input: {
   }
 
   return Math.min(baseLimit, effectiveCapacity)
+}
+
+export function resolveDailyVolumeBand(input: {
+  env: EnvLike
+  query?: {
+    minDailyVolume?: string | null
+    maxDailyVolume?: string | null
+  }
+}): DailyVolumeBand {
+  const minDailyVolume = clampInteger(
+    input.query?.minDailyVolume ??
+      input.env.DAILY_OUTBOUND_MIN_DAILY_VOLUME ??
+      input.env.DAILY_OUTBOUND_DAILY_FLOOR,
+    DEFAULT_MIN_DAILY_VOLUME,
+    1,
+    ABSOLUTE_GROWTH_MAX_SEND_LIMIT
+  )
+  const maxDailyVolume = clampInteger(
+    input.query?.maxDailyVolume ??
+      input.env.DAILY_OUTBOUND_MAX_DAILY_VOLUME ??
+      input.env.DAILY_OUTBOUND_DAILY_CEILING,
+    DEFAULT_MAX_DAILY_VOLUME,
+    minDailyVolume,
+    ABSOLUTE_GROWTH_MAX_SEND_LIMIT
+  )
+
+  return {
+    minDailyVolume,
+    maxDailyVolume,
+  }
+}
+
+export function applyDailyVolumeBand(input: {
+  plan: DailyOutboundPlan
+  approvalWindow: SystemApprovalWindow
+  sentToday: number
+  env: EnvLike
+  query?: {
+    minDailyVolume?: string | null
+    maxDailyVolume?: string | null
+  }
+}): DailyVolumeAdjustment {
+  const band = resolveDailyVolumeBand({ env: input.env, query: input.query })
+  const sentToday = Math.max(0, Math.trunc(input.sentToday))
+  const remainingToMin = Math.max(0, band.minDailyVolume - sentToday)
+  const remainingToMax = Math.max(0, band.maxDailyVolume - sentToday)
+  const guardrails = [
+    `Daily volume controller active: floor ${band.minDailyVolume}, ceiling ${band.maxDailyVolume}`,
+  ]
+
+  if (!input.plan.enabled || input.plan.dryRun || input.plan.sendLimit <= 0) {
+    return {
+      sendLimit: 0,
+      runQueue: false,
+      band,
+      sentToday,
+      remainingToMin,
+      remainingToMax,
+      guardrails,
+    }
+  }
+
+  if (remainingToMax <= 0) {
+    guardrails.push('Daily ceiling reached; queueing is stopped for today')
+    return {
+      sendLimit: 0,
+      runQueue: false,
+      band,
+      sentToday,
+      remainingToMin,
+      remainingToMax,
+      guardrails,
+    }
+  }
+
+  const senderRemainingCapacity = Math.max(
+    0,
+    Math.trunc(
+      input.approvalWindow.senderRemainingCapacity ?? input.approvalWindow.remainingCapacity
+    )
+  )
+  const effectiveCapacity = Math.max(
+    0,
+    Math.min(Math.trunc(input.approvalWindow.remainingCapacity), senderRemainingCapacity)
+  )
+  const growthMaxSendLimit = clampInteger(
+    input.env.DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT ||
+      input.env.DAILY_OUTBOUND_PROVIDER_MAX_SEND_LIMIT,
+    DEFAULT_GROWTH_MAX_SEND_LIMIT,
+    1,
+    ABSOLUTE_GROWTH_MAX_SEND_LIMIT
+  )
+  const maxRunLimit = input.plan.mode === 'growth' ? growthMaxSendLimit : CONSERVATIVE_MAX_SEND_LIMIT
+  const requestedLimit = Math.max(0, Math.trunc(input.plan.sendLimit))
+  const catchUpLimit =
+    remainingToMin > 0
+      ? Math.max(requestedLimit, remainingToMin)
+      : requestedLimit
+  const sendLimit = Math.max(
+    0,
+    Math.min(catchUpLimit, remainingToMax, effectiveCapacity, maxRunLimit)
+  )
+
+  if (remainingToMin > 0 && sendLimit > requestedLimit) {
+    guardrails.push(
+      `Under daily floor by ${remainingToMin}; raising this cycle from ${requestedLimit} to ${sendLimit}`
+    )
+  }
+
+  if (sendLimit <= 0) {
+    guardrails.push('No safe sender/domain capacity remains for this cycle')
+  }
+
+  return {
+    sendLimit,
+    runQueue: sendLimit > 0,
+    band,
+    sentToday,
+    remainingToMin,
+    remainingToMax,
+    guardrails,
+  }
 }
 
 function resolveApproveLimit(input: {

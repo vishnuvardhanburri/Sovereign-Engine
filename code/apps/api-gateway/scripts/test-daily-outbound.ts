@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import {
+  applyDailyVolumeBand,
   buildDailyOutboundPlan,
   resolveDailyBoolean,
+  resolveDailyVolumeBand,
   resolveDailySheetUrl,
 } from '../lib/daily-outbound'
 import { computeSystemApprovalLimit } from '../lib/contact-approval-window'
@@ -258,6 +260,64 @@ const zeroMapsLimitPlan = buildDailyOutboundPlan({
 
 assert.equal(zeroMapsLimitPlan.mapsLimit, 0)
 assert.equal(zeroMapsLimitPlan.runMapsImport, false)
+
+assert.deepEqual(resolveDailyVolumeBand({ env: {} }), {
+  minDailyVolume: 125,
+  maxDailyVolume: 199,
+})
+
+const catchUpPlan = buildDailyOutboundPlan({
+  approvalWindow: highCapacityWindow,
+  env: {
+    DAILY_OUTBOUND_MODE: 'growth',
+    DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT: '800',
+  },
+  query: {
+    sendLimit: '8',
+    mode: 'growth',
+  },
+})
+const catchUpAdjustment = applyDailyVolumeBand({
+  plan: catchUpPlan,
+  approvalWindow: highCapacityWindow,
+  sentToday: 17,
+  env: {
+    DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT: '800',
+  },
+})
+
+assert.equal(catchUpAdjustment.sendLimit, 108)
+assert.equal(catchUpAdjustment.runQueue, true)
+assert.equal(catchUpAdjustment.remainingToMin, 108)
+assert.ok(
+  catchUpAdjustment.guardrails.some((guardrail) =>
+    guardrail.includes('raising this cycle from 8 to 108')
+  )
+)
+
+const ceilingAdjustment = applyDailyVolumeBand({
+  plan: catchUpPlan,
+  approvalWindow: highCapacityWindow,
+  sentToday: 195,
+  env: {
+    DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT: '800',
+  },
+})
+
+assert.equal(ceilingAdjustment.sendLimit, 4)
+assert.equal(ceilingAdjustment.runQueue, true)
+
+const stoppedAtCeilingAdjustment = applyDailyVolumeBand({
+  plan: catchUpPlan,
+  approvalWindow: highCapacityWindow,
+  sentToday: 199,
+  env: {
+    DAILY_OUTBOUND_GROWTH_MAX_SEND_LIMIT: '800',
+  },
+})
+
+assert.equal(stoppedAtCeilingAdjustment.sendLimit, 0)
+assert.equal(stoppedAtCeilingAdjustment.runQueue, false)
 
 const disabledAutonomousScoutPlan = buildDailyOutboundPlan({
   approvalWindow: healthyWindow,
