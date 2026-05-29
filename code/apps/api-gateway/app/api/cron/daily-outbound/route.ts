@@ -119,6 +119,11 @@ function clampThreshold(value: unknown): number {
   return Math.max(50, Math.min(Math.trunc(parsed), 95))
 }
 
+function researchApprovalThreshold(growthMode: boolean): number {
+  const fallback = growthMode ? 65 : 72
+  return clampThreshold(process.env.DAILY_OUTBOUND_APPROVAL_THRESHOLD ?? fallback)
+}
+
 function getNumericField(data: unknown, key: string): number {
   if (!data || typeof data !== 'object') return 0
   const value = (data as Record<string, unknown>)[key]
@@ -1210,7 +1215,7 @@ async function runResearchApproval(input: {
   growthMode?: boolean
 }): Promise<StageResult> {
   try {
-    const threshold = clampThreshold(process.env.DAILY_OUTBOUND_APPROVAL_THRESHOLD)
+    const threshold = researchApprovalThreshold(Boolean(input.growthMode))
     const recoveryMode = Boolean(input.recoveryMode)
     const staleInvalidBlocked = input.dryRun ? 0 : await blockPreviouslyInvalidContacts(input.clientId)
     const pool = rankResearchPool(await getResearchPool(input.clientId))

@@ -288,9 +288,12 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   ].includes(normalized)
 }
 
-function hasBusinessDomainRolePattern(value: unknown): boolean {
-  return String(value ?? '').trim().toLowerCase() === 'business_domain_role_pattern'
-}
+const BUSINESS_ROLE_FALLBACK_EVIDENCE = new Set([
+  'business_domain_role_pattern',
+  'maps_public_business_domain_match',
+  'maps_public_business_evidence',
+  'synthetic_role_pattern',
+])
 
 function envBool(name: string, fallback: boolean): boolean {
   const value = process.env[name]
@@ -300,6 +303,10 @@ function envBool(name: string, fallback: boolean): boolean {
 
 function requireExactPublicEmailEvidence(): boolean {
   return envBool('DAILY_OUTBOUND_REQUIRE_EXACT_PUBLIC_EMAIL_EVIDENCE', false)
+}
+
+function allowBusinessRoleFallback(): boolean {
+  return envBool('DAILY_OUTBOUND_BUSINESS_ROLE_FALLBACK', true)
 }
 
 function isPersonLikeMailboxPrefix(prefix: string): boolean {
@@ -324,10 +331,24 @@ function hasAcceptedBusinessRoleFallback(
   customFields: Record<string, unknown>,
   prefix: string
 ): boolean {
+  if (!allowBusinessRoleFallback()) return false
   if (!SAFE_BUSINESS_PREFIXES.has(prefix)) return false
-  if (!asBool(customFields.public_search) && !asBool(customFields.lead_scout)) return false
-  if (!hasBusinessDomainRolePattern(customFields.email_evidence)) return false
-  return scoreNumber(customFields.fit_score) >= 70
+  const hasTrustedAutonomousSource =
+    asBool(customFields.public_search) ||
+    asBool(customFields.lead_scout) ||
+    asBool(customFields.maps_import) ||
+    ['apify_google_maps', 'public_search', 'owned_open_lead_graph'].includes(
+      asString(customFields.data_source)
+    )
+  if (!hasTrustedAutonomousSource) return false
+
+  const evidence = asString(customFields.email_evidence).toLowerCase()
+  if (!BUSINESS_ROLE_FALLBACK_EVIDENCE.has(evidence)) return false
+
+  const fitScore = scoreNumber(customFields.fit_score)
+  if (evidence === 'synthetic_role_pattern') return fitScore >= 85
+  if (evidence === 'maps_public_business_evidence') return fitScore >= 78
+  return fitScore >= 70
 }
 
 export function prospectNeedsExactPublicEmailEvidence(
@@ -342,6 +363,7 @@ export function prospectNeedsExactPublicEmailEvidence(
     RISKY_GUESSED_ROLE_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
     !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedBusinessRoleFallback(customFields, prefix) &&
     !hasAcceptedProviderValidationFallback(customFields)
   )
 }
@@ -747,6 +769,10 @@ export function scoreProspectForResearchApproval(
   if (hasAcceptedProviderValidationFallback(customFields)) {
     score += 8
     reasons.push(`provider_validation_${asString(customFields.email_validation_verdict)}_accepted`)
+  }
+  if (hasAcceptedBusinessRoleFallback(customFields, prefix)) {
+    score += 12
+    reasons.push('business_role_fallback_accepted')
   }
 
   const approved = blockers.length === 0 && score >= threshold

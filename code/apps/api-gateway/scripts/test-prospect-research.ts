@@ -242,6 +242,7 @@ const publicSearchBusinessRoleInbox = scoreProspectForResearchApproval({
 })
 
 assert.equal(publicSearchBusinessRoleInbox.approved, true)
+assert.ok(publicSearchBusinessRoleInbox.reasons.includes('business_role_fallback_accepted'))
 assert.equal(publicSearchBusinessRoleInbox.blockers.length, 0)
 assert.deepEqual(
   approvedContactQueueBlockers({
@@ -259,6 +260,49 @@ assert.deepEqual(
       email_evidence: 'business_domain_role_pattern',
       fit_score: 82,
       public_evidence_url: 'https://realagency.com/',
+    },
+  }),
+  []
+)
+
+const openLeadGraphBusinessRoleInbox = scoreProspectForResearchApproval({
+  id: 62,
+  email: 'hello@strongagency.com',
+  email_domain: 'strongagency.com',
+  company: 'Strong Agency',
+  company_domain: 'strongagency.com',
+  source: 'owned_open_lead_graph',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    lead_scout: true,
+    data_source: 'owned_open_lead_graph',
+    email_evidence: 'synthetic_role_pattern',
+    fit_score: 90,
+    public_evidence_url: 'https://strongagency.com/',
+    reason_to_contact: 'Agency with public outbound, RevOps, and infrastructure service signals.',
+  },
+})
+
+assert.equal(openLeadGraphBusinessRoleInbox.approved, true)
+assert.ok(openLeadGraphBusinessRoleInbox.reasons.includes('business_role_fallback_accepted'))
+assert.deepEqual(
+  approvedContactQueueBlockers({
+    id: 62,
+    email: 'hello@strongagency.com',
+    email_domain: 'strongagency.com',
+    company: 'Strong Agency',
+    company_domain: 'strongagency.com',
+    source: 'owned_open_lead_graph',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      send_status: 'approved',
+      lead_scout: true,
+      data_source: 'owned_open_lead_graph',
+      email_evidence: 'synthetic_role_pattern',
+      fit_score: 90,
+      public_evidence_url: 'https://strongagency.com/',
     },
   }),
   []
