@@ -1771,15 +1771,30 @@ async function runQueue(input: {
       }
     }))
 
+    const addStartedAt = Date.now()
     const added = await queue.addBulk(jobs)
-    const queuedLeads = leads.slice(0, added.length)
+    const jobStates = await Promise.all(
+      added.map(async (job, index) => ({
+        index,
+        job,
+        state: await job.getState(),
+        isFresh: Number(job.timestamp ?? 0) >= addStartedAt - 1_000,
+      }))
+    )
+    const liveAdded = jobStates.filter(
+      (item) =>
+        item.isFresh &&
+        ['waiting', 'waiting-children', 'delayed', 'prioritized', 'active'].includes(item.state)
+    )
+    const queuedLeads = liveAdded.map((item) => leads[item.index]).filter(Boolean)
+    const duplicateOrTerminalJobs = added.length - liveAdded.length
     const estimatedPipelineValueUsd = queuedLeads.reduce(
       (sum, lead) => sum + lead.deal_value_usd,
       0
     )
     const agencyQueued = queuedLeads.filter((lead) => lead.offer_type === 'agency').length
     const directQueued = queuedLeads.length - agencyQueued
-    const contactIds = leads
+    const contactIds = queuedLeads
       .map((lead) => lead.contact_id)
       .filter((id): id is number => Number.isSafeInteger(id))
 
@@ -1800,7 +1815,7 @@ async function runQueue(input: {
 
     void notifyTelegramEvent({
       type: 'queue_batch',
-      queued: added.length,
+      queued: liveAdded.length,
       source: 'daily_approved_contacts',
       queue: queueName,
       limit: input.sendLimit,
@@ -1815,13 +1830,14 @@ async function runQueue(input: {
       status: 200,
       data: {
         queue: queueName,
-        queued: added.length,
+        queued: liveAdded.length,
         limit: input.sendLimit,
         estimatedPipelineValueUsd,
         agencyQueued,
         directQueued,
-        firstJobId: added[0]?.id ?? null,
-        lastJobId: added.at(-1)?.id ?? null,
+        duplicateOrTerminalJobs,
+        firstJobId: liveAdded[0]?.job.id ?? null,
+        lastJobId: liveAdded.at(-1)?.job.id ?? null,
         repairedQueuedContacts,
         repairedOrphanedQueuedContacts,
         phase: input.phase || 'after_research',
