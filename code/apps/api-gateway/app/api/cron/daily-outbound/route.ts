@@ -2170,6 +2170,32 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    if (!queuedBeforeResearch && plan.runResearchApproval) {
+      stages.push(
+        await runResearchApproval({
+          clientId: plan.clientId,
+          dryRun: plan.dryRun,
+          approveLimit: plan.approveLimit,
+          recoveryMode,
+          growthMode: plan.mode === 'growth',
+          evidenceFetchLimit: 0,
+          providerValidationLimit: 0,
+        })
+      )
+    }
+
+    if (!queuedBeforeResearch && plan.runQueue) {
+      const fastQueueStage = await runQueue({
+        clientId: plan.clientId,
+        sendLimit: plan.sendLimit,
+        phase: 'after_research',
+      })
+      stages.push(fastQueueStage)
+      if (getNumericField(fastQueueStage.data, 'queued') > 0) {
+        queuedBeforeResearch = true
+      }
+    }
+
     if (!queuedBeforeResearch && plan.runMapsImport) {
       stages.push(
         await runMapsImport({
