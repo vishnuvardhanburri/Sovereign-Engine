@@ -133,6 +133,27 @@ assert(!contentPageBody.includes('Introduction to Cyber Security'), 'content pag
 assert(!contentPageBody.includes('There are seven types'), 'article snippets should not leak into outreach copy')
 assert(contentPageBody.includes('Geeksforgeeks'), 'content-page fallbacks should use the domain brand')
 
+const guardrailReasonBody = renderSovereignTemplate(
+  sovereignBodyForLead({
+    first_name: 'hello',
+    company: 'SentinelOne',
+    companyDomain: 'sentinelone.com',
+    reason_to_contact:
+      'SentinelOne shows public signals around endpoint security, SOC operations. Public domain and MX records confirm the business domain; selected safe founder inbox hello@sentinelone.com.',
+  }),
+  {
+    first_name: 'hello',
+    company: 'SentinelOne',
+    companyDomain: 'sentinelone.com',
+    reason_to_contact:
+      'SentinelOne shows public signals around endpoint security, SOC operations. Public domain and MX records confirm the business domain; selected safe founder inbox hello@sentinelone.com.',
+  },
+  'Xavira Tech Labs, India'
+)
+assert(!guardrailReasonBody.includes('selected safe'), 'operator guardrail notes must not leak into copy')
+assert(!guardrailReasonBody.includes('MX records confirm'), 'validation notes must not leak into copy')
+assert(!guardrailReasonBody.includes('hello@sentinelone.com'), 'recipient evidence must not leak into body copy')
+
 const agencyBody = renderSovereignTemplate(
   sovereignBodyForLead(agencyLead),
   agencyLead,
