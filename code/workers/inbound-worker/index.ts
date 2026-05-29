@@ -89,6 +89,9 @@ const DSN_SUBJECT_REGEX =
 const DSN_BODY_REGEX = /(final-recipient|diagnostic-code|this is the mail system|recipient address rejected|no such user)/i
 const HARD_BOUNCE_REGEX =
   /\b(5\d\d|5\.\d+\.\d+|no such user|recipient address rejected|access denied|user unknown|mailbox unavailable|does not exist)\b/i
+const AUTO_REPLY_BODY_REGEX =
+  /\b(auto[-\s]?generated|automated email|automatic reply|out of office|ticket (no|number|id)|thanks for writing to us|we will get back to you within|do not reply|do-not-reply|noreply|no-reply)\b/i
+const AUTO_REPLY_SUBJECT_REGEX = /^(re:\s*)?(automatic reply|auto[-\s]?reply|out of office|away from office|vacation reply)\b/i
 const SYSTEM_BOUNCE_LOCAL_PARTS = new Set(['mailer-daemon', 'postmaster', 'mail delivery subsystem', 'mail delivery system'])
 const SYSTEM_BOUNCE_DOMAINS = new Set([
   'googlemail.com',
@@ -130,6 +133,29 @@ function isDeliverabilityNotice(input: { fromEmail: string; subject: string; bod
     fromSystem ||
     (subjectLooksDsn && bodyLooksDsn) ||
     (fromInfra && (subjectLooksDsn || bodyLooksDsn))
+  )
+}
+
+function headerValue(headers: any, name: string) {
+  const value = headers?.get?.(name)
+  if (Array.isArray(value)) return value.join(' ')
+  return String(value ?? '')
+}
+
+function isAutomatedReply(input: { headers: any; fromEmail: string; subject: string; body: string }) {
+  const autoSubmitted = headerValue(input.headers, 'auto-submitted').toLowerCase()
+  const precedence = headerValue(input.headers, 'precedence').toLowerCase()
+  const xAutoResponseSuppress = headerValue(input.headers, 'x-auto-response-suppress').toLowerCase()
+  const fromLocal = emailLocalPart(input.fromEmail)
+
+  return (
+    (autoSubmitted && autoSubmitted !== 'no') ||
+    ['bulk', 'junk', 'list', 'auto_reply'].includes(precedence) ||
+    Boolean(xAutoResponseSuppress) ||
+    fromLocal === 'noreply' ||
+    fromLocal === 'no-reply' ||
+    AUTO_REPLY_SUBJECT_REGEX.test(input.subject) ||
+    AUTO_REPLY_BODY_REGEX.test(input.body)
   )
 }
 
@@ -588,6 +614,12 @@ async function processAccount(account: ImapAccount) {
       const subject = String(parsed.subject ?? '').trim()
       const body = String(parsed.text ?? parsed.html ?? '').trim()
       const isDsn = isDeliverabilityNotice({ fromEmail, subject, body })
+      const isAutoResponse = isAutomatedReply({
+        headers: parsed.headers,
+        fromEmail,
+        subject,
+        body,
+      })
 
       // Skip our own outbound messages / system emails.
       if (OUR_ADDRESSES.has(fromEmail)) {
@@ -679,6 +711,9 @@ async function processAccount(account: ImapAccount) {
             event_code: 'EMAIL_REPLIED',
             source: 'imap',
             matched_to_outbound: Boolean(ctx),
+            is_auto_response: isAutoResponse,
+            reply_status: isAutoResponse ? 'auto_reply' : 'unread',
+            classification: isAutoResponse ? 'auto_reply' : 'unread',
             message_id: messageId,
             in_reply_to: inReplyTo || undefined,
             references: references.length ? references : undefined,
@@ -690,14 +725,16 @@ async function processAccount(account: ImapAccount) {
         }
       )
 
-      await recordConversationIntelligenceDirect({
-        clientId,
-        contactId: ctx?.contactId ?? null,
-        messageId,
-        fromEmail,
-        subject,
-        body,
-      })
+      if (!isAutoResponse) {
+        await recordConversationIntelligenceDirect({
+          clientId,
+          contactId: ctx?.contactId ?? null,
+          messageId,
+          fromEmail,
+          subject,
+          body,
+        })
+      }
 
       if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
     }
