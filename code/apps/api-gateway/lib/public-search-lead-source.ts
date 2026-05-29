@@ -102,7 +102,10 @@ const BLOCKED_HOSTS = new Set([
 ])
 
 const LOW_VALUE_PATH_RE =
-  /\b(?:article|blog|careers?|certification|course|developer-docs|docs?|guide|help|intro|introduction|jobs?|learn|legal|login|news|press|pricing|privacy|resources?|signin|signup|support|terms|training|tutorial|what-is)\b/i
+  /\b(?:careers?|certification|course|developer-docs|docs?|help|jobs?|legal|login|privacy|signin|signup|support|terms|training)\b/i
+
+const CONTENT_RESULT_RE =
+  /\b(?:article|blog|case study|course|definition|explained|guide|how to|intro|introduction|learn|news|resources?|training|tutorial|types of|what is|whitepaper)\b/i
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
@@ -140,28 +143,34 @@ function glForRegion(region: string): string {
   return 'us'
 }
 
-function companyFromTitle(title: string, domain: string): string {
-  const cleaned = title
-    .split(/\s[|-]\s/)[0]
-    .replace(/\b(contact|sales|demo|home|official site|homepage)\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (cleaned && cleaned.length <= 80) return cleaned
-
+function companyFromDomain(domain: string): string {
   return domain
     .split('.')[0]
     .replace(/[-_]+/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function looksLikeContentResult(result: Pick<SerpApiOrganicResult, 'title' | 'snippet' | 'link'>): boolean {
+  const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`
+  return CONTENT_RESULT_RE.test(text)
+}
+
+function companyFromTitle(title: string, domain: string): string {
+  const cleaned = title
+    .split(/\s[|-]\s/)[0]
+    .replace(/\b(contact|sales|demo|home|official site|homepage)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (cleaned && cleaned.length <= 80 && !CONTENT_RESULT_RE.test(cleaned)) return cleaned
+
+  return companyFromDomain(domain)
+}
+
 function isLowIntentSearchResult(result: SerpApiOrganicResult): boolean {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase()
-  const contentSignals =
-    /\b(?:article|blog|course|definition|explained|guide|how to|intro|introduction|learn|resources?|training|tutorial|types of|what is)\b/.test(
-      text
-    )
+  const contentSignals = CONTENT_RESULT_RE.test(text)
   const commercialSignals =
-    /\b(?:agency|book a demo|clients|contact sales|enterprise|get in touch|managed service|mssp|platform|revops|sales team|services|software|solution|whitepaper)\b/.test(
+    /\b(?:agency|book a demo|clients|contact sales|enterprise|get in touch|platform|revops|sales team|services|software|solution)\b/.test(
       text
     )
   return contentSignals && !commercialSignals
@@ -227,7 +236,7 @@ function defaultQueries(industry: string, region: string): string[] {
       'B2B SaaS contact sales',
       'sales engagement contact sales',
       'revenue operations contact sales',
-      'customer engagement platform contact sales peope]',
+      'customer engagement platform contact sales people',
     ],
   }
 
@@ -523,14 +532,20 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
 
         const businessRoleEligible = fitScore >= 70
 
+        const contentResult = looksLikeContentResult(result)
+        const company = companyFromTitle(String(result.title || ''), domain)
+        const reason = contentResult
+          ? `${company} matched a public ${industry} business-domain result; outreach should focus on infrastructure fit, not the page title.`
+          : `Public search result matched ${industry} target profile: ${String(result.snippet || result.title || link).slice(0, 180)}`
+
         byDomain.set(domain, {
           email: mailboxForPersona(domain, persona),
-          company: companyFromTitle(String(result.title || ''), domain),
+          company,
           companyDomain: domain,
           title: `${persona} team`,
           source: 'public_search',
           fitScore,
-          reason: `Public search result matched ${industry} target profile: ${String(result.snippet || result.title || link).slice(0, 180)}`,
+          reason,
           confidence: fitScore >= 85 ? 'high' : fitScore >= 70 ? 'medium' : 'low',
           emailEvidence: businessRoleEligible ? 'business_domain_role_pattern' : 'synthetic_role_pattern',
           publicEvidenceUrl: rootEvidenceUrl(link),
