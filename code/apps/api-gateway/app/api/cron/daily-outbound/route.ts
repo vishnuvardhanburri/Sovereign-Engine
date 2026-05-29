@@ -96,6 +96,10 @@ function envBool(value: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+function requireExactPublicEmailEvidence(): boolean {
+  return envBool(process.env.DAILY_OUTBOUND_REQUIRE_EXACT_PUBLIC_EMAIL_EVIDENCE, false)
+}
+
 function clampThreshold(value: unknown): number {
   const parsed = Number(value ?? 72)
   if (!Number.isFinite(parsed)) return 72
@@ -514,7 +518,9 @@ async function runLeadScoutStage(input: {
         requestTimeoutMs: input.evidenceRequestTimeoutMs,
       }),
     })
-    const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+    const importableLeads = requireExactPublicEmailEvidence()
+      ? verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+      : verifiedLeads
     const contacts = input.dryRun
       ? []
       : await importContacts(input.clientId, {
@@ -530,7 +536,7 @@ async function runLeadScoutStage(input: {
         imported: contacts.length,
         scanned: result.leads.length,
         evidenceBacked: importableLeads.length,
-        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        blockedUnverified: requireExactPublicEmailEvidence() ? verifiedLeads.length - importableLeads.length : 0,
         industry: result.industry,
         persona: result.persona,
       })
@@ -545,7 +551,7 @@ async function runLeadScoutStage(input: {
         imported: contacts.length,
         scanned: result.leads.length,
         evidenceBacked: importableLeads.length,
-        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        blockedUnverified: requireExactPublicEmailEvidence() ? verifiedLeads.length - importableLeads.length : 0,
         industry: result.industry,
         persona: result.persona,
         region: result.region,
@@ -596,7 +602,9 @@ async function runPublicSearchStage(input: {
         requestTimeoutMs: input.evidenceRequestTimeoutMs,
       }),
     })
-    const importableLeads = verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+    const importableLeads = requireExactPublicEmailEvidence()
+      ? verifiedLeads.filter((lead) => lead.autoApprovalEligible)
+      : verifiedLeads
     const contacts = input.dryRun
       ? []
       : await importContacts(input.clientId, {
@@ -612,7 +620,7 @@ async function runPublicSearchStage(input: {
         imported: contacts.length,
         scanned: result.scannedResults,
         evidenceBacked: importableLeads.length,
-        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        blockedUnverified: requireExactPublicEmailEvidence() ? verifiedLeads.length - importableLeads.length : 0,
         industry: result.industry,
         persona: result.persona,
       })
@@ -630,7 +638,7 @@ async function runPublicSearchStage(input: {
         prepared: result.leads.length,
         rejected: result.rejected,
         evidenceBacked: importableLeads.length,
-        blockedUnverified: verifiedLeads.length - importableLeads.length,
+        blockedUnverified: requireExactPublicEmailEvidence() ? verifiedLeads.length - importableLeads.length : 0,
         queriesRun: result.queriesRun,
         errorsCount: result.errors.length,
         errorCounts: result.errors.reduce<Record<string, number>>((acc, error) => {
@@ -1484,10 +1492,6 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
        AND c.bounced_at IS NULL
        AND c.unsubscribed_at IS NULL
        AND COALESCE(c.custom_fields->>'send_status', 'not_approved') = 'approved'
-       AND NOT (
-         COALESCE(c.custom_fields->>'lead_scout', 'false') = 'true'
-         AND COALESCE(c.custom_fields->>'auto_approval_eligible', 'false') <> 'true'
-       )
        AND NOT EXISTS (
          SELECT 1
          FROM suppression_list s
@@ -1599,6 +1603,8 @@ async function repairTerminalQueuedContacts(clientId: number): Promise<number> {
 async function runQueue(input: {
   clientId: number
   sendLimit: number
+  phase?: 'before_research' | 'after_research'
+  notifySkipped?: boolean
 }): Promise<StageResult> {
   let queue: Queue | null = null
   try {
@@ -1607,11 +1613,13 @@ async function runQueue(input: {
     const queueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
 
     if (leads.length === 0) {
-      void notifyTelegramEvent({
-        type: 'queue_skipped',
-        reason: 'no_verified_approved_leads',
-        source: 'daily_approved_contacts_only',
-      })
+      if (input.notifySkipped !== false) {
+        void notifyTelegramEvent({
+          type: 'queue_skipped',
+          reason: 'no_verified_approved_leads',
+          source: 'daily_approved_contacts_only',
+        })
+      }
 
       return {
         stage: 'queue_outbound',
@@ -1622,6 +1630,7 @@ async function runQueue(input: {
           source: 'daily_approved_contacts_only',
           skipped: 'no_verified_approved_leads',
           repairedQueuedContacts,
+          phase: input.phase || 'after_research',
         },
       }
     }
@@ -1724,6 +1733,7 @@ async function runQueue(input: {
         firstJobId: added[0]?.id ?? null,
         lastJobId: added.at(-1)?.id ?? null,
         repairedQueuedContacts,
+        phase: input.phase || 'after_research',
       },
     }
   } catch (error) {
@@ -1925,6 +1935,7 @@ export async function GET(request: NextRequest) {
       process.env.APIFY_GOOGLE_MAPS_ACTOR_ID ||
       process.env.GOOGLE_MAPS_APIFY_ACTOR_ID ||
       ''
+    let queuedBeforeResearch = false
 
     if (!plan.enabled) {
       return NextResponse.json({
@@ -1936,7 +1947,57 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (plan.runPublicSearch) {
+    if (plan.runQueue) {
+      const preResearchQueueStage = await runQueue({
+        clientId: plan.clientId,
+        sendLimit: plan.sendLimit,
+        phase: 'before_research',
+        notifySkipped: false,
+      })
+      stages.push(preResearchQueueStage)
+
+      if (getNumericField(preResearchQueueStage.data, 'queued') > 0) {
+        queuedBeforeResearch = true
+        stages.push({
+          stage: 'public_search',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+        stages.push({
+          stage: 'lead_scout',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+        stages.push({
+          stage: 'maps_import',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+        stages.push({
+          stage: 'sheet_import',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+        stages.push({
+          stage: 'hunter_domain_search',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+        stages.push({
+          stage: 'research_approval',
+          ok: true,
+          status: 204,
+          skipped: 'deferred_after_immediate_queue',
+        })
+      }
+    }
+
+    if (!queuedBeforeResearch && plan.runPublicSearch) {
       stages.push(
         await runPublicSearchStage({
           clientId: plan.clientId,
@@ -1952,7 +2013,7 @@ export async function GET(request: NextRequest) {
             params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'public_search',
         ok: true,
@@ -1961,7 +2022,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (plan.runLeadScout) {
+    if (!queuedBeforeResearch && plan.runLeadScout) {
       stages.push(
         await runLeadScoutStage({
           clientId: plan.clientId,
@@ -1976,7 +2037,7 @@ export async function GET(request: NextRequest) {
             params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'lead_scout',
         ok: true,
@@ -1985,7 +2046,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (plan.runMapsImport) {
+    if (!queuedBeforeResearch && plan.runMapsImport) {
       stages.push(
         await runMapsImport({
           clientId: plan.clientId,
@@ -2019,7 +2080,7 @@ export async function GET(request: NextRequest) {
           region: params.get('mapsRegion') || params.get('region'),
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'maps_import',
         ok: true,
@@ -2028,7 +2089,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (plan.runSheetImport) {
+    if (!queuedBeforeResearch && plan.runSheetImport) {
       stages.push(
         await runSheetImport({
           clientId: plan.clientId,
@@ -2037,7 +2098,7 @@ export async function GET(request: NextRequest) {
           sheetLimit: plan.sheetLimit,
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'sheet_import',
         ok: true,
@@ -2046,7 +2107,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (runHunterSearch) {
+    if (!queuedBeforeResearch && runHunterSearch) {
       stages.push(
         await runHunterDomainSearch({
           clientId: plan.clientId,
@@ -2068,7 +2129,7 @@ export async function GET(request: NextRequest) {
           ),
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'hunter_domain_search',
         ok: true,
@@ -2077,7 +2138,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (plan.runResearchApproval) {
+    if (!queuedBeforeResearch && plan.runResearchApproval) {
       stages.push(
         await runResearchApproval({
           clientId: plan.clientId,
@@ -2099,14 +2160,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (plan.runQueue) {
+    if (!queuedBeforeResearch && plan.runQueue) {
       stages.push(
         await runQueue({
           clientId: plan.clientId,
           sendLimit: plan.sendLimit,
+          phase: 'after_research',
         })
       )
-    } else {
+    } else if (!queuedBeforeResearch) {
       stages.push({
         stage: 'queue_outbound',
         ok: true,
@@ -2125,20 +2187,30 @@ export async function GET(request: NextRequest) {
 
     stages.push(await runEventRetentionStage(plan.clientId))
 
-    const queuedStage = stages.find((stage) => stage.stage === 'queue_outbound')
+    const queueStages = stages.filter((stage) => stage.stage === 'queue_outbound')
+    const queuedStage = queueStages.at(-1)
     const approvalStage = stages.find((stage) => stage.stage === 'research_approval')
     const sheetStage = stages.find((stage) => stage.stage === 'sheet_import')
     const mapsStage = stages.find((stage) => stage.stage === 'maps_import')
     const publicSearchStage = stages.find((stage) => stage.stage === 'public_search')
     const leadScoutStage = stages.find((stage) => stage.stage === 'lead_scout')
     const hunterStage = stages.find((stage) => stage.stage === 'hunter_domain_search')
-    const queued = getNumericField(queuedStage?.data, 'queued')
-    const estimatedPipelineValueUsd = getNumericField(
-      queuedStage?.data,
-      'estimatedPipelineValueUsd'
+    const queued = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'queued'),
+      0
     )
-    const agencyQueued = getNumericField(queuedStage?.data, 'agencyQueued')
-    const directQueued = getNumericField(queuedStage?.data, 'directQueued')
+    const estimatedPipelineValueUsd = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'estimatedPipelineValueUsd'),
+      0
+    )
+    const agencyQueued = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'agencyQueued'),
+      0
+    )
+    const directQueued = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'directQueued'),
+      0
+    )
     const approved = getNumericField(approvalStage?.data, 'approved')
     const imported = getNumericField(sheetStage?.data, 'imported')
     const mapsImported = getNumericField(mapsStage?.data, 'imported')

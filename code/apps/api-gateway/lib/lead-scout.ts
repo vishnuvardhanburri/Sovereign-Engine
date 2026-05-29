@@ -817,7 +817,7 @@ export function leadScoutToContacts(leads: OpenLead[]): ContactInput[] {
       public_evidence_url: lead.publicEvidenceUrl ?? null,
       lead_quality_warning: lead.autoApprovalEligible
         ? 'Public evidence found; still monitor bounces and complaints.'
-        : 'Role inbox inferred from company domain; blocked from cron until public evidence or operator verification exists.',
+        : 'Role inbox inferred from company domain; requires business-safe validation and scoring before queueing.',
       approval_required: true,
       send_status: 'not_approved',
     },

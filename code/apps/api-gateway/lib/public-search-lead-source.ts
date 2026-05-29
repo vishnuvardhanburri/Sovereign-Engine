@@ -519,7 +519,7 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
       'Public search discovers company domains only',
       'No personal email guessing',
       'Only safe company role inboxes are inferred',
-      'MX/public evidence verification and approval gates still run before queueing',
+      'MX, provider validation, scoring, and approval gates still run before queueing',
       'Suppression, bounce, unsubscribe, and sender capacity gates remain enforced',
     ],
   }
@@ -545,7 +545,7 @@ export function publicSearchLeadsToContacts(leads: OpenLead[]): ContactInput[] {
       public_evidence_url: lead.publicEvidenceUrl ?? null,
       lead_quality_warning: lead.autoApprovalEligible
         ? 'Public evidence found; still monitor bounces and complaints.'
-        : 'Role inbox inferred from public search result; blocked from cron until public evidence or operator verification exists.',
+        : 'Role inbox inferred from public search result; requires business-safe validation and scoring before queueing.',
       approval_required: true,
       send_status: 'not_approved',
     },

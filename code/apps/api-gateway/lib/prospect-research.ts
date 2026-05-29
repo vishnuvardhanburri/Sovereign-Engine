@@ -173,6 +173,7 @@ const SAFE_SOURCE_TYPES = new Set([
   'open_lead_graph',
   'owned_open_lead_graph',
   'operator_google_sheet',
+  'public_search',
 ])
 
 const SOCIAL_EVIDENCE_HOSTS = new Set([
@@ -292,6 +293,14 @@ function envBool(name: string, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+function requireExactPublicEmailEvidence(): boolean {
+  return envBool('DAILY_OUTBOUND_REQUIRE_EXACT_PUBLIC_EMAIL_EVIDENCE', false)
+}
+
+function isPersonLikeMailboxPrefix(prefix: string): boolean {
+  return prefix.includes('.') || /^[a-z]+[._-][a-z]+$/.test(prefix)
+}
+
 function allowUnknownProviderValidation(): boolean {
   return envBool(
     'DAILY_OUTBOUND_ALLOW_UNKNOWN_VALIDATION',
@@ -309,6 +318,8 @@ function hasAcceptedProviderValidationFallback(customFields: Record<string, unkn
 export function prospectNeedsExactPublicEmailEvidence(
   contact: ProspectResearchContact
 ): boolean {
+  if (!requireExactPublicEmailEvidence()) return false
+
   const email = contact.email.trim().toLowerCase()
   const [prefix = ''] = email.split('@')
   const verificationStatus = String(contact.verification_status ?? 'pending')
@@ -341,7 +352,8 @@ export function approvedContactQueueBlockers(
   if (
     asBool(customFields.lead_scout) &&
     !asBool(customFields.auto_approval_eligible) &&
-    verificationStatus !== 'valid'
+    verificationStatus !== 'valid' &&
+    requireExactPublicEmailEvidence()
   ) {
     blockers.push('lead_scout_without_public_evidence')
   }
@@ -454,6 +466,7 @@ export async function enrichProspectWithProviderValidation(
   const customFields = contact.custom_fields ?? {}
   const needsValidation =
     VALIDATION_REQUIRED_PREFIXES.has(prefix) ||
+    isPersonLikeMailboxPrefix(prefix) ||
     (RISKY_GUESSED_ROLE_PREFIXES.has(prefix) && !hasExactPublicEmailEvidence(customFields.email_evidence))
 
   if (!needsValidation) {
@@ -639,8 +652,9 @@ export function scoreProspectForResearchApproval(
   if (SAFE_BUSINESS_PREFIXES.has(prefix)) {
     score += 28
     reasons.push('safe_business_inbox')
-  } else if (prefix.includes('.') || /^[a-z]+[._-][a-z]+$/.test(prefix)) {
-    blockers.push('person_like_email_requires_manual_review')
+  } else if (isPersonLikeMailboxPrefix(prefix)) {
+    score += 10
+    reasons.push('person_like_business_inbox')
   } else {
     score += 8
     reasons.push('neutral_business_inbox')
@@ -657,7 +671,7 @@ export function scoreProspectForResearchApproval(
     score += 16
     reasons.push('public_evidence_url_present')
   } else {
-    blockers.push('missing_public_evidence_url')
+    reasons.push('public_evidence_url_absent')
   }
 
   if (evidenceHost) {
@@ -670,7 +684,7 @@ export function scoreProspectForResearchApproval(
       score += 12
       reasons.push('evidence_domain_aligned')
     } else {
-      blockers.push('evidence_domain_mismatch')
+      reasons.push('evidence_domain_unaligned')
     }
   }
 
@@ -699,14 +713,14 @@ export function scoreProspectForResearchApproval(
   }
 
   if (verificationStatus === 'valid') {
-    score += 8
+    score += 18
     reasons.push('email_verified_valid')
   } else if (verificationStatus === 'catch_all' || verificationStatus === 'unknown') {
     score += 2
     reasons.push(`verification_${verificationStatus}`)
   }
   if (hasAcceptedProviderValidationFallback(customFields)) {
-    score += 4
+    score += 8
     reasons.push(`provider_validation_${asString(customFields.email_validation_verdict)}_accepted`)
   }
 
