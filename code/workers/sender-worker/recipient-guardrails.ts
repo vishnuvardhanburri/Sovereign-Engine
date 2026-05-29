@@ -88,6 +88,10 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   ].includes(normalized)
 }
 
+function hasBusinessDomainRolePattern(value: unknown): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'business_domain_role_pattern'
+}
+
 function asString(value: unknown): string {
   return String(value ?? '').trim().toLowerCase()
 }
@@ -112,6 +116,36 @@ function hasAcceptedProviderValidationFallback(customFields: Record<string, unkn
   return Boolean(provider) && ['unknown', 'risky'].includes(verdict)
 }
 
+function numberField(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function hasAcceptedBusinessRoleFallback(
+  customFields: Record<string, unknown>,
+  prefix: string
+): boolean {
+  const safeBusinessPrefixes = new Set([
+    'business',
+    'contact',
+    'growth',
+    'hello',
+    'hi',
+    'info',
+    'mail',
+    'marketing',
+    'sales',
+    'team',
+  ])
+
+  if (!safeBusinessPrefixes.has(prefix)) return false
+  if (!['1', 'true', 'yes', 'on'].includes(String(customFields.public_search ?? customFields.lead_scout ?? '').trim().toLowerCase())) {
+    return false
+  }
+  if (!hasBusinessDomainRolePattern(customFields.email_evidence)) return false
+  return numberField(customFields.fit_score) >= 70
+}
+
 export function recipientApprovalBlockers(
   contact: RecipientGuardrailContact | null | undefined,
   jobRecipientEmail?: string | null
@@ -125,6 +159,7 @@ export function recipientApprovalBlockers(
   const verificationStatus = String(contact.verification_status ?? 'pending').trim().toLowerCase()
   const customFields = contact.custom_fields ?? {}
   const hasExactEvidence = hasExactPublicEmailEvidence(customFields.email_evidence)
+  const acceptedBusinessRoleFallback = hasAcceptedBusinessRoleFallback(customFields, prefix)
   const acceptedProviderFallback = hasAcceptedProviderValidationFallback(customFields)
   const isValid = verificationStatus === 'valid'
 
@@ -136,7 +171,13 @@ export function recipientApprovalBlockers(
   if (contact.unsubscribed_at) blockers.push('unsubscribed')
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) blockers.push(`verification_${verificationStatus}`)
 
-  if (VALIDATION_REQUIRED_PREFIXES.has(prefix) && !isValid && !hasExactEvidence && !acceptedProviderFallback) {
+  if (
+    VALIDATION_REQUIRED_PREFIXES.has(prefix) &&
+    !isValid &&
+    !hasExactEvidence &&
+    !acceptedBusinessRoleFallback &&
+    !acceptedProviderFallback
+  ) {
     blockers.push('generic_inbox_requires_email_validation_or_exact_evidence')
   }
 

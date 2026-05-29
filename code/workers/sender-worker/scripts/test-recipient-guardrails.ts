@@ -52,6 +52,22 @@ assert.deepEqual(
 assert.deepEqual(
   blockersFor({
     email: 'hello@apptivo.com',
+    custom_fields: {
+      auto_approval_eligible: true,
+      public_search: true,
+      email_evidence: 'business_domain_role_pattern',
+      fit_score: 84,
+      public_evidence_url: 'https://apptivo.com/',
+      reason_to_contact: 'Relevant outbound infrastructure account.',
+    },
+  }),
+  [],
+  'high-fit public-search business role inboxes can pass without exact email text'
+)
+
+assert.deepEqual(
+  blockersFor({
+    email: 'hello@apptivo.com',
     verification_status: 'valid',
   }),
   [],

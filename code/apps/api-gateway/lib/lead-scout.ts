@@ -35,7 +35,12 @@ export interface OpenLead {
   fitScore: number
   reason: string
   confidence: 'high' | 'medium' | 'low'
-  emailEvidence?: 'public_page_email_match' | 'public_mailto_match' | 'public_domain_email' | 'synthetic_role_pattern'
+  emailEvidence?:
+    | 'business_domain_role_pattern'
+    | 'public_page_email_match'
+    | 'public_mailto_match'
+    | 'public_domain_email'
+    | 'synthetic_role_pattern'
   publicEvidenceUrl?: string
   autoApprovalEligible?: boolean
 }

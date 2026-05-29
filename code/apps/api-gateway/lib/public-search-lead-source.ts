@@ -187,6 +187,15 @@ function mailboxForPersona(domain: string, persona: LeadScoutPersona): string {
   return `${mailbox}@${domain}`
 }
 
+function rootEvidenceUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl)
+    return `${url.protocol}//${url.hostname.replace(/^www\./, '')}/`
+  } catch {
+    return rawUrl
+  }
+}
+
 function defaultQueries(industry: string, region: string): string[] {
   const queryGroups: Record<string, string[]> = {
     agency: [
@@ -512,6 +521,8 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
           continue
         }
 
+        const businessRoleEligible = fitScore >= 70
+
         byDomain.set(domain, {
           email: mailboxForPersona(domain, persona),
           company: companyFromTitle(String(result.title || ''), domain),
@@ -521,9 +532,9 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
           fitScore,
           reason: `Public search result matched ${industry} target profile: ${String(result.snippet || result.title || link).slice(0, 180)}`,
           confidence: fitScore >= 85 ? 'high' : fitScore >= 70 ? 'medium' : 'low',
-          emailEvidence: 'synthetic_role_pattern',
-          publicEvidenceUrl: link,
-          autoApprovalEligible: false,
+          emailEvidence: businessRoleEligible ? 'business_domain_role_pattern' : 'synthetic_role_pattern',
+          publicEvidenceUrl: rootEvidenceUrl(link),
+          autoApprovalEligible: businessRoleEligible,
         })
       }
 
@@ -544,7 +555,7 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
     guardrails: [
       'Public search discovers company domains only',
       'No personal email guessing',
-      'Only safe company role inboxes are inferred',
+      'Only safe company role inboxes are inferred for scored business domains',
       'MX, provider validation, scoring, and approval gates still run before queueing',
       'Suppression, bounce, unsubscribe, and sender capacity gates remain enforced',
     ],
@@ -570,7 +581,7 @@ export function publicSearchLeadsToContacts(leads: OpenLead[]): ContactInput[] {
       reason_to_contact: lead.reason,
       public_evidence_url: lead.publicEvidenceUrl ?? null,
       lead_quality_warning: lead.autoApprovalEligible
-        ? 'Public evidence found; still monitor bounces and complaints.'
+        ? 'Business domain role inbox inferred from a high-fit public company result; validation and bounce controls remain active.'
         : 'Role inbox inferred from public search result; requires business-safe validation and scoring before queueing.',
       approval_required: true,
       send_status: 'not_approved',

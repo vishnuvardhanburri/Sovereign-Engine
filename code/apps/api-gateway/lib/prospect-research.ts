@@ -288,6 +288,10 @@ export function hasExactPublicEmailEvidence(value: unknown): boolean {
   ].includes(normalized)
 }
 
+function hasBusinessDomainRolePattern(value: unknown): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'business_domain_role_pattern'
+}
+
 function envBool(name: string, fallback: boolean): boolean {
   const value = process.env[name]
   if (value === undefined || value === null || value === '') return fallback
@@ -316,11 +320,19 @@ function hasAcceptedProviderValidationFallback(customFields: Record<string, unkn
   return Boolean(provider) && ['unknown', 'risky'].includes(verdict)
 }
 
+function hasAcceptedBusinessRoleFallback(
+  customFields: Record<string, unknown>,
+  prefix: string
+): boolean {
+  if (!SAFE_BUSINESS_PREFIXES.has(prefix)) return false
+  if (!asBool(customFields.public_search) && !asBool(customFields.lead_scout)) return false
+  if (!hasBusinessDomainRolePattern(customFields.email_evidence)) return false
+  return scoreNumber(customFields.fit_score) >= 70
+}
+
 export function prospectNeedsExactPublicEmailEvidence(
   contact: ProspectResearchContact
 ): boolean {
-  if (!requireExactPublicEmailEvidence()) return false
-
   const email = contact.email.trim().toLowerCase()
   const [prefix = ''] = email.split('@')
   const verificationStatus = String(contact.verification_status ?? 'pending')
@@ -329,7 +341,8 @@ export function prospectNeedsExactPublicEmailEvidence(
   return (
     RISKY_GUESSED_ROLE_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
-    !hasExactPublicEmailEvidence(customFields.email_evidence)
+    !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedProviderValidationFallback(customFields)
   )
 }
 
@@ -362,6 +375,7 @@ export function approvedContactQueueBlockers(
     VALIDATION_REQUIRED_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
     !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedBusinessRoleFallback(customFields, prefix) &&
     !hasAcceptedProviderValidationFallback(customFields)
   ) {
     blockers.push('generic_inbox_requires_email_validation')
@@ -634,9 +648,19 @@ export function scoreProspectForResearchApproval(
     VALIDATION_REQUIRED_PREFIXES.has(prefix) &&
     verificationStatus !== 'valid' &&
     !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedBusinessRoleFallback(customFields, prefix) &&
     !hasAcceptedProviderValidationFallback(customFields)
   ) {
     blockers.push('generic_inbox_requires_email_validation')
+  }
+
+  if (
+    isPersonLikeMailboxPrefix(prefix) &&
+    verificationStatus !== 'valid' &&
+    !hasExactPublicEmailEvidence(customFields.email_evidence) &&
+    !hasAcceptedProviderValidationFallback(customFields)
+  ) {
+    blockers.push('person_like_email_requires_manual_review')
   }
 
   if (prospectNeedsExactPublicEmailEvidence(contact)) {

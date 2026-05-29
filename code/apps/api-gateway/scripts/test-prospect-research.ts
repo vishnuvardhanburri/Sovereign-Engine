@@ -222,6 +222,48 @@ assert.ok(
   unverifiedGenericInbox.blockers.includes('generic_inbox_requires_email_validation')
 )
 
+const publicSearchBusinessRoleInbox = scoreProspectForResearchApproval({
+  id: 60,
+  email: 'hello@realagency.com',
+  email_domain: 'realagency.com',
+  company: 'Real Agency',
+  company_domain: 'realagency.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'business_domain_role_pattern',
+    fit_score: 82,
+    public_evidence_url: 'https://realagency.com/',
+    reason_to_contact: 'Agency with public outbound infrastructure and demand generation signals.',
+  },
+})
+
+assert.equal(publicSearchBusinessRoleInbox.approved, true)
+assert.equal(publicSearchBusinessRoleInbox.blockers.length, 0)
+assert.deepEqual(
+  approvedContactQueueBlockers({
+    id: 60,
+    email: 'hello@realagency.com',
+    email_domain: 'realagency.com',
+    company: 'Real Agency',
+    company_domain: 'realagency.com',
+    source: 'public_search',
+    status: 'active',
+    verification_status: 'pending',
+    custom_fields: {
+      send_status: 'approved',
+      public_search: true,
+      email_evidence: 'business_domain_role_pattern',
+      fit_score: 82,
+      public_evidence_url: 'https://realagency.com/',
+    },
+  }),
+  []
+)
+
 const unverifiedSalesInbox = scoreProspectForResearchApproval({
   id: 61,
   email: 'sales@realagency.com',
