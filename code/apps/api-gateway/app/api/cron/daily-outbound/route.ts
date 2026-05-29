@@ -1984,6 +1984,12 @@ export async function GET(request: NextRequest) {
         process.env.DAILY_OUTBOUND_COMPACT_RESPONSE,
       false
     )
+    const queueOnly = envBool(
+      params.get('queueOnly') ||
+        params.get('queue_only') ||
+        process.env.DAILY_OUTBOUND_QUEUE_ONLY,
+      false
+    )
     const runHunterSearch = envBool(
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
       false
@@ -2016,43 +2022,44 @@ export async function GET(request: NextRequest) {
       })
       stages.push(preResearchQueueStage)
 
-      if (getNumericField(preResearchQueueStage.data, 'queued') > 0) {
+      if (getNumericField(preResearchQueueStage.data, 'queued') > 0 || queueOnly) {
         queuedBeforeResearch = true
+        const skipped = queueOnly ? 'queue_only_fast_path' : 'deferred_after_immediate_queue'
         stages.push({
           stage: 'public_search',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
         stages.push({
           stage: 'lead_scout',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
         stages.push({
           stage: 'maps_import',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
         stages.push({
           stage: 'sheet_import',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
         stages.push({
           stage: 'hunter_domain_search',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
         stages.push({
           stage: 'research_approval',
           ok: true,
           status: 204,
-          skipped: 'deferred_after_immediate_queue',
+          skipped,
         })
       }
     }
