@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { AlertTriangle, Bell, CheckCheck, Clock3, RadioTower, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCheck, Clock3, RadioTower, ShieldCheck, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -58,7 +59,19 @@ function alertTone(severity: EnterpriseAlertSeverity) {
   return 'border-sky-500/25 bg-sky-500/10 text-sky-200'
 }
 
+function alertRoute(alert: { source: string; severity: EnterpriseAlertSeverity }) {
+  const severity = alert.severity === 'critical' ? 'critical' : 'warning'
+  if (alert.source === 'reputation') return `/reputation?severity=${severity}`
+  if (alert.source === 'queue' || alert.source === 'worker' || alert.source === 'health') {
+    return `/activity?source=delivery&severity=${severity}`
+  }
+  if (alert.source === 'deployment') return `/activity?source=audit&severity=${severity}`
+  if (alert.source === 'security') return `/proof?severity=${severity}`
+  return `/activity?severity=${severity}`
+}
+
 export function NotificationCenter() {
+  const router = useRouter()
   const { alerts, upsertAlert, acknowledge, acknowledgeAll, resolve } = useEnterpriseAlerts()
   const notified = useRef(new Set<string>())
   const health = useQuery({ queryKey: ['enterprise-health-alerts'], queryFn: fetchHealth, refetchInterval: 4_000 })
@@ -138,13 +151,19 @@ export function NotificationCenter() {
       if (alert.state !== 'open' || alert.severity === 'info' || notified.current.has(alert.id)) continue
       notified.current.add(alert.id)
       const message = `${alert.title}: ${alert.detail}`
-      if (alert.severity === 'critical') toast.error(message)
-      else toast.warning(message)
+      const options = {
+        action: {
+          label: 'View',
+          onClick: () => router.push(alertRoute(alert)),
+        },
+      }
+      if (alert.severity === 'critical') toast.error(message, options)
+      else toast.warning(message, options)
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification(alert.title, { body: alert.detail })
       }
     }
-  }, [alerts])
+  }, [alerts, router])
 
   const openAlerts = useMemo(
     () => alerts.filter((alert) => alert.state === 'open').sort((a, b) => severityRank(b.severity) - severityRank(a.severity)),
@@ -202,9 +221,15 @@ export function NotificationCenter() {
                   </div>
                   <h3 className="text-sm font-semibold">{alert.title}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{alert.detail}</p>
-                  <Button size="sm" variant="secondary" className="mt-3 h-8" onClick={() => acknowledge(alert.id)}>
-                    Acknowledge
-                  </Button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" className="h-8" onClick={() => router.push(alertRoute(alert))}>
+                      <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                      View warning
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8" onClick={() => acknowledge(alert.id)}>
+                      Acknowledge
+                    </Button>
+                  </div>
                 </div>
               ))
             ) : (
@@ -218,7 +243,13 @@ export function NotificationCenter() {
         </ScrollArea>
         <DropdownMenuSeparator />
         <div className="flex items-center justify-between p-3 text-xs text-muted-foreground">
-          <span>Realtime + polling fallback active</span>
+          <button
+            type="button"
+            className="underline-offset-4 hover:underline"
+            onClick={() => router.push('/activity?severity=warning')}
+          >
+            Open warning history
+          </button>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={enableDesktopNotifications}>
             Enable desktop alerts
           </Button>

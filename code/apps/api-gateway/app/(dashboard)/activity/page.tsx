@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Database, History, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -67,16 +67,33 @@ async function fetchReplay(): Promise<ReplayResponse> {
 
 export default function ActivityReplayPage() {
   const [source, setSource] = useState<'all' | ReplayEvent['source']>('all')
+  const [severity, setSeverity] = useState<'all' | ReplayEvent['severity']>('all')
   const replay = useQuery({
     queryKey: ['activity-replay'],
     queryFn: fetchReplay,
     refetchInterval: 15_000,
   })
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sourceParam = params.get('source')
+    const severityParam = params.get('severity')
+    if (sourceParam === 'reputation' || sourceParam === 'delivery' || sourceParam === 'audit') {
+      setSource(sourceParam)
+    }
+    if (severityParam === 'info' || severityParam === 'warning' || severityParam === 'critical') {
+      setSeverity(severityParam)
+    }
+  }, [])
+
   const events = useMemo(() => {
     const rows = replay.data?.events ?? []
-    return source === 'all' ? rows : rows.filter((item) => item.source === source)
-  }, [replay.data?.events, source])
+    return rows.filter((item) => {
+      const sourceMatch = source === 'all' || item.source === source
+      const severityMatch = severity === 'all' || item.severity === severity
+      return sourceMatch && severityMatch
+    })
+  }, [replay.data?.events, severity, source])
 
   return (
     <div className="space-y-6">
@@ -126,6 +143,18 @@ export default function ActivityReplayPage() {
                   onClick={() => setSource(item)}
                 >
                   {item}
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'warning', 'critical', 'info'] as const).map((item) => (
+                <Button
+                  key={item}
+                  variant={severity === item ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setSeverity(item)}
+                >
+                  {item === 'all' ? 'all severity' : item}
                 </Button>
               ))}
             </div>
