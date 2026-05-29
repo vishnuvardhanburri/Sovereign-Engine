@@ -221,6 +221,7 @@ const BLOCKED_PUBLIC_EMAIL_PREFIXES = new Set([
   'copyright',
   'dmca',
   'dpo',
+  'feedback',
   'jobs',
   'legal',
   'no-reply',

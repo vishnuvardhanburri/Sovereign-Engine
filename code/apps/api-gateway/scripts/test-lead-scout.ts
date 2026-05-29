@@ -78,6 +78,21 @@ async function main() {
   assert.equal(mailtoVerified.emailEvidence, 'public_mailto_match')
   assert.equal(mailtoVerified.publicEvidenceUrl, 'https://example.com/contact-sales')
 
+  globalThis.fetch = async () =>
+    new Response('<html><a href="mailto:feedback@example.com">feedback</a></html>', {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    })
+
+  const [feedbackOnly] = await verifyOpenLeadEvidence([lead({ email: 'founder@example.com' })], {
+    deadlineMs: 500,
+    maxPagesPerLead: 2,
+    requestTimeoutMs: 100,
+  })
+
+  assert.equal(feedbackOnly.email, 'founder@example.com')
+  assert.notEqual(feedbackOnly.emailEvidence, 'public_mailto_match')
+  assert.notEqual(feedbackOnly.email, 'feedback@example.com')
+
   globalThis.fetch = (_url, init) =>
     new Promise((_resolve, reject) => {
       const signal = init?.signal

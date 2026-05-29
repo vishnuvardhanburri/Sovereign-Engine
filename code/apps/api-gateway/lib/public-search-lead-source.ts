@@ -73,9 +73,14 @@ const BLOCKED_HOSTS = new Set([
   'glassdoor.com',
   'google.com',
   'g2.com',
+  'coursera.org',
+  'edx.org',
   'epicgames.com',
+  'geeksforgeeks.org',
   'indeed.com',
   'instagram.com',
+  'investopedia.com',
+  'javatpoint.com',
   'linkedin.com',
   'medium.com',
   'producthunt.com',
@@ -83,9 +88,13 @@ const BLOCKED_HOSTS = new Set([
   'saasworthy.com',
   'steampowered.com',
   'techcrunch.com',
+  'tutorialspoint.com',
   'twitter.com',
+  'udemy.com',
   'wellfound.com',
   'wikily.gg',
+  'wikipedia.org',
+  'w3schools.com',
   'x.com',
   'xbox.com',
   'yelp.com',
@@ -93,7 +102,7 @@ const BLOCKED_HOSTS = new Set([
 ])
 
 const LOW_VALUE_PATH_RE =
-  /\b(?:blog|careers?|jobs?|news|press|privacy|terms|legal|pricing|docs?|developer-docs|support|help|login|signin|signup)\b/i
+  /\b(?:article|blog|careers?|certification|course|developer-docs|docs?|guide|help|intro|introduction|jobs?|learn|legal|login|news|press|pricing|privacy|resources?|signin|signup|support|terms|training|tutorial|what-is)\b/i
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
@@ -143,6 +152,19 @@ function companyFromTitle(title: string, domain: string): string {
     .split('.')[0]
     .replace(/[-_]+/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function isLowIntentSearchResult(result: SerpApiOrganicResult): boolean {
+  const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase()
+  const contentSignals =
+    /\b(?:article|blog|course|definition|explained|guide|how to|intro|introduction|learn|resources?|training|tutorial|types of|what is)\b/.test(
+      text
+    )
+  const commercialSignals =
+    /\b(?:agency|book a demo|clients|contact sales|enterprise|get in touch|managed service|mssp|platform|revops|sales team|services|software|solution|whitepaper)\b/.test(
+      text
+    )
+  return contentSignals && !commercialSignals
 }
 
 function normalizeDomainFromUrl(rawUrl: string): string | null {
@@ -213,7 +235,7 @@ function scoreResult(result: SerpApiOrganicResult, industry: string): number {
   if (/\b(ai governance|cybersecurity|security operations|infrastructure|observability|compliance|enterprise)\b/i.test(text)) score += 12
   if (/\b(contact sales|book a demo|get in touch|sales team)\b/i.test(text)) score += 8
   if (/\b(blog|news|podcast|article|job|career)\b/i.test(text)) score -= 10
-  if (/\b(what is|complete guide|best practices|ultimate guide|resources|learn|definition)\b/i.test(text)) score -= 28
+  if (/\b(what is|complete guide|best practices|ultimate guide|resources|learn|definition|introduction|tutorial|course|training|types of|explained)\b/i.test(text)) score -= 36
   return Math.max(0, Math.min(score, 98))
 }
 
@@ -476,6 +498,10 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
         const link = String(result.link || '').trim()
         const domain = normalizeDomainFromUrl(link)
         if (!domain || byDomain.has(domain)) {
+          rejected += 1
+          continue
+        }
+        if (isLowIntentSearchResult(result)) {
           rejected += 1
           continue
         }

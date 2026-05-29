@@ -116,6 +116,23 @@ const genericInboxBody = renderSovereignTemplate(
 assert(genericInboxBody.startsWith('Hi there,'), 'generic inboxes should not render as names')
 assert(!genericInboxBody.includes('Hi hello,'), 'generic inbox local parts should be suppressed')
 
+const contentPageLead = {
+  first_name: 'feedback',
+  company: 'Introduction to Cyber Security',
+  companyDomain: 'geeksforgeeks.org',
+  reason_to_contact:
+    'Public search result matched cybersecurity target profile: Apr 28, 2026 &nbsp;· There are seven types of cybersecurity, each explained below in detail.',
+}
+const contentPageBody = renderSovereignTemplate(
+  sovereignBodyForLead(contentPageLead),
+  contentPageLead,
+  'Xavira Tech Labs, India'
+)
+assert(contentPageBody.startsWith('Hi there,'), 'feedback inboxes should not render as names')
+assert(!contentPageBody.includes('Introduction to Cyber Security'), 'content page titles should not be treated as companies')
+assert(!contentPageBody.includes('There are seven types'), 'article snippets should not leak into outreach copy')
+assert(contentPageBody.includes('Geeksforgeeks'), 'content-page fallbacks should use the domain brand')
+
 const agencyBody = renderSovereignTemplate(
   sovereignBodyForLead(agencyLead),
   agencyLead,

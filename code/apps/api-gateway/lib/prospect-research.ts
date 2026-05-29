@@ -87,6 +87,7 @@ const BLOCKED_MAILBOX_PREFIXES = new Set([
   'customerservice',
   'dmca',
   'donotreply',
+  'feedback',
   'finance',
   'fraud',
   'help',

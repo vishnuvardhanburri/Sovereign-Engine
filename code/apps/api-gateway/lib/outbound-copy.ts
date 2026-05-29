@@ -352,6 +352,7 @@ function safeGreetingName(value: string | null | undefined): string {
     'admin',
     'business',
     'contact',
+    'feedback',
     'hello',
     'hi',
     'info',
@@ -373,13 +374,44 @@ function safeGreetingName(value: string | null | undefined): string {
   return name
 }
 
+function companyFromDomain(domain: string): string {
+  const base = String(domain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('.')[0]
+    .replace(/[-_]+/g, ' ')
+    .trim()
+
+  return base
+    ? base.replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : 'your team'
+}
+
+function looksLikeContentTitle(value: string): boolean {
+  const text = value.toLowerCase()
+  return /\b(?:introduction|intro|guide|tutorial|course|training|learn|what is|types of|explained|best practices|resources?|definition|article|blog|news)\b/.test(
+    text
+  )
+}
+
+function safeCompanyName(lead: SovereignCopyLead): string {
+  const rawCompany = String(lead.company || '').trim()
+  const domain = String(lead.companyDomain || '').trim()
+  if (rawCompany && !looksLikeContentTitle(rawCompany)) return rawCompany
+  if (domain) return companyFromDomain(domain)
+  return rawCompany || 'your team'
+}
+
 export function renderSovereignTemplate(
   template: string,
   lead: SovereignCopyLead,
   physicalAddress: string
 ): string {
   const firstName = safeGreetingName(lead.first_name || lead.firstName)
-  const company = lead.company || lead.companyDomain || 'your team'
+  const company = safeCompanyName(lead)
   const reason =
     lead.reason_to_contact ||
     lead.reasonToContact ||
@@ -412,6 +444,9 @@ function escapeRegExp(value: string): string {
 
 function humanizeReasonForPainLine(reason: string, company: string): string {
   const withoutCompany = reason
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s*·\s*/g, ' ')
+    .replace(/^public search result matched .*? target profile:\s*/i, '')
     .replace(new RegExp(`^${escapeRegExp(company)}\\s+`, 'i'), '')
     .replace(/^.*because it shows public signals around\s+/i, '')
     .replace(/^.*because\s+/i, '')
@@ -419,6 +454,7 @@ function humanizeReasonForPainLine(reason: string, company: string): string {
     .trim()
     .replace(/[.?!]*$/, '')
 
+  if (looksLikeContentTitle(withoutCompany)) return `${company} is active around a relevant business category`
   if (!withoutCompany) return `${company} is active around outbound or growth`
   if (/^(appears|looks|seems|runs|serves|works|offers|has|is)\b/i.test(withoutCompany)) {
     return `${company} ${withoutCompany}`
@@ -428,7 +464,7 @@ function humanizeReasonForPainLine(reason: string, company: string): string {
 }
 
 export function buildSovereignPainLine(lead: SovereignCopyLead): string {
-  const company = lead.company || lead.companyDomain || 'your team'
+  const company = safeCompanyName(lead)
   const reason =
     lead.reason_to_contact ||
     lead.reasonToContact ||

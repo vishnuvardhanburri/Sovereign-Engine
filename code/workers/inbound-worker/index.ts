@@ -271,6 +271,8 @@ const IMAP_PORT = Number(process.env.IMAP_PORT ?? 993)
 const IMAP_SECURE = process.env.IMAP_SECURE !== 'false'
 const IMAP_POLL_INTERVAL = Number(process.env.IMAP_POLL_INTERVAL ?? 30_000)
 const IMAP_DSN_LOOKBACK_HOURS = Math.max(0, Number(process.env.IMAP_DSN_LOOKBACK_HOURS ?? 72) || 0)
+const IMAP_REPLY_LOOKBACK_HOURS = Math.max(0, Number(process.env.IMAP_REPLY_LOOKBACK_HOURS ?? 24) || 0)
+const INBOUND_REQUIRE_OUTBOUND_MATCH = process.env.INBOUND_REQUIRE_OUTBOUND_MATCH !== 'false'
 
 const IMAP_ACCOUNTS: ImapAccount[] = readJsonArray('IMAP_ACCOUNTS')
   .map((x) => ({ user: String(x?.user ?? ''), pass: String(x?.pass ?? '') }))
@@ -301,6 +303,17 @@ async function claimInboundMessage(messageId: string) {
   // Atomic: set only if not already processed.
   const ok = await redis.set(key, '1', 'EX', 60 * 60 * 24 * 7, 'NX')
   return ok === 'OK'
+}
+
+async function inboundMessageSeen(messageId: string) {
+  if (!messageId) return true
+  const [processed, ignored] = await redis.mget(`xv:inbound:processed:${messageId}`, `xv:inbound:ignored:${messageId}`)
+  return Boolean(processed || ignored)
+}
+
+async function ignoreInboundMessage(messageId: string) {
+  if (!messageId) return
+  await redis.set(`xv:inbound:ignored:${messageId}`, '1', 'EX', 60 * 60 * 24 * 2)
 }
 
 type MatchContext = {
@@ -343,27 +356,6 @@ async function matchReplyToContext(input: {
     if (res.rows[0]) return res.rows[0]
   }
 
-  const subj = normalizeSubject(input.subject ?? '')
-  if (subj) {
-    const res = await db<MatchContext>(
-      `SELECT client_id AS "clientId",
-              campaign_id AS "campaignId",
-              queue_job_id AS "queueJobId",
-              contact_id AS "contactId",
-              identity_id AS "identityId",
-              domain_id AS "domainId"
-       FROM events
-       WHERE event_type = 'sent'
-         AND COALESCE(metadata->>'subject','') <> ''
-         AND LOWER(REGEXP_REPLACE(COALESCE(metadata->>'subject',''), '^(re|fw|fwd)\\s*:\\s*', '', 'gi')) = $1
-         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [subj]
-    )
-    if (res.rows[0]) return res.rows[0]
-  }
-
   const fromEmail = normalizeEmail(input.fromEmail)
   if (fromEmail) {
     // Fallback: match by recipient email of our sent logs (i.e. their address).
@@ -381,6 +373,29 @@ async function matchReplyToContext(input: {
        ORDER BY created_at DESC
        LIMIT 1`,
       [fromEmail]
+    )
+    if (res.rows[0]) return res.rows[0]
+  }
+
+  const subj = normalizeSubject(input.subject ?? '')
+  const fromDomain = emailDomainPart(fromEmail)
+  if (subj && fromDomain) {
+    const res = await db<MatchContext>(
+      `SELECT client_id AS "clientId",
+              campaign_id AS "campaignId",
+              queue_job_id AS "queueJobId",
+              contact_id AS "contactId",
+              identity_id AS "identityId",
+              domain_id AS "domainId"
+       FROM events
+       WHERE event_type = 'sent'
+         AND COALESCE(metadata->>'subject','') <> ''
+         AND LOWER(REGEXP_REPLACE(COALESCE(metadata->>'subject',''), '^(re|fw|fwd)\\s*:\\s*', '', 'gi')) = $1
+         AND SPLIT_PART(LOWER(COALESCE(metadata->>'to_email','')), '@', 2) = $2
+         AND created_at > (CURRENT_TIMESTAMP - INTERVAL '30 days')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [subj, fromDomain]
     )
     if (res.rows[0]) return res.rows[0]
   }
@@ -535,9 +550,18 @@ async function processAccount(account: ImapAccount) {
             })
             .catch(() => [])
         : []
+    const recentReplyRaw =
+      IMAP_REPLY_LOOKBACK_HOURS > 0
+        ? await client
+            .search({
+              since: new Date(Date.now() - IMAP_REPLY_LOOKBACK_HOURS * 60 * 60 * 1_000),
+            })
+            .catch(() => [])
+        : []
     const recentDsnCandidates = Array.isArray(recentDsnRaw) ? recentDsnRaw : []
+    const recentReplyCandidates = Array.isArray(recentReplyRaw) ? recentReplyRaw : []
     const unseenSet = new Set(unseen)
-    const candidateUids = Array.from(new Set([...unseen, ...recentDsnCandidates]))
+    const candidateUids = Array.from(new Set([...unseen, ...recentDsnCandidates, ...recentReplyCandidates]))
     if (!candidateUids.length) return
 
     // Process oldest-first so we keep threading consistent.
@@ -555,6 +579,9 @@ async function processAccount(account: ImapAccount) {
         await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
         continue
       }
+      if (await inboundMessageSeen(messageId)) {
+        continue
+      }
 
       const fromEmail = normalizeEmail(parsed.from?.value?.[0]?.address ?? '')
       const toEmail = normalizeEmail(parsed.to?.value?.[0]?.address ?? account.user)
@@ -562,25 +589,20 @@ async function processAccount(account: ImapAccount) {
       const body = String(parsed.text ?? parsed.html ?? '').trim()
       const isDsn = isDeliverabilityNotice({ fromEmail, subject, body })
 
-      // Recent read messages are only re-scanned for delivery failures; normal
-      // reply ingestion remains unread-first to avoid importing unrelated mail.
-      if (!wasUnseen && !isDsn) {
-        continue
-      }
-
-      const claimed = await claimInboundMessage(messageId)
-      if (!claimed) {
-        if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
-        continue
-      }
-
       // Skip our own outbound messages / system emails.
       if (OUR_ADDRESSES.has(fromEmail)) {
+        await ignoreInboundMessage(messageId)
         if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
         continue
       }
 
       if (isDsn) {
+        const claimed = await claimInboundMessage(messageId)
+        if (!claimed) {
+          if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+          continue
+        }
+
         const reason = classifyDsnReason(body)
         const failedRecipients = extractFailedRecipients(body)
 
@@ -623,6 +645,22 @@ async function processAccount(account: ImapAccount) {
         fromEmail,
         toEmail,
       })
+
+      if (!ctx && INBOUND_REQUIRE_OUTBOUND_MATCH) {
+        await ignoreInboundMessage(messageId)
+        console.log('[inbound-worker] inbound skipped; no outbound match', {
+          fromEmail,
+          subject,
+          wasUnseen,
+        })
+        continue
+      }
+
+      const claimed = await claimInboundMessage(messageId)
+      if (!claimed) {
+        if (wasUnseen) await client.messageFlagsAdd(uid, ['\\Seen']).catch(() => {})
+        continue
+      }
 
       const clientId = ctx?.clientId ?? 1
 
