@@ -1600,6 +1600,63 @@ async function repairTerminalQueuedContacts(clientId: number): Promise<number> {
   return Number(result.rows[0]?.repaired ?? 0)
 }
 
+async function repairOrphanedQueuedContacts(clientId: number, queue: Queue): Promise<number> {
+  const queuedContacts = await query<{ id: string }>(
+    `SELECT c.id::text
+     FROM contacts c
+     WHERE c.client_id = $1
+       AND c.status = 'active'
+       AND c.bounced_at IS NULL
+       AND c.unsubscribed_at IS NULL
+       AND COALESCE(c.custom_fields->>'send_status', '') = 'queued'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM events e
+         WHERE e.client_id = c.client_id
+           AND e.contact_id = c.id
+           AND e.event_type IN ('sent', 'failed', 'bounce', 'bounced')
+       )
+     ORDER BY c.updated_at ASC
+     LIMIT 1000`,
+    [clientId]
+  )
+
+  if (queuedContacts.rows.length === 0) return 0
+
+  const liveJobs = await queue.getJobs(['waiting', 'active', 'delayed'], 0, 5000, true)
+  const liveContactIds = new Set(
+    liveJobs
+      .map((job) => Number(job.data?.contactId))
+      .filter((id) => Number.isSafeInteger(id))
+  )
+
+  const orphanedIds = queuedContacts.rows
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isSafeInteger(id) && !liveContactIds.has(id))
+
+  if (orphanedIds.length === 0) return 0
+
+  const result = await query<{ repaired: string }>(
+    `WITH repaired AS (
+       UPDATE contacts c
+       SET custom_fields = COALESCE(c.custom_fields, '{}'::jsonb)
+         || jsonb_build_object(
+           'send_status', 'approved',
+           'queue_orphan_repaired_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+         ),
+         updated_at = CURRENT_TIMESTAMP
+       WHERE c.client_id = $1
+         AND c.id = ANY($2::bigint[])
+       RETURNING c.id
+     )
+     SELECT COUNT(*)::text AS repaired
+     FROM repaired`,
+    [clientId, orphanedIds]
+  )
+
+  return Number(result.rows[0]?.repaired ?? 0)
+}
+
 async function runQueue(input: {
   clientId: number
   sendLimit: number
@@ -1608,9 +1665,11 @@ async function runQueue(input: {
 }): Promise<StageResult> {
   let queue: Queue | null = null
   try {
-    const repairedQueuedContacts = await repairTerminalQueuedContacts(input.clientId)
-    const leads = await loadApprovedContacts(input.clientId, input.sendLimit)
     const queueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
+    queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
+    const repairedQueuedContacts = await repairTerminalQueuedContacts(input.clientId)
+    const repairedOrphanedQueuedContacts = await repairOrphanedQueuedContacts(input.clientId, queue)
+    const leads = await loadApprovedContacts(input.clientId, input.sendLimit)
 
     if (leads.length === 0) {
       if (input.notifySkipped !== false) {
@@ -1630,6 +1689,7 @@ async function runQueue(input: {
           source: 'daily_approved_contacts_only',
           skipped: 'no_verified_approved_leads',
           repairedQueuedContacts,
+          repairedOrphanedQueuedContacts,
           phase: input.phase || 'after_research',
         },
       }
@@ -1638,7 +1698,6 @@ async function runQueue(input: {
     const physicalAddress = process.env.SENDER_PHYSICAL_ADDRESS || 'Xavira Tech Labs, India'
     const allowCopyOverride = envBool(process.env.OUTBOUND_CRON_ALLOW_COPY_OVERRIDE, false)
     const today = new Date().toISOString().slice(0, 10)
-    queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
 
     const jobs = await Promise.all(leads.map(async (lead) => {
       const copy = await buildSovereignCopyForLead(lead, {
@@ -1733,6 +1792,7 @@ async function runQueue(input: {
         firstJobId: added[0]?.id ?? null,
         lastJobId: added.at(-1)?.id ?? null,
         repairedQueuedContacts,
+        repairedOrphanedQueuedContacts,
         phase: input.phase || 'after_research',
       },
     }
