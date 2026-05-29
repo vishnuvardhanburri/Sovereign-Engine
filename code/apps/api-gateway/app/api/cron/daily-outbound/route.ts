@@ -1552,12 +1552,56 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
   return balanceSovereignOfferMix(leads, limit)
 }
 
+async function repairTerminalQueuedContacts(clientId: number): Promise<number> {
+  const result = await query<{ repaired: string }>(
+    `WITH latest_terminal_events AS (
+       SELECT DISTINCT ON (e.contact_id)
+         e.contact_id,
+         e.event_type,
+         e.created_at
+       FROM events e
+       JOIN contacts c
+         ON c.client_id = e.client_id
+        AND c.id = e.contact_id
+       WHERE e.client_id = $1
+         AND e.contact_id IS NOT NULL
+         AND COALESCE(c.custom_fields->>'send_status', '') = 'queued'
+         AND e.event_type IN ('sent', 'failed', 'bounce', 'bounced')
+       ORDER BY e.contact_id, e.created_at DESC
+     ),
+     repaired AS (
+       UPDATE contacts c
+       SET custom_fields = COALESCE(c.custom_fields, '{}'::jsonb)
+         || jsonb_build_object(
+           'send_status',
+           CASE
+             WHEN l.event_type = 'sent' THEN 'sent'
+             WHEN l.event_type IN ('bounce', 'bounced') THEN 'bounced'
+             ELSE 'failed'
+           END,
+           'terminal_event_type', l.event_type,
+           'terminal_event_at', to_char(l.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+         ),
+         updated_at = CURRENT_TIMESTAMP
+       FROM latest_terminal_events l
+       WHERE c.client_id = $1
+         AND c.id = l.contact_id
+       RETURNING c.id
+     )
+     SELECT COUNT(*)::text AS repaired
+     FROM repaired`,
+    [clientId]
+  )
+  return Number(result.rows[0]?.repaired ?? 0)
+}
+
 async function runQueue(input: {
   clientId: number
   sendLimit: number
 }): Promise<StageResult> {
   let queue: Queue | null = null
   try {
+    const repairedQueuedContacts = await repairTerminalQueuedContacts(input.clientId)
     const leads = await loadApprovedContacts(input.clientId, input.sendLimit)
     const queueName = process.env.SEND_QUEUE ?? 'xv-send-queue'
 
@@ -1576,6 +1620,7 @@ async function runQueue(input: {
           queued: 0,
           source: 'daily_approved_contacts_only',
           skipped: 'no_verified_approved_leads',
+          repairedQueuedContacts,
         },
       }
     }
@@ -1677,6 +1722,7 @@ async function runQueue(input: {
         directQueued,
         firstJobId: added[0]?.id ?? null,
         lastJobId: added.at(-1)?.id ?? null,
+        repairedQueuedContacts,
       },
     }
   } catch (error) {

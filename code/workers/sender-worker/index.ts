@@ -880,6 +880,34 @@ async function markLegacyCompleted(clientId: number, queueJobId: number) {
   }
 }
 
+async function markContactSendState(
+  job: SendJob,
+  status: 'sent' | 'failed' | 'bounced' | 'blocked' | 'skipped',
+  metadata: Record<string, unknown> = {}
+) {
+  if (!job.contactId) return
+  const payload = JSON.stringify({
+    send_status: status,
+    [`${status}_at`]: new Date().toISOString(),
+    ...metadata,
+  })
+
+  await db(
+    `UPDATE contacts
+     SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $3::jsonb,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE client_id = $1
+       AND id = $2`,
+    [job.clientId, job.contactId, payload]
+  ).catch((error) => {
+    console.warn('[sender-worker] contact send state update failed', {
+      contactId: job.contactId,
+      status,
+      error: sanitizeLogValue((error as any)?.message ?? String(error)),
+    })
+  })
+}
+
 function parseRetryLater(msg: string): { backoffMs: number } | null {
   if (!msg.startsWith('retry_later:')) return null
   if (msg.includes('db_capacity')) return { backoffMs: jitterMs(20_000, 0.75) }
@@ -1813,6 +1841,12 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           idempotency_key: idemKey,
         },
       })
+      await markContactSendState(job, 'blocked', {
+        blocked_reason: reason,
+        guardrail_blockers: recipientGuardrailBlockers,
+        to_email: normalizedTo,
+        subject: outboundSubject,
+      })
 
       if (job.queueJobId) {
         await db(
@@ -1921,6 +1955,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
       contactId: job.contactId ?? null,
       queueJobId: job.queueJobId ?? null,
       metadata: { reason: decision.reason, event_code: 'EMAIL_FAILED' },
+    })
+    await markContactSendState(job, 'blocked', {
+      blocked_reason: decision.reason,
+      decision_action: 'drop',
     })
     return
   }
@@ -2200,6 +2238,10 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           queueJobId: job.queueJobId ?? null,
           metadata: { event_code: 'EMAIL_FAILED', reason: 'duplicate_recent_window', to_email: normalizedTo, idempotency_key: idemKey },
         })
+        await markContactSendState(job, 'sent', {
+          terminal_reason: 'duplicate_recent_window',
+          to_email: normalizedTo,
+        })
         return
       }
     }
@@ -2450,6 +2492,16 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
         adaptive_experiment: expGroup,
       },
     })
+    await markContactSendState(job, 'sent', {
+      provider_message_id: messageId ?? null,
+      to_email: normalizedTo,
+      from_email: fromAddress,
+      subject: outboundSubject,
+      provider: sendingProviderForRun || recipientProvider,
+      recipient_provider: recipientProvider,
+      offer_type: job.offerType ?? null,
+      deal_value_usd: job.dealValueUsd ?? null,
+    })
 
     if (job.queueJobId) {
       await db(
@@ -2526,6 +2578,12 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           adaptive_experiment: expGroup,
         },
       }).catch(() => {})
+      await markContactSendState(job, smtpClass === 'bounce' ? 'bounced' : 'failed', {
+        failure_reason: 'dlq',
+        smtp_class: smtpClass,
+        smtp_response_code: responseCode ?? null,
+        error: String(sanitizeLogValue((err as any)?.message ?? String(err))),
+      })
 
       await redis.set(doneKey, '1', 'EX', 60 * 60 * 24 * 7)
       await redis.set(legacyDoneKey, '1', 'EX', 60 * 60 * 24 * 7)
@@ -2607,6 +2665,14 @@ async function runSend(job: SendJob, bull?: Pick<Job<SendJob>, 'id' | 'attemptsM
           adaptive_experiment: expGroup,
         },
       } as any).catch(() => {})
+      await markContactSendState(job, smtpClass === 'bounce' ? 'bounced' : 'failed', {
+        smtp_class: smtpClass,
+        smtp_response_code: responseCode ?? null,
+        error: String(sanitizeLogValue(msg)),
+        to_email: String(job.toEmail || '').trim().toLowerCase(),
+        subject: outboundSubject,
+        provider: sendingProviderForRun || 'unknown',
+      })
 
       if (job.queueJobId) {
         await db(
