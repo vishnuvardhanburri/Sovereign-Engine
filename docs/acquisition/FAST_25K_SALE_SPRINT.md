@@ -1,6 +1,6 @@
-# Fast $25K Sale Sprint
+# Fast £25K Enterprise License Sprint
 
-Goal: create the fastest ethical path to a $25K cash outcome using Sovereign Engine and Sovereign Shield.
+Goal: create the fastest ethical path to a £25,000 GBP internal enterprise license outcome using Sovereign Engine and Sovereign Shield.
 
 This is not a bulk-volume plan. It is a high-intent buyer sprint focused on serious agency owners, outbound infrastructure operators, cybersecurity founders, AI automation founders, and strategic software buyers.
 
@@ -8,7 +8,7 @@ This is not a bulk-volume plan. It is a high-intent buyer sprint focused on seri
 
 Use one of these three offers. Do not lead with all three at once.
 
-### Offer A: $25K Source-Code License
+### Offer A: £25,000 Internal Enterprise License
 
 Best for agencies and infrastructure companies.
 
@@ -22,13 +22,13 @@ Includes:
 - Local Docker deployment support
 - 2 onboarding calls
 - 14-day technical support window
-- Buyer can adapt under their own brand
+- Buyer can operate internally under Xavira Control Stack licensing terms
 
 Price:
 
-- $25,000 one-time
+- £25,000 GBP one-time
 
-### Offer B: $25K Managed Deployment Sprint
+### Offer B: £25,000 Managed Deployment Sprint
 
 Best for outbound agencies and SaaS teams.
 
@@ -47,16 +47,16 @@ Includes:
 
 Price:
 
-- $25,000 setup
+- £25,000 GBP setup
 - Optional monthly support after delivery
 
-### Offer C: $25K Acquisition Deposit
+### Offer C: Strategic Diligence Deposit
 
 Best for strategic buyers.
 
 Positioning:
 
-> If you are evaluating full acquisition, place a $25K refundable diligence deposit to lock the codebase, data room, and founder support while final terms are negotiated.
+> If you are evaluating full acquisition, place a refundable diligence deposit to lock the codebase, data room, and founder support while final terms are negotiated.
 
 Includes:
 
@@ -68,8 +68,8 @@ Includes:
 
 Price:
 
-- $25,000 deposit
-- Target full acquisition: $125K+
+- Deposit amount negotiated separately from product licensing
+- Product commercial baseline: £25,000 internal license or £100,000 white-label commercial license
 
 ## Buyer Targets
 

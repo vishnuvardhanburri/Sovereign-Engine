@@ -232,8 +232,8 @@ def roi_handoff(progress: float) -> Image.Image:
     text(draw, (64, 162), "Buyer-ready Docker stack, command center, health oracle, audit chain, and scale proof.", "#cbd5e1", "body")
     rounded(draw, (64, 250, 696, 790), fill=(3, 10, 25, 185), outline=(125, 211, 252, 60))
     text(draw, (100, 290), "Value Generated", "#f8fafc", "subhead")
-    text(draw, (100, 360), "$75,000/day", "#9dffbf", "mega")
-    text(draw, (100, 430), "100k inboxed model x $0.75 lead value", "#dbeafe", "body")
+    text(draw, (100, 360), "GBP license model", "#9dffbf", "mega")
+    text(draw, (100, 430), "£25,000 internal · £100,000 white-label", "#dbeafe", "body")
     for i, item in enumerate(["Provider-aware lane control", "SOC2-style audit trail", "RaaS health certificate API", "5-minute buyer demo setup"]):
         text(draw, (100, 510 + i * 54), f"+ {item}", "#d1fae5", "body_bold")
     rounded(draw, (744, 250, 1376, 790), fill=(3, 10, 25, 185), outline=(125, 211, 252, 60))

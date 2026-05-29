@@ -24,7 +24,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 
 const SAFE_DEFAULT_SEQUENCE = {
-  name: 'Xavira Control Stack $25k Direct Offer Sequence',
+  name: 'Xavira Control Stack £25,000 Internal License Sequence',
   steps: SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS,
 }
 

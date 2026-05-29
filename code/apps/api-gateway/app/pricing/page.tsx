@@ -1,63 +1,74 @@
 import { CheckCircle2, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
+import { XAVIRA_COMMERCIAL_MODEL } from '@/lib/commercial-model'
 
 const plans = [
   {
-    name: 'Private License',
-    price: '$25,000',
-    description: 'For agencies, SaaS teams, and growth operators that want a private outbound and AI security infrastructure layer.',
+    name: XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.name,
+    price: XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label,
+    description:
+      'For companies operating Xavira Control Stack inside their own organization as enterprise communication operations infrastructure.',
     features: [
-      'Internal Xavira Control Stack license',
-      'Outbound reputation command center',
-      'AI security and PII-risk positioning pack',
-      'Self-hosted or managed deployment path',
-      'Payment plan: $8k now, $8k in 30 days, $9k in 60 days',
+      'Sovereign Engine',
+      'Sovereign Shield',
+      'Autonomous Communication OS',
+      'Web Dashboard, Desktop Console, and Mobile Console',
+      'Deployment assistance',
+      'Internal operational usage rights',
+      'No reseller, white-label, or commercial redistribution rights',
     ],
   },
   {
-    name: 'White-label Commercial License',
-    price: '$75,000-$100,000+',
-    description: 'For agencies that want to white-label Xavira Control Stack as a premium client infrastructure offer.',
+    name: XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.name,
+    price: XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label,
+    description:
+      'For agencies, consultancies, MSSPs, and operators that want commercial deployment rights across their own client base.',
     features: [
-      'White-label, reseller, and commercial deployment rights',
-      'Multi-client deployment rights under one commercial license',
-      'Outbound infrastructure plus AI-risk audit offer',
-      'Agency sales scripts and client onboarding templates',
-      'Built to recover cost across 5-8 client deployments',
+      'White-label rights',
+      'Reseller rights',
+      'Commercial deployment rights',
+      'Multi-client operations',
+      'Branding customization rights',
+      'Commercial usage rights',
+      'Infrastructure deployment assistance',
     ],
     featured: true,
   },
   {
-    name: 'Strategic Acquisition',
-    price: 'Contact Sales',
-    description: 'For buyers evaluating the full asset, private repo, deployment system, and acquisition-grade data room.',
+    name: XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.name,
+    price: XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label,
+    description:
+      'Ongoing operations support for licensed deployments that need updates, monitoring assistance, and governance guidance.',
     features: [
-      'Full source-code review and technical diligence pack',
-      'Architecture, queue, worker, and audit-chain proof',
-      'Buyer data room and deployment runbook',
-      'Custom transition and founder handoff',
-      'Strategic discussions for $125k+ acquisition paths',
+      'Technical support',
+      'Platform updates',
+      'Infrastructure guidance',
+      'Operational assistance',
+      'Monitoring support',
+      'Governance support',
+      'Billed monthly in GBP',
     ],
   },
 ]
 
 const platformIncludes = [
-  'Command center for provider lanes, queue state, worker heartbeat, and reputation events.',
-  'AI security positioning for teams worried about PII exposure, model usage, and audit trails.',
-  'Postgres, Redis/BullMQ, sender-worker, reputation-worker, audit trail, and health oracle.',
-  'Safe evaluation mode with 10,000-event mock proof and no external email traffic.',
-  'Production gate that blocks real sending until required operator inputs are configured.',
+  'Enterprise Communication Operations Platform combining Sovereign Engine and Sovereign Shield.',
+  'Communication governance infrastructure for outbound reliability, AI governance, and audit evidence.',
+  'Operational intelligence dashboards for delivery proof, queue state, worker health, and risk visibility.',
+  'Provider-aware orchestration and internal control surfaces for web, desktop, and mobile operations.',
+  'Deployment assistance for operator-owned domains, secrets, DNS, suppression policy, and production controls.',
 ]
 
 const operatorConnects = [
   'Operator-owned sending domains, DNS records, legal sender identity, and HTTPS host.',
   'SMTP/ESP credentials, API keys, production secrets, and provider quotas.',
-  'Consent-aware contact source, suppression list, unsubscribe policy, and compliance process.',
-  'Warmup/reputation policy appropriate for the operator’s own domains and sending history.',
+  'Consent-aware contact sources, suppression list, unsubscribe policy, and compliance process.',
+  'Warmup/reputation policy appropriate for the operator’s domains and sending history.',
 ]
 
 export const metadata = {
   title: 'Pricing | Xavira Control Stack',
-  description: 'Pricing for Xavira Control Stack, outbound operations and AI governance infrastructure.',
+  description:
+    'Final GBP licensing for Xavira Control Stack: enterprise communication operations and AI governance infrastructure.',
 }
 
 export default function PricingPage() {
@@ -66,25 +77,31 @@ export default function PricingPage() {
       <section className="mx-auto max-w-6xl px-6 py-16">
         <div className="max-w-3xl">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-200">
-            <ShieldCheck size={16} /> Outbound + AI Security Infrastructure
+            <ShieldCheck size={16} /> Enterprise Communication Operations Platform
           </div>
           <h1 className="text-4xl font-black tracking-tight md:text-6xl">
-            Xavira Control Stack protects outbound revenue and AI usage in one license.
+            Xavira Control Stack is licensed as enterprise infrastructure.
           </h1>
           <p className="mt-5 text-lg leading-8 text-slate-300">
-            Stop burning domains, reduce deliverability surprises, and give teams a private
-            infrastructure layer for outbound operations, AI-risk reviews, audit trails, and
-            deployment control.
+            Sovereign Engine and Sovereign Shield combine into a communication governance,
+            operational intelligence, and infrastructure control system for teams that need
+            trust, auditability, and deployment control.
+          </p>
+          <p className="mt-4 text-sm font-semibold uppercase tracking-[0.22em] text-cyan-200">
+            All invoices are issued in GBP. Global buyers pay the GBP equivalent.
           </p>
         </div>
+
         <div className="mt-12 grid gap-5 md:grid-cols-3">
           {plans.map((plan) => (
             <div
               key={plan.name}
-              className={`rounded-2xl border p-7 ${plan.featured ? 'border-cyan-300 bg-cyan-400/10' : 'border-white/10 bg-white/[0.03]'}`}
+              className={`rounded-2xl border p-7 ${
+                plan.featured ? 'border-cyan-300 bg-cyan-400/10' : 'border-white/10 bg-white/[0.03]'
+              }`}
             >
               <h2 className="text-2xl font-black">{plan.name}</h2>
-              <p className="mt-2 min-h-14 text-sm text-slate-400">{plan.description}</p>
+              <p className="mt-2 min-h-20 text-sm text-slate-400">{plan.description}</p>
               <div className="mt-7 text-4xl font-black text-cyan-200">{plan.price}</div>
               <ul className="mt-7 space-y-3 text-sm text-slate-200">
                 {plan.features.map((feature) => (
@@ -97,16 +114,17 @@ export default function PricingPage() {
             </div>
           ))}
         </div>
+
         <p className="mt-8 text-sm text-slate-500">
-          Pricing reflects an enterprise infrastructure layer, not commodity email volume.
-          Production sending depends on operator-owned domains, ESP quotas, DNS, compliance
-          policy, and warmup strategy. No revenue claims are implied.
+          Pricing reflects infrastructure licensing, operational tooling, deployment support,
+          governance controls, and commercial rights. Xavira Control Stack is not sold as bulk
+          email software, a cold email tool, or a lead-generation platform.
         </p>
 
         <div className="mt-12 grid gap-5 md:grid-cols-2">
           <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-6">
             <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-emerald-200">
-              <ShieldCheck size={16} /> Included in Xavira Control Stack
+              <ShieldCheck size={16} /> Included Infrastructure
             </div>
             <ul className="mt-5 space-y-3 text-sm text-slate-200">
               {platformIncludes.map((item) => (

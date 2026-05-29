@@ -5,6 +5,7 @@ import {
   sovereignDealValueUsd,
   type SovereignCopyLead,
 } from '@/lib/outbound-copy'
+import { commercialDealLabel } from '@/lib/commercial-model'
 
 type PreviewLead = SovereignCopyLead & {
   label: string
@@ -12,7 +13,7 @@ type PreviewLead = SovereignCopyLead & {
 
 const sampleLeads: PreviewLead[] = [
   {
-    label: '$25k direct license',
+    label: '£25,000 internal enterprise license',
     first_name: 'there',
     company: 'GrowthOps AI',
     companyDomain: 'growthops.ai',
@@ -26,7 +27,7 @@ const sampleLeads: PreviewLead[] = [
     },
   },
   {
-    label: '$100k agency master license',
+    label: '£100,000 white-label commercial license',
     first_name: 'there',
     company: 'Northstar RevOps',
     companyDomain: 'northstarrevops.com',
@@ -64,6 +65,8 @@ export async function GET(request: NextRequest) {
           label: lead.label,
           offerType,
           dealValueUsd: sovereignDealValueUsd(lead),
+          dealValueGbp: sovereignDealValueUsd(lead),
+          dealValueLabel: commercialDealLabel(offerType),
           company: lead.company,
           subject: rendered.subject,
           text: rendered.text,

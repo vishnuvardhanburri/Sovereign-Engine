@@ -1,6 +1,10 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
 import { appEnv } from '@/lib/env'
 import { buildSalesBrainContext } from '@/lib/sales-brain'
+import {
+  XAVIRA_COMMERCIAL_MODEL,
+  commercialDealValueGbp,
+} from '@/lib/commercial-model'
 
 export type SovereignOfferType = 'direct' | 'agency'
 
@@ -106,8 +110,10 @@ function numericFitScore(input: SovereignCopyLead): number {
 }
 
 export function sovereignDealValueUsd(input: SovereignCopyLead): number {
-  return inferSovereignOfferType(input) === 'agency' ? 100000 : 25000
+  return commercialDealValueGbp(inferSovereignOfferType(input))
 }
+
+export const sovereignDealValueGbp = sovereignDealValueUsd
 
 export function rankSovereignLeads<T extends SovereignCopyLead>(leads: T[]): T[] {
   return [...leads].sort((a, b) => {
@@ -214,11 +220,11 @@ We are opening a limited number of white-label commercial licensing conversation
 * commercial deployment rights
 * branding customization
 * multi-client deployment support
-* optional $3k-$10k/month maintenance and operations support
+* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP operations and maintenance support
 
 The reason to buy: it gives agencies and operators a premium infrastructure product to deploy for clients, not just another outbound service line.
 
-Commercial licensing typically starts at $75,000+ when white-label and reseller rights are included.
+Commercial licensing is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP when white-label and reseller rights are included.
 
 Would be open to a short conversation if this aligns with {{Company}}'s roadmap?
 
@@ -583,7 +589,7 @@ export async function buildSovereignCopyForLead(
       offerType === 'agency'
         ? {
             name: 'Xavira Control Stack White-Label Commercial License',
-            price: '$75k-$100k+',
+            price: `${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP`,
             positioning:
               'white-label outbound operations and private AI governance infrastructure for agencies, RevOps firms, MSSPs, and consultancies',
             bullets: [
@@ -594,7 +600,7 @@ export async function buildSovereignCopyForLead(
           }
         : {
             name: 'Xavira Control Stack Internal Enterprise License',
-            price: '$25,000',
+            price: `${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP`,
             positioning:
               'owned outbound operations control plane plus private AI governance layer',
             bullets: [

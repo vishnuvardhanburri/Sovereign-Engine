@@ -50,7 +50,7 @@ const leadListCsv = `company,website,buyer_name,buyer_role,buyer_email,linkedin,
 ,,,,,,strategic_infra_buyer,200000,,not_contacted,send_acquisition_message,,
 `
 
-const fast25kMessage = `# $25K Fast-Close Messages
+const fast25kMessage = `# £25,000 Internal Enterprise License Messages
 
 ## Subject Options
 
@@ -68,7 +68,7 @@ I built Sovereign Engine + Sovereign Shield: a private outbound revenue infrastr
 
 It is not positioned as another email tool. It is an internal infrastructure system for teams that care about deliverability, monitoring, safe scaling, and operator control.
 
-We are opening two fast $25K private license/deployment slots while continuing larger acquisition conversations.
+We are opening two fast £25,000 GBP Internal Enterprise License deployment slots while continuing larger strategic conversations.
 
 Would it make sense to show you the 5-minute local proof walkthrough?
 

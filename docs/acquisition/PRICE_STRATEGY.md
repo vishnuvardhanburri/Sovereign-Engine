@@ -1,22 +1,20 @@
-# Price Strategy
+# Commercial Price Strategy
 
-## Listing Range
+## Final Product Licensing
 
-List at $125K if the marketplace needs a clean, credible anchor. Keep the private strategic range at $125K-$175K.
+All product licensing is denominated in GBP and standardized around the Xavira Control Stack model.
 
-Recommended public ask:
-
-```text
-$125,000
-```
-
-## Target Close
-
-Target close range:
+Final commercial model:
 
 ```text
-$100,000-$145,000
+Internal Enterprise License: £25,000 GBP
+White-Label Commercial License: £100,000 GBP
+Operations & Maintenance: £3,000 GBP/month
 ```
+
+## Acquisition Framing
+
+Acquisition conversations are separate from product licensing. Product pricing must remain consistent in buyer materials and procurement language.
 
 ## Strategic Framing
 
@@ -38,12 +36,12 @@ The buyer is paying for:
 - Rebuild cost: senior engineering time across Next.js, Postgres, Redis/BullMQ, workers, dashboards, deployment, and docs
 - Speed: buyer can validate in minutes with `pnpm launch:ready`
 - Category: outbound revenue protection infrastructure
-- Monetization path: Starter $1,499/mo, Growth $4,999/mo, Enterprise from $12,000/mo
+- Monetization path: £25,000 internal license, £100,000 white-label commercial license, £3,000/month operations and maintenance
 - Distribution fit: most valuable to a buyer with existing outbound SaaS, agency, or RevOps customers
 
 ## Floor Guidance
 
-Avoid going below $95K unless the buyer offers exceptional speed, clean transfer terms, or strategic upside.
+Do not discount published product licensing. Treat acquisition negotiation as separate from standard product rights.
 
 ## Close Script
 

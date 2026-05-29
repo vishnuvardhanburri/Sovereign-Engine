@@ -81,7 +81,7 @@ const dailyMessage = formatTelegramNotification({
   failures: 0,
 })
 
-assert.match(dailyMessage, /Pipeline value: \$425,000/)
-assert.match(dailyMessage, /Mix: 4 agency \/ 1 direct/)
+assert.match(dailyMessage, /Pipeline value: £425,000/)
+assert.match(dailyMessage, /Mix: 4 agency \(£100,000\) \/ 1 direct \(£25,000\)/)
 
 console.log('telegram notification tests passed')

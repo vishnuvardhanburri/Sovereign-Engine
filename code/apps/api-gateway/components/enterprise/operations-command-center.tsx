@@ -94,7 +94,7 @@ function numberFmt(value: number | undefined) {
 }
 
 function moneyFmt(value: number | undefined) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value ?? 0))
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(Number(value ?? 0))
 }
 
 function pct(value: number | undefined) {

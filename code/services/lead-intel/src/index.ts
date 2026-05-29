@@ -9,7 +9,7 @@ export type SignalFlags = {
   hiring_sdrs: boolean
   mentions_outbound: boolean
   agency_keyword: boolean
-  /** Signals pointing at SaaS / AI / security / devtools buyers (→ $25k direct offer) */
+  /** Signals pointing at SaaS / AI / security / devtools buyers (→ £25,000 internal offer) */
   saas_or_tech_keyword: boolean
 }
 
@@ -22,8 +22,8 @@ export type LeadIntelOutput = {
   reasons: string[]
   /**
    * Offer type routing hint:
-   *   'agency'  → $100k white-label / partner offer
-   *   'direct'  → $25k Sovereign Stack direct offer
+   *   'agency'  → £100,000 white-label commercial offer
+   *   'direct'  → £25,000 internal enterprise offer
    */
   offer_type_hint: 'agency' | 'direct'
 }
@@ -134,9 +134,9 @@ export function scoreLead(input: LeadIntelInput, flags: SignalFlags): { score: n
 
 /** Determine which Sovereign Stack offer to lead with for this prospect. */
 export function inferOfferType(flags: SignalFlags): 'agency' | 'direct' {
-  // Agencies, studios, marketing firms, and resellers → $100k white-label offer
+  // Agencies, studios, marketing firms, and resellers -> £100,000 white-label commercial offer
   if (flags.agency_keyword) return 'agency'
-  // Pure SaaS / tech / AI buyers → $25k Sovereign Stack direct seat
+  // Pure SaaS / tech / AI buyers -> £25,000 internal enterprise license
   return 'direct'
 }
 
@@ -177,4 +177,3 @@ export function enrichLead(input: LeadIntelInput): LeadIntelOutput {
     offer_type_hint,
   }
 }
-

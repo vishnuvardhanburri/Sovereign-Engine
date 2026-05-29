@@ -1,4 +1,5 @@
 import { appEnv } from '@/lib/env'
+import { XAVIRA_COMMERCIAL_MODEL, formatGbp } from '@/lib/commercial-model'
 import { sendTelegramMessage } from '@/lib/telegram'
 
 export type TelegramNotificationType =
@@ -307,10 +308,10 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       input.queue ? `📋 *Queue:* ${input.queue}` : null,
       input.limit ? `🎯 *Limit:* ${input.limit}` : null,
       input.estimatedPipelineValueUsd
-        ? `💰 *Pipeline Value:* *$${input.estimatedPipelineValueUsd.toLocaleString('en-US')}*`
+        ? `Pipeline Value: *${formatGbp(input.estimatedPipelineValueUsd)}*`
         : null,
       input.agencyQueued || input.directQueued
-        ? `⚖️ *Mix:* ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
+        ? `⚖️ *Mix:* ${input.agencyQueued ?? 0} agency (${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label}) / ${input.directQueued ?? 0} direct (${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label})`
         : null,
     ].filter(Boolean).join('\n')
   }
@@ -359,10 +360,10 @@ export function formatTelegramNotification(input: TelegramNotification, options?
         `💬 Replies: *${replies}* (${rr}% response rate)`,
         `📋 Queued this cycle: ${queuedThisCycle}   Queue now: ${queuedNow}`,
         agency || direct
-          ? `🎯 Mix: ${agency} agency ($100k) / ${direct} direct ($25k)`
+          ? `Mix: ${agency} agency (${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label}) / ${direct} direct (${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label})`
           : null,
         pipeline
-          ? `💰 Pipeline value: *$${pipeline.toLocaleString('en-US')}*`
+          ? `Pipeline value: *${formatGbp(pipeline)}*`
           : null,
         '━━━━━━━━━━━━━━━━━━━━━━━',
         `🔁 Follow-ups: ${fu_due} due / ${fu_pending} pending / ${fu_sent} sent today / ${fu_stopped} stopped`,
@@ -384,10 +385,10 @@ export function formatTelegramNotification(input: TelegramNotification, options?
       `Approved: ${input.approved ?? 0}`,
       `Queued: ${input.queued ?? 0}`,
       input.estimatedPipelineValueUsd
-        ? `Pipeline value: $${input.estimatedPipelineValueUsd.toLocaleString('en-US')}`
+        ? `Pipeline value: ${formatGbp(input.estimatedPipelineValueUsd)}`
         : null,
       input.agencyQueued || input.directQueued
-        ? `Mix: ${input.agencyQueued ?? 0} agency / ${input.directQueued ?? 0} direct`
+        ? `Mix: ${input.agencyQueued ?? 0} agency (${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label}) / ${input.directQueued ?? 0} direct (${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label})`
         : null,
       input.targetDailyVolume ? `Target/day: ${input.targetDailyVolume}` : null,
       input.primaryBlocker ? `Blocker: ${clip(input.primaryBlocker, 140)}` : null,

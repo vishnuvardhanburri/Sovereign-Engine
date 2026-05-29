@@ -1,4 +1,5 @@
 import type { SovereignOfferType, SovereignCopyLead } from './outbound-copy'
+import { XAVIRA_COMMERCIAL_MODEL } from './commercial-model'
 
 export const SOVEREIGN_SALES_BRAIN_VERSION = '2026-05-xavira-control-stack-v2'
 
@@ -26,7 +27,7 @@ const CORE_RULES = [
   'Write like a serious infrastructure operator: short sentences, specific business pain, calm confidence, no buzzword pileups, no AI-sounding filler.',
   'Preferred language: operational infrastructure, deliverability operations, provider-aware monitoring, infrastructure governance, realtime operational visibility, reputation monitoring, outbound reliability, AI governance systems, infrastructure intelligence.',
   'Avoid language that sounds like spam or hype: bulk email software, mass blasting, unlimited emails, growth hacks, AI spam system, send millions, scale instantly, buy today, limited time.',
-  'Preserve deal value: internal enterprise license is $25,000; white-label commercial license is $75,000-$100,000+; maintenance is $3,000-$10,000/month.',
+  `Preserve deal value: internal enterprise license is ${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP; white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP; operations and maintenance is ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP.`,
   'Use payment-plan language only as a conversion aid, never as the headline.',
   'Personalize from verified public evidence only; never invent a founder, campaign, revenue number, or private fact.',
   'Use social, LinkedIn, or competitor context only when it is present in the lead research payload; otherwise skip it.',
@@ -35,14 +36,14 @@ const CORE_RULES = [
 ]
 
 const DIRECT_RULES = [
-  'Direct offer: $25,000 internal enterprise license for Xavira Control Stack.',
+  `Direct offer: ${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP internal enterprise license for Xavira Control Stack.`,
   'Frame ROI as protecting outbound revenue, reducing failed follow-up waste, improving operator visibility, and lowering AI/compliance risk.',
   'Mention Sovereign Engine as the outbound operations control plane and Sovereign Shield as the private AI governance/security layer.',
   'Best CTA: 20-minute operational audit + deployment walkthrough.',
 ]
 
 const AGENCY_RULES = [
-  'Agency offer: $75,000-$100,000+ white-label commercial license.',
+  `Agency offer: ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP white-label commercial license.`,
   'Frame it as a premium infrastructure product agencies, RevOps firms, MSSPs, and consultancies can deploy for clients.',
   'Mention white-label rights, reseller rights, commercial deployment rights, branding customization, multi-client deployment rights, and Xavira maintenance.',
   'Best CTA: white-label demo and licensing-fit review.',
@@ -97,8 +98,8 @@ export function salesBrainBulletPoints(offerType: SovereignOfferType): string[] 
   return [
     'Pain-first opener tied to outbound revenue risk',
     offerType === 'agency'
-      ? '$75k-$100k+ white-label commercial-license value stack'
-      : '$25k direct Xavira Control Stack value stack',
+      ? `${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP white-label commercial-license value stack`
+      : `${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP direct Xavira Control Stack value stack`,
     'Low-friction audit/demo CTA with booking link',
     'Evidence-backed personalization only',
     'Compliance-safe opt-out and follow-up stop conditions',

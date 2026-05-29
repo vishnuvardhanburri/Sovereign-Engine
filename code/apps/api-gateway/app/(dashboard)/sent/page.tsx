@@ -65,6 +65,8 @@ type CopyPreviewItem = {
   label: string
   offerType: 'direct' | 'agency'
   dealValueUsd: number
+  dealValueGbp?: number
+  dealValueLabel?: string
   company: string
   subject: string
   text: string
@@ -92,8 +94,8 @@ function statusBadge(type: SentItem['type']) {
 function offerBadge(offerType: string | null) {
   if (!offerType) return null
   if (offerType === 'agency')
-    return <Badge className="bg-purple-500/10 text-purple-400 text-xs">$100k Agency</Badge>
-  return <Badge className="bg-blue-500/10 text-blue-400 text-xs">$25k Stack</Badge>
+    return <Badge className="bg-purple-500/10 text-purple-400 text-xs">£100,000 White-label</Badge>
+  return <Badge className="bg-blue-500/10 text-blue-400 text-xs">£25,000 Internal</Badge>
 }
 
 function StatCard({
@@ -242,14 +244,14 @@ export default function SentMailPage() {
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
-            label="Agency $100k (24h)"
+            label="Agency £100,000 (24h)"
             value={s.agencySent24h}
             sub="White-label Commercial License"
             accent="purple"
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
-            label="Direct $25k (24h)"
+            label="Direct £25,000 (24h)"
             value={s.directSent24h}
             sub="Xavira Control Stack"
             accent="blue"
@@ -307,7 +309,7 @@ export default function SentMailPage() {
                       </p>
                     </div>
                     <p className="text-sm font-semibold">
-                      ${preview.dealValueUsd.toLocaleString()}
+                      {preview.dealValueLabel ?? `£${(preview.dealValueGbp ?? preview.dealValueUsd).toLocaleString()}`}
                     </p>
                   </div>
                   <div className="rounded-md border bg-background/60 p-3">
@@ -488,7 +490,7 @@ export default function SentMailPage() {
                   <div><span className="text-muted-foreground">Provider:</span> {selected.provider}</div>
                 ) : null}
                 {selected.offerType ? (
-                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '$75k-$100k+ White-label Commercial License' : '$25k Xavira Control Stack'}</div>
+                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '£100,000 White-Label Commercial License' : '£25,000 Internal Enterprise License'}</div>
                 ) : null}
                 {selected.error ? (
                   <div className="text-amber-600 break-words"><span className="text-muted-foreground">Error:</span> {selected.error}</div>

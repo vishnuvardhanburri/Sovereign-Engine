@@ -1,24 +1,34 @@
 import crypto from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { XAVIRA_COMMERCIAL_MODEL } from '@/lib/commercial-model'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const plans = {
-  starter: {
-    name: 'Starter',
-    price: '$1,499/mo',
-    limits: { domains: 10, apiRequestsPerDay: 10000, dailyControlPlaneVolume: 25000, simulatedEventsPerRun: 10000 },
+  internal_enterprise: {
+    name: XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.name,
+    price: XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label,
+    currency: XAVIRA_COMMERCIAL_MODEL.currency,
+    rights: ['internal_operational_usage'],
+    restrictions: ['no_reseller_rights', 'no_white_label_rights', 'no_commercial_redistribution_rights'],
+    limits: { domains: 25, apiRequestsPerDay: 100000, dailyControlPlaneVolume: 200000, simulatedEventsPerRun: 10000 },
   },
-  growth: {
-    name: 'Growth',
-    price: '$4,999/mo',
-    limits: { domains: 75, apiRequestsPerDay: 100000, dailyControlPlaneVolume: 100000, simulatedEventsPerRun: 10000 },
+  white_label_commercial: {
+    name: XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.name,
+    price: XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label,
+    currency: XAVIRA_COMMERCIAL_MODEL.currency,
+    rights: ['white_label', 'reseller', 'commercial_deployment', 'multi_client_operations', 'branding_customization'],
+    restrictions: [],
+    limits: { domains: 250, apiRequestsPerDay: 500000, dailyControlPlaneVolume: 1000000, simulatedEventsPerRun: 10000 },
   },
-  enterprise: {
-    name: 'Enterprise',
-    price: 'From $12,000/mo',
-    limits: { domains: 250, apiRequestsPerDay: 500000, dailyControlPlaneVolume: 250000, simulatedEventsPerRun: 10000 },
+  operations_maintenance: {
+    name: XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.name,
+    price: XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label,
+    currency: XAVIRA_COMMERCIAL_MODEL.currency,
+    rights: ['technical_support', 'platform_updates', 'infrastructure_guidance', 'monitoring_support', 'governance_support'],
+    restrictions: ['requires_active_license'],
+    limits: { domains: 250, apiRequestsPerDay: 500000, dailyControlPlaneVolume: 1000000, simulatedEventsPerRun: 10000 },
   },
 }
 
@@ -35,9 +45,9 @@ function configuredLicenses() {
 }
 
 function resolvePlan(key: string) {
-  if (/enterprise/i.test(key)) return plans.enterprise
-  if (/growth/i.test(key)) return plans.growth
-  return plans.starter
+  if (/white|commercial|reseller|agency/i.test(key)) return plans.white_label_commercial
+  if (/maintenance|support|operations/i.test(key)) return plans.operations_maintenance
+  return plans.internal_enterprise
 }
 
 export async function POST(request: NextRequest) {
@@ -49,7 +59,10 @@ export async function POST(request: NextRequest) {
   const active =
     configured.length > 0
       ? configured.includes(licenseKey)
-      : demoAllowed && /^se_(starter|growth|enterprise)_demo_[a-z0-9-]*$/i.test(licenseKey)
+      : demoAllowed &&
+        /^se_(internal_enterprise|white_label_commercial|operations_maintenance)_demo_[a-z0-9-]*$/i.test(
+          licenseKey
+        )
 
   const plan = resolvePlan(licenseKey)
   const generatedAt = new Date().toISOString()
@@ -58,8 +71,8 @@ export async function POST(request: NextRequest) {
     {
       ok: true,
       active,
-      product: 'Sovereign Engine',
-      positioning: 'Deliverability Operating System (Outbound Revenue Protection Infrastructure)',
+      product: XAVIRA_COMMERCIAL_MODEL.productName,
+      positioning: 'Enterprise Communication Operations Platform and communication governance infrastructure',
       plan,
       license: {
         fingerprint: licenseKey ? hash(licenseKey).slice(0, 16) : null,
@@ -79,11 +92,16 @@ export async function GET() {
     ok: true,
     endpoint: '/api/v1/license/validate',
     method: 'POST',
-    demoLicenseKeys: ['se_starter_demo_acquire', 'se_growth_demo_acquire', 'se_enterprise_demo_acquire'],
+    demoLicenseKeys: [
+      'se_internal_enterprise_demo_acquire',
+      'se_white_label_commercial_demo_acquire',
+      'se_operations_maintenance_demo_acquire',
+    ],
     pricing: {
-      starter: plans.starter.price,
-      growth: plans.growth.price,
-      enterprise: plans.enterprise.price,
+      currency: XAVIRA_COMMERCIAL_MODEL.currency,
+      internalEnterpriseLicense: plans.internal_enterprise.price,
+      whiteLabelCommercialLicense: plans.white_label_commercial.price,
+      operationsMaintenance: plans.operations_maintenance.price,
     },
   })
 }

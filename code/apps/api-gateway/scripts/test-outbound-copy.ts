@@ -36,10 +36,10 @@ const agencyLead = {
   reason_to_contact: 'agency outreach because it shows public signals around demand generation',
 }
 
-assert(inferSovereignOfferType(directLead) === 'direct', 'direct lead should use $25k copy')
+assert(inferSovereignOfferType(directLead) === 'direct', 'direct lead should use £25,000 copy')
 assert(inferSovereignOfferType(agencyLead) === 'agency', 'agency lead should use master-license copy')
-assert(sovereignDealValueUsd(directLead) === 25000, 'direct lead should be valued at $25k')
-assert(sovereignDealValueUsd(agencyLead) === 100000, 'agency lead should be valued at $100k')
+assert(sovereignDealValueUsd(directLead) === 25000, 'direct lead should be valued at £25,000')
+assert(sovereignDealValueUsd(agencyLead) === 100000, 'agency lead should be valued at £100,000')
 assert(
   rankSovereignLeads([
     { ...directLead, customFields: { fit_score: 100 } },
@@ -121,7 +121,7 @@ const agencyBody = renderSovereignTemplate(
   agencyLead,
   'Xavira Tech Labs, India'
 )
-assert(agencyBody.includes('$75,000+'), 'agency body should mention commercial license range')
+assert(agencyBody.includes('£100,000'), 'agency body should mention final commercial license price')
 assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
 assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
 assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
