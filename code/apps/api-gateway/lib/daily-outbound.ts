@@ -75,6 +75,9 @@ const MAX_MAPS_LIMIT = 500
 const MAX_PUBLIC_SEARCH_LIMIT = 5_000
 const DEFAULT_LEAD_SCOUT_LIMIT = 25
 const MAX_LEAD_SCOUT_LIMIT = 1_000
+const SMALL_MEMORY_MAX_MAPS_LIMIT = 60
+const SMALL_MEMORY_MAX_PUBLIC_SEARCH_LIMIT = 120
+const SMALL_MEMORY_MAX_LEAD_SCOUT_LIMIT = 120
 const MAX_APPROVE_LIMIT = 1_000_000
 const DEFAULT_GROWTH_APPROVAL_FLOOR = 1_000_000
 const CONSERVATIVE_MAX_SEND_LIMIT = 5
@@ -95,6 +98,45 @@ function clampInteger(value: unknown, fallback: number, min: number, max: number
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(Math.trunc(parsed), max))
+}
+
+function isSmallMemoryRuntime(env: EnvLike): boolean {
+  const profile = String(env.WEB_MEMORY_PROFILE ?? '').trim().toLowerCase()
+  if (profile) return profile === 'small'
+  return resolveDailyBoolean(env.RENDER, false)
+}
+
+function memoryBudget(input: { env: EnvLike }) {
+  if (!isSmallMemoryRuntime(input.env)) {
+    return {
+      mapsMax: MAX_MAPS_LIMIT,
+      publicSearchMax: MAX_PUBLIC_SEARCH_LIMIT,
+      leadScoutMax: MAX_LEAD_SCOUT_LIMIT,
+      constrained: false,
+    }
+  }
+
+  return {
+    mapsMax: clampInteger(
+      input.env.DAILY_OUTBOUND_SMALL_MAX_MAPS_LIMIT,
+      SMALL_MEMORY_MAX_MAPS_LIMIT,
+      0,
+      MAX_MAPS_LIMIT
+    ),
+    publicSearchMax: clampInteger(
+      input.env.DAILY_OUTBOUND_SMALL_MAX_PUBLIC_SEARCH_LIMIT,
+      SMALL_MEMORY_MAX_PUBLIC_SEARCH_LIMIT,
+      0,
+      MAX_PUBLIC_SEARCH_LIMIT
+    ),
+    leadScoutMax: clampInteger(
+      input.env.DAILY_OUTBOUND_SMALL_MAX_LEAD_SCOUT_LIMIT,
+      SMALL_MEMORY_MAX_LEAD_SCOUT_LIMIT,
+      1,
+      MAX_LEAD_SCOUT_LIMIT
+    ),
+    constrained: true,
+  }
 }
 
 export function resolveDailySheetUrl(input: {
@@ -449,11 +491,12 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       input.env.GOOGLE_MAPS_DATASET_ID ||
       ''
   ).trim()
+  const budget = memoryBudget({ env: input.env })
   const mapsLimit = clampInteger(
     input.query.mapsLimit ?? input.env.GOOGLE_MAPS_DAILY_LIMIT,
     DEFAULT_MAPS_LIMIT,
     0,
-    MAX_MAPS_LIMIT
+    budget.mapsMax
   )
   const runMapsImport = resolveDailyBoolean(
     input.query.mapsImport ?? input.env.DAILY_OUTBOUND_RUN_MAPS,
@@ -469,7 +512,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
       input.env.SERPAPI_DAILY_LIMIT,
     DEFAULT_PUBLIC_SEARCH_LIMIT,
     0,
-    MAX_PUBLIC_SEARCH_LIMIT
+    budget.publicSearchMax
   )
   const runPublicSearch = resolveDailyBoolean(
     input.query.publicSearch ?? input.query.serpApi ?? input.env.DAILY_OUTBOUND_RUN_PUBLIC_SEARCH,
@@ -479,7 +522,7 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
     input.query.leadScoutLimit ?? input.env.LEAD_SCOUT_DAILY_LIMIT,
     DEFAULT_LEAD_SCOUT_LIMIT,
     1,
-    MAX_LEAD_SCOUT_LIMIT
+    budget.leadScoutMax
   )
   const runLeadScout = resolveDailyBoolean(
     input.query.leadScout ?? input.env.DAILY_OUTBOUND_RUN_LEAD_SCOUT,
@@ -505,6 +548,11 @@ export function buildDailyOutboundPlan(input: PlanInput): DailyOutboundPlan {
   if (runPublicSearch && publicSearchLimit > 0) {
     guardrails.push(
       'Public search expands discovery through query/domain extraction, then evidence checks decide approval'
+    )
+  }
+  if (budget.constrained) {
+    guardrails.push(
+      'Small-memory deployment batches discovery work so research cannot crash the sender process'
     )
   }
   const approveLimit = resolveApproveLimit({

@@ -100,6 +100,19 @@ function requireExactPublicEmailEvidence(): boolean {
   return envBool(process.env.DAILY_OUTBOUND_REQUIRE_EXACT_PUBLIC_EMAIL_EVIDENCE, false)
 }
 
+function isSmallMemoryRuntime(): boolean {
+  const profile = String(process.env.WEB_MEMORY_PROFILE ?? '').trim().toLowerCase()
+  if (profile) return profile === 'small'
+  return envBool(process.env.RENDER, false)
+}
+
+function boundedEvidenceParam(raw: string | null, fallback: number, max: number): string | null {
+  if (!isSmallMemoryRuntime()) return raw
+  const parsed = Number.parseInt(raw ?? '', 10)
+  const value = Number.isFinite(parsed) ? parsed : fallback
+  return String(Math.max(1, Math.min(Math.trunc(value), max)))
+}
+
 function clampThreshold(value: unknown): number {
   const parsed = Number(value ?? 72)
   if (!Number.isFinite(parsed)) return 72
@@ -2016,6 +2029,21 @@ export async function GET(request: NextRequest) {
         process.env.DAILY_OUTBOUND_QUEUE_ONLY,
       false
     )
+    const evidenceDeadlineMs = boundedEvidenceParam(
+      params.get('leadScoutEvidenceDeadlineMs') || params.get('evidenceDeadlineMs'),
+      25_000,
+      30_000
+    )
+    const evidenceMaxPages = boundedEvidenceParam(
+      params.get('leadScoutEvidenceMaxPages') || params.get('evidenceMaxPages'),
+      6,
+      6
+    )
+    const evidenceRequestTimeoutMs = boundedEvidenceParam(
+      params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
+      2_500,
+      3_000
+    )
     const runHunterSearch = envBool(
       params.get('hunterSearch') || process.env.DAILY_OUTBOUND_RUN_HUNTER,
       false
@@ -2100,10 +2128,9 @@ export async function GET(request: NextRequest) {
           persona: params.get('persona') || params.get('publicSearchPersona') || params.get('leadScoutPersona'),
           region: params.get('region') || params.get('publicSearchRegion') || params.get('leadScoutRegion'),
           queries: resolvePublicSearchQueries(params.get('publicSearchQueries') || params.get('serpApiQueries')),
-          evidenceDeadlineMs: params.get('leadScoutEvidenceDeadlineMs') || params.get('evidenceDeadlineMs'),
-          evidenceMaxPagesPerLead: params.get('leadScoutEvidenceMaxPages') || params.get('evidenceMaxPages'),
-          evidenceRequestTimeoutMs:
-            params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
+          evidenceDeadlineMs,
+          evidenceMaxPagesPerLead: evidenceMaxPages,
+          evidenceRequestTimeoutMs,
         })
       )
     } else if (!queuedBeforeResearch) {
@@ -2124,10 +2151,9 @@ export async function GET(request: NextRequest) {
           industry: params.get('industry') || params.get('leadScoutIndustry'),
           persona: params.get('persona') || params.get('leadScoutPersona'),
           region: params.get('region') || params.get('leadScoutRegion'),
-          evidenceDeadlineMs: params.get('leadScoutEvidenceDeadlineMs') || params.get('evidenceDeadlineMs'),
-          evidenceMaxPagesPerLead: params.get('leadScoutEvidenceMaxPages') || params.get('evidenceMaxPages'),
-          evidenceRequestTimeoutMs:
-            params.get('leadScoutEvidenceRequestTimeoutMs') || params.get('evidenceRequestTimeoutMs'),
+          evidenceDeadlineMs,
+          evidenceMaxPagesPerLead: evidenceMaxPages,
+          evidenceRequestTimeoutMs,
         })
       )
     } else if (!queuedBeforeResearch) {
