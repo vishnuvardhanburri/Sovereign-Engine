@@ -2540,11 +2540,7 @@ export async function listReplies(clientId: number, input: PaginationInput = {})
        LEFT JOIN contacts c ON c.id = e.contact_id AND c.client_id = e.client_id
        WHERE e.client_id = $1
          AND e.event_type = 'reply'
-         AND (
-           e.contact_id IS NOT NULL
-           OR e.queue_job_id IS NOT NULL
-           OR COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'
-         )
+         AND COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'
        ORDER BY e.created_at DESC
        LIMIT $2 OFFSET $3`,
       [clientId, limit, offset]
@@ -2554,11 +2550,7 @@ export async function listReplies(clientId: number, input: PaginationInput = {})
        FROM events
        WHERE client_id = $1
          AND event_type = 'reply'
-         AND (
-           contact_id IS NOT NULL
-           OR queue_job_id IS NOT NULL
-           OR COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
-         )`,
+         AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'`,
       [clientId]
     ),
   ])
@@ -2583,11 +2575,7 @@ export async function getReply(clientId: number, replyId: number) {
      WHERE e.client_id = $1
        AND e.event_type = 'reply'
        AND e.id = $2
-       AND (
-         e.contact_id IS NOT NULL
-         OR e.queue_job_id IS NOT NULL
-         OR COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'
-       )`,
+       AND COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'`,
     [clientId, replyId]
   )
 }
@@ -2600,7 +2588,10 @@ export async function updateReplyStatus(
   return queryOne<Event>(
     `UPDATE events
      SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('reply_status', $3)
-     WHERE client_id = $1 AND id = $2 AND event_type = 'reply'
+     WHERE client_id = $1
+       AND id = $2
+       AND event_type = 'reply'
+       AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
      RETURNING *`,
     [clientId, replyId, status]
   )
@@ -2651,7 +2642,8 @@ export async function getDashboardStats(clientId: number) {
       `SELECT COUNT(*)::text AS count
        FROM events
        WHERE client_id = $1
-         AND event_type = 'reply'`,
+         AND event_type = 'reply'
+         AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'`,
       [clientId]
     ),
     query<Campaign>(

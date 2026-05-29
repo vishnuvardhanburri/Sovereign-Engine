@@ -61,9 +61,7 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
            AND event_type IN ('sent','failed','bounce','reply','bounced')
            AND (
              event_type <> 'reply'
-             OR contact_id IS NOT NULL
-             OR queue_job_id IS NOT NULL
-             OR campaign_id IS NOT NULL
+             OR COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
            )
            AND created_at >= NOW() - INTERVAL '7 days'
          GROUP BY 1, 2`,
@@ -233,7 +231,7 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
            e.event_type IN ('sent','failed','bounce','bounced')
            OR (
              e.event_type = 'reply'
-             AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
+             AND COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'
            )
          )
        ORDER BY e.created_at DESC

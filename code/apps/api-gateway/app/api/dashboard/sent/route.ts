@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
              e.event_type IN ('sent','failed','bounce')
              OR (
                e.event_type = 'reply'
-               AND (e.contact_id IS NOT NULL OR e.queue_job_id IS NOT NULL OR e.campaign_id IS NOT NULL)
+               AND COALESCE(e.metadata->>'matched_to_outbound', 'false') = 'true'
              )
            )
          ORDER BY e.created_at DESC
@@ -85,13 +85,13 @@ export async function GET(request: NextRequest) {
            COUNT(*) FILTER (
              WHERE event_type = 'reply'
                AND created_at >= NOW() - INTERVAL '24h'
-               AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)
+               AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
            )::text AS replies_24h,
            COUNT(*) FILTER (WHERE event_type = 'sent' AND created_at >= NOW() - INTERVAL '7 days')::text AS sent_7d,
            COUNT(*) FILTER (
              WHERE event_type = 'reply'
                AND created_at >= NOW() - INTERVAL '7 days'
-               AND (contact_id IS NOT NULL OR queue_job_id IS NOT NULL OR campaign_id IS NOT NULL)
+               AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
            )::text AS replies_7d,
            COUNT(*) FILTER (
              WHERE event_type = 'sent'

@@ -8,11 +8,7 @@ export async function GET(request: NextRequest) {
   const matchedReplyWhere =
     `client_id = $1
      AND event_type = 'reply'
-     AND (
-       contact_id IS NOT NULL
-       OR queue_job_id IS NOT NULL
-       OR COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
-     )`
+     AND COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'`
 
   // Minimal proof endpoint: recent replies + rollups.
   const total = await query<{ count: string }>(
