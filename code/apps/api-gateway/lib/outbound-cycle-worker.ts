@@ -26,6 +26,54 @@ function localRunUrl(rawUrl: string): string {
   return new URL(`${url.pathname}${url.search}`, internalBase).toString()
 }
 
+async function fetchCycleRunUrl(input: {
+  runUrl: string
+  publicRunUrl: string
+  secret: string
+  signal: AbortSignal
+}): Promise<{
+  response: Response
+  body: string
+  usedPublicFallback: boolean
+}> {
+  const headers = {
+    'user-agent': 'Sovereign-Engine-Outbound-Cycle-Worker/1.0',
+    ...(input.secret ? { 'x-cron-secret': input.secret } : {}),
+  }
+
+  try {
+    const response = await fetch(input.runUrl, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+      signal: input.signal,
+    })
+    return {
+      response,
+      body: await response.text(),
+      usedPublicFallback: false,
+    }
+  } catch (localError) {
+    if (input.runUrl === input.publicRunUrl) throw localError
+
+    console.warn('[outbound-cycle-worker] local cycle fetch failed; retrying public origin', {
+      error: localError instanceof Error ? localError.message : String(localError),
+    })
+
+    const response = await fetch(input.publicRunUrl, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+      signal: input.signal,
+    })
+    return {
+      response,
+      body: await response.text(),
+      usedPublicFallback: true,
+    }
+  }
+}
+
 async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
   const secret = appEnv.cronSecret()
   const startedAt = Date.now()
@@ -44,17 +92,23 @@ async function processOutboundCycle(job: Job<OutboundCycleJobData>) {
   let elapsedMs = 0
 
   try {
-    response = await fetch(runUrl, {
-      method: 'GET',
-      headers: {
-        'user-agent': 'Sovereign-Engine-Outbound-Cycle-Worker/1.0',
-        ...(secret ? { 'x-cron-secret': secret } : {}),
-      },
-      cache: 'no-store',
+    const result = await fetchCycleRunUrl({
+      runUrl,
+      publicRunUrl: job.data.runUrl,
+      secret,
       signal: controller.signal,
     })
-    body = await response.text()
+    response = result.response
+    body = result.body
     elapsedMs = Date.now() - startedAt
+    if (result.usedPublicFallback) {
+      console.warn('[outbound-cycle-worker] cycle completed through public fallback', {
+        jobId: job.id,
+        clientId: job.data.clientId,
+        status: response.status,
+        elapsedMs,
+      })
+    }
   } catch (error) {
     elapsedMs = Date.now() - startedAt
     if ((error as any)?.name === 'AbortError') {
