@@ -8,8 +8,8 @@ const OUTBOUND_CYCLE_WORKER_CONCURRENCY = Math.max(
   Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_WORKER_CONCURRENCY ?? '1', 10) || 1, 3)
 )
 const OUTBOUND_CYCLE_TIMEOUT_MS = Math.max(
-  15_000,
-  Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_TIMEOUT_MS ?? '120000', 10) || 120_000, 300_000)
+  180_000,
+  Math.min(Number.parseInt(process.env.OUTBOUND_CYCLE_TIMEOUT_MS ?? '300000', 10) || 300_000, 300_000)
 )
 
 let cycleWorker: Worker<OutboundCycleJobData> | null = null
