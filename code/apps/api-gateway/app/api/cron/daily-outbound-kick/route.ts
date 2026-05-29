@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { appEnv } from '@/lib/env'
 import { enqueueOutboundCycleJob } from '@/lib/outbound-cycle-queue'
+import { requestPublicOrigin } from '@/lib/request-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,7 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
 }
 
 function buildRunUrl(request: NextRequest, clientId: number): string {
-  const runUrl = new URL('/api/cron/daily-outbound', request.nextUrl.origin)
+  const runUrl = new URL('/api/cron/daily-outbound', requestPublicOrigin(request))
   const params = request.nextUrl.searchParams
   const maxMapsLimit = intParam(
     process.env.DAILY_OUTBOUND_KICK_MAX_MAPS_LIMIT ?? null,

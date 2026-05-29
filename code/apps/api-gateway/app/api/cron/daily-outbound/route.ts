@@ -32,6 +32,7 @@ import { notifyTelegramEvent } from '@/lib/telegram-notifications'
 import { getOutboundTelegramDigest } from '@/lib/outbound-telegram-digest'
 import { runOutboundEventRetention } from '@/lib/outbound-event-retention'
 import { enqueueOutboundCycleJob } from '@/lib/outbound-cycle-queue'
+import { requestPublicOrigin } from '@/lib/request-origin'
 import { reconcileBootstrapSendingDomain } from '@/lib/bootstrap-sending-domain'
 import {
   buildSovereignCopyForLead,
@@ -1831,7 +1832,7 @@ export async function GET(request: NextRequest) {
   if (kick) {
     try {
       const clientId = Number(request.nextUrl.searchParams.get('client_id') || process.env.DEFAULT_CLIENT_ID || 1)
-      const runUrl = new URL(request.nextUrl.toString())
+      const runUrl = new URL(request.nextUrl.pathname + request.nextUrl.search, requestPublicOrigin(request))
       runUrl.searchParams.delete('kick')
       runUrl.searchParams.delete('background')
       runUrl.searchParams.delete('secret')

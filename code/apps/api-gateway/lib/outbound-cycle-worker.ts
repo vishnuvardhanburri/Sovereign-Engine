@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq'
 import { appEnv } from '@/lib/env'
 import { OUTBOUND_CYCLE_QUEUE, type OutboundCycleJobData } from '@/lib/outbound-cycle-queue'
+import { isUnroutableHostname } from '@/lib/request-origin'
 
 const OUTBOUND_CYCLE_WORKER_CONCURRENCY = Math.max(
   1,
@@ -16,7 +17,7 @@ let cycleWorker: Worker<OutboundCycleJobData> | null = null
 function localRunUrl(rawUrl: string): string {
   const url = new URL(rawUrl)
   const forcePublicFetch = String(process.env.OUTBOUND_CYCLE_PUBLIC_FETCH ?? '').toLowerCase() === 'true'
-  if (forcePublicFetch) return url.toString()
+  if (forcePublicFetch && !isUnroutableHostname(url.hostname)) return url.toString()
 
   // The cycle worker runs inside the same Render web service as Next.js.
   // Next can serialize the incoming origin as https://0.0.0.0:$PORT, which
