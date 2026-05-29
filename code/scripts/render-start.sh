@@ -34,6 +34,21 @@ int_between() {
   printf '%s' "$value"
 }
 
+start_background() {
+  name="$1"
+  shift
+  (
+    set +e
+    "$@"
+    code="$?"
+    if [ "$code" -ne 0 ]; then
+      echo "[render-start] ${name} exited with status ${code}" >&2
+    else
+      echo "[render-start] ${name} exited cleanly" >&2
+    fi
+  ) &
+}
+
 echo "[render-start] booting Sovereign Engine"
 echo "[render-start] flags WEB_EMBED_SENDER_WORKER=${WEB_EMBED_SENDER_WORKER:-unset} WEB_EMBED_REPUTATION_WORKER=${WEB_EMBED_REPUTATION_WORKER:-unset} WEB_EMBED_OUTBOUND_CYCLE_WORKER=${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true} WEB_EMBED_AUTONOMOUS_OPS_WORKER=${WEB_EMBED_AUTONOMOUS_OPS_WORKER:-auto} MOCK_SMTP=${MOCK_SMTP:-unset} EMAIL_PROVIDER=${EMAIL_PROVIDER:-smtp}"
 echo "[render-start] secrets DATABASE_URL=$(mask_presence "${DATABASE_URL:-}") REDIS_URL=$(mask_presence "${REDIS_URL:-}") SMTP_HOST=$(mask_presence "${SMTP_HOST:-}") SMTP_ACCOUNTS=$(mask_presence "${SMTP_ACCOUNTS:-}")"
@@ -58,7 +73,7 @@ pnpm --dir apps/api-gateway exec tsx scripts/bootstrap-sending-domain.ts
 
 if enabled_flag "${WEB_EMBED_REPUTATION_WORKER:-}"; then
   echo "[render-start] starting embedded reputation-worker"
-  pnpm -C workers/reputation-worker start &
+  start_background "reputation-worker" pnpm -C workers/reputation-worker start
 else
   echo "[render-start] embedded reputation-worker disabled"
 fi
@@ -82,10 +97,13 @@ if enabled_flag "${WEB_EMBED_SENDER_WORKER:-}"; then
   echo "[render-start] starting embedded sender-worker replicas=${sender_replicas} concurrency=${sender_concurrency} worker_pg_pool_max=${worker_pg_pool_max}"
   i=1
   while [ "$i" -le "$sender_replicas" ]; do
-    WORKER_ID="${RENDER_SERVICE_ID:-render}:${HOSTNAME:-host}:sender-${i}:$$" \
+    sender_worker_id="${RENDER_SERVICE_ID:-render}:${HOSTNAME:-host}:sender-${i}:$$"
+    start_background "sender-worker-${i}" env \
+      WORKER_ID="$sender_worker_id" \
       SENDER_WORKER_CONCURRENCY="$sender_concurrency" \
       PG_POOL_MAX="$worker_pg_pool_max" \
-      pnpm -C workers/sender-worker start &
+      NODE_OPTIONS="${SENDER_WORKER_NODE_OPTIONS:---max-old-space-size=96}" \
+      pnpm -C workers/sender-worker start
     i=$((i + 1))
   done
 else
@@ -94,9 +112,11 @@ fi
 
 if enabled_flag "${WEB_EMBED_OUTBOUND_CYCLE_WORKER:-true}"; then
   echo "[render-start] starting embedded outbound-cycle-worker"
-  OUTBOUND_CYCLE_TIMEOUT_MS="${OUTBOUND_CYCLE_TIMEOUT_MS:-45000}" \
+  start_background "outbound-cycle-worker" env \
+    OUTBOUND_CYCLE_TIMEOUT_MS="${OUTBOUND_CYCLE_TIMEOUT_MS:-45000}" \
     OUTBOUND_CYCLE_WORKER_CONCURRENCY="${OUTBOUND_CYCLE_WORKER_CONCURRENCY:-1}" \
-    pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts &
+    NODE_OPTIONS="${OUTBOUND_CYCLE_NODE_OPTIONS:---max-old-space-size=96}" \
+    pnpm --dir apps/api-gateway exec tsx scripts/outbound-cycle-worker.ts
 else
   echo "[render-start] embedded outbound-cycle-worker disabled"
 fi
@@ -107,17 +127,28 @@ if [ "$memory_profile" != "small" ]; then
 fi
 if enabled_flag "${WEB_EMBED_AUTONOMOUS_OPS_WORKER:-$auto_ops_default}"; then
   echo "[render-start] starting embedded autonomous-ops-worker"
-  AUTONOMOUS_OPS_CONCURRENCY="${AUTONOMOUS_OPS_CONCURRENCY:-1}" \
-    pnpm --dir apps/api-gateway exec tsx scripts/autonomous-ops-worker.ts &
+  start_background "autonomous-ops-worker" env \
+    AUTONOMOUS_OPS_CONCURRENCY="${AUTONOMOUS_OPS_CONCURRENCY:-1}" \
+    NODE_OPTIONS="${AUTONOMOUS_OPS_NODE_OPTIONS:---max-old-space-size=96}" \
+    pnpm --dir apps/api-gateway exec tsx scripts/autonomous-ops-worker.ts
 else
   echo "[render-start] embedded autonomous-ops-worker disabled (set WEB_EMBED_AUTONOMOUS_OPS_WORKER=true to enable)"
 fi
 
-if [ -n "$effective_imap_host" ] && [ -n "$effective_imap_accounts" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-false}"; then
+inbound_allowed=true
+if [ "$memory_profile" = "small" ] && ! enabled_flag "${WEB_EMBED_INBOUND_WORKER_FORCE:-false}"; then
+  inbound_allowed=false
+fi
+
+if [ -n "$effective_imap_host" ] && [ -n "$effective_imap_accounts" ] && enabled_flag "${WEB_EMBED_INBOUND_WORKER:-false}" && [ "$inbound_allowed" = "true" ]; then
   echo "[render-start] starting embedded inbound-worker"
-  IMAP_HOST="$effective_imap_host" \
+  start_background "inbound-worker" env \
+    IMAP_HOST="$effective_imap_host" \
     IMAP_ACCOUNTS="$effective_imap_accounts" \
-    pnpm -C workers/inbound-worker start &
+    NODE_OPTIONS="${INBOUND_WORKER_NODE_OPTIONS:---max-old-space-size=96}" \
+    pnpm -C workers/inbound-worker start
+elif [ "$inbound_allowed" = "false" ]; then
+  echo "[render-start] embedded inbound-worker skipped on small memory to protect sender-worker (set WEB_EMBED_INBOUND_WORKER_FORCE=true to override)"
 else
   echo "[render-start] embedded inbound-worker disabled or missing IMAP config (WEB_EMBED_INBOUND_WORKER=${WEB_EMBED_INBOUND_WORKER:-false} EFFECTIVE_IMAP_HOST=$(mask_presence "$effective_imap_host") EFFECTIVE_IMAP_ACCOUNTS=$(mask_presence "$effective_imap_accounts"))"
 fi
