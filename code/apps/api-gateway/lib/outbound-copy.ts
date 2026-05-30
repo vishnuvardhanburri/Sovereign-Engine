@@ -29,6 +29,13 @@ export const SOVEREIGN_STACK_AGENCY_SUBJECT =
   'white-label outbound infrastructure'
 
 export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://www.vishnuvardhanburri.in/contact'
+export const SOVEREIGN_CLIENT_GENERATION_TARGET = {
+  dailyQualifiedConversationsMin: 1,
+  dailyQualifiedConversationsMax: 2,
+  operatingSendFloor: 125,
+  operatingSendCeiling: 199,
+  idealAgencySharePct: 50,
+} as const
 
 function allowedBookingDomains(): string[] {
   const raw =
@@ -151,6 +158,119 @@ function numericFitScore(input: SovereignCopyLead): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function boundedScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function hasAnySignal(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(text))
+}
+
+export function sovereignClientIntentScore(input: SovereignCopyLead): number {
+  const custom = input.customFields ?? {}
+  const offerType = inferSovereignOfferType(input)
+  const email = String(custom.email ?? custom.recipient_email ?? '').toLowerCase()
+  const prefix = email.includes('@') ? email.split('@')[0] ?? '' : ''
+  const domain = String(input.companyDomain ?? custom.company_domain ?? custom.email_domain ?? '')
+    .toLowerCase()
+    .trim()
+  const text = [
+    input.company,
+    input.companyDomain,
+    input.title,
+    input.source,
+    input.reason_to_contact,
+    input.reasonToContact,
+    custom.industry,
+    custom.segment,
+    custom.persona,
+    custom.research_summary,
+    custom.public_evidence_url,
+    custom.research_evidence_url,
+    custom.social_signal,
+    custom.competitor_signal,
+  ]
+    .map((value) => String(value ?? '').toLowerCase())
+    .join(' ')
+
+  let score = Math.min(Math.max(numericFitScore(input), 0), 100) * 0.62
+
+  if (offerType === 'agency') score += 10
+  if (custom.public_evidence_url || custom.research_evidence_url || custom.source_url) score += 8
+  if (custom.linkedin_url || custom.linkedin_post_url || custom.recent_linkedin_post_url) score += 5
+  if (custom.email_validation_verdict === 'valid' || custom.verification_status === 'valid') score += 6
+  if (custom.auto_approval_eligible === true || custom.auto_approval_eligible === 'true') score += 4
+
+  if (
+    hasAnySignal(text, [
+      /\boutbound\b/,
+      /\blead[- ]?gen(?:eration)?\b/,
+      /\bappointment setting\b/,
+      /\bsdr\b/,
+      /\brevops\b/,
+      /\bdemand gen(?:eration)?\b/,
+      /\bgrowth agency\b/,
+      /\bdeliverability\b/,
+      /\binbox placement\b/,
+    ])
+  ) {
+    score += 14
+  }
+
+  if (
+    hasAnySignal(text, [
+      /\bfounder\b/,
+      /\bceo\b/,
+      /\bowner\b/,
+      /\bpartner\b/,
+      /\bhead of growth\b/,
+      /\brevenue\b/,
+      /\bgo[- ]?to[- ]?market\b/,
+      /\bgtm\b/,
+    ])
+  ) {
+    score += 10
+  }
+
+  if (
+    hasAnySignal(text, [
+      /\bai\b/,
+      /\bsecurity\b/,
+      /\bcybersecurity\b/,
+      /\bcompliance\b/,
+      /\bgovernance\b/,
+      /\binfrastructure\b/,
+      /\bdevtools\b/,
+      /\bsaas\b/,
+    ])
+  ) {
+    score += 7
+  }
+
+  if (
+    [
+      'founder',
+      'ceo',
+      'partner',
+      'partnership',
+      'partnerships',
+      'business',
+      'sales',
+      'growth',
+      'revenue',
+    ].includes(prefix)
+  ) {
+    score += 5
+  }
+
+  if (['hello', 'info', 'contact', 'support', 'feedback', 'admin'].includes(prefix)) score -= 4
+  if (/\.(edu|gov|gov\.[a-z]{2}|ac\.[a-z]{2})$/i.test(domain)) score -= 12
+  if (looksLikeContentTitle(String(input.company ?? ''))) score -= 14
+  if (/\b(article|tutorial|course|definition|news|blog)\b/.test(text)) score -= 8
+
+  return boundedScore(score)
+}
+
 export function sovereignDealValueUsd(input: SovereignCopyLead): number {
   return commercialDealValueGbp(inferSovereignOfferType(input))
 }
@@ -159,6 +279,10 @@ export const sovereignDealValueGbp = sovereignDealValueUsd
 
 export function rankSovereignLeads<T extends SovereignCopyLead>(leads: T[]): T[] {
   return [...leads].sort((a, b) => {
+    const clientIntentDelta =
+      sovereignClientIntentScore(b) - sovereignClientIntentScore(a)
+    if (clientIntentDelta !== 0) return clientIntentDelta
+
     const valueDelta = sovereignDealValueUsd(b) - sovereignDealValueUsd(a)
     if (valueDelta !== 0) return valueDelta
 
@@ -235,7 +359,7 @@ export function sovereignDirectEmail1Body(): string {
 
 {{pain_line}}
 
-The expensive part is not sending more email. It is not knowing which domains, inboxes, follow-ups, and AI-written messages are safe enough to keep running before reply quality drops or Gmail/Outlook throttling starts.
+The expensive part is not sending more email. It is knowing which buyers deserve research, which inbox is safe, which follow-up should stop, and which AI-written message could create risk before Gmail/Outlook throttling or reply quality drops.
 
 Xavira Control Stack gives the operator one control layer for:
 * Gmail/Outlook sender and domain health
@@ -244,7 +368,7 @@ Xavira Control Stack gives the operator one control layer for:
 * AI governance and PII-safe copy checks
 * proof of what was sent, blocked, or stopped
 
-The reason teams buy it is simple: if outbound is part of pipeline, infrastructure risk becomes revenue risk.
+The reason teams buy it is simple: if outbound is part of pipeline, the goal is not lead generation. It is turning a controlled daily motion into qualified client conversations without burning domains or trust.
 
 If {{Company}} is pushing outbound this quarter, I can run a short outbound infrastructure review and show the first 3 risks I would fix before scaling.
 
@@ -279,7 +403,7 @@ For agencies, the commercial value is simple: turn operational proof into a clie
 * multi-client deployment support
 * ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP/month operations and maintenance support
 
-The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. Package Xavira as a serious client deployment, recover the license across roughly 3-4 client rollouts, then keep using the same infrastructure base for future accounts.
+The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. Package Xavira as a serious client-generation infrastructure deployment, recover the license across roughly 3-4 client rollouts, then keep using the same infrastructure base for future accounts.
 
 If {{Company}} wants a defensible outbound infrastructure offer instead of only execution, would a short walkthrough be useful?
 
@@ -729,6 +853,8 @@ export async function buildSovereignCopyForLead(
       'Use a lower-case, short subject when possible; no salesy words, no excessive punctuation, no spam-trigger wording.',
       'Use at most one evidence-backed personalization line.',
       'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
+      'Optimize for client generation, not lead generation: the email should make a qualified buyer think "this could become an audit or licensing conversation."',
+      `Treat ${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin}-${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax} qualified conversations per day as the operating target, not a promise.`,
       'Lead with the company pain before mentioning the product.',
       'Make the ask feel helpful: a 20-minute audit that maps risks and gives a 3-step action plan.',
       'If researchContext has LinkedIn or social context, use it naturally in one sentence.',

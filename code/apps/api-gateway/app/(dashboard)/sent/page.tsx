@@ -45,6 +45,11 @@ type SentSummary = {
   replies24h: number
   replyRate24h: number
   replyTargetPct: number
+  clientConversationTargetMin: number
+  clientConversationTargetMax: number
+  operatingSendFloor: number
+  operatingSendCeiling: number
+  clientGenerationStatus: 'on_track' | 'tighten_targeting' | 'building_inventory'
   deliveryConfidence24h: number
   sent7d: number
   replies7d: number
@@ -202,7 +207,7 @@ export default function SentMailPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Sent Mail</h1>
-        <p className="text-muted-foreground">Proof of what was actually sent — response rates, offer mix, and delivery health</p>
+        <p className="text-muted-foreground">Client-generation proof — qualified conversations, 50/50 offer mix, and delivery health</p>
       </div>
 
       {/* BI Summary Cards */}
@@ -218,21 +223,27 @@ export default function SentMailPage() {
             icon={<Send className="w-4 h-4" />}
             label="Sent today"
             value={s.sentToday}
-            sub={`${s.sent24h} in last 24h`}
+            sub={`${s.sent24h} in last 24h · operating range ${s.operatingSendFloor}-${s.operatingSendCeiling}`}
             accent="green"
           />
           <StatCard
             icon={<Reply className="w-4 h-4" />}
-            label="Response rate (24h)"
+            label="Qualified conversations (24h)"
             value={`${s.replyRate24h.toFixed(1)}%`}
             sub={`${s.replies24h} replies / ${s.sent24h} sent`}
             accent="blue"
           />
           <StatCard
             icon={<TrendingUp className="w-4 h-4" />}
-            label="Reply target"
-            value={`${s.replyTargetPct}%`}
-            sub="Goal; real replies stay honest"
+            label="Client conversation target"
+            value={`${s.clientConversationTargetMin}-${s.clientConversationTargetMax}/day`}
+            sub={
+              s.clientGenerationStatus === 'on_track'
+                ? 'On track: real client conversations'
+                : s.clientGenerationStatus === 'tighten_targeting'
+                  ? 'Volume hit; tighten buyer fit and copy'
+                  : 'Build buyer-fit inventory before scaling'
+            }
             accent="purple"
           />
           <StatCard
@@ -246,14 +257,14 @@ export default function SentMailPage() {
             icon={<Mail className="w-4 h-4" />}
             label="Agency £100,000 (24h)"
             value={s.agencySent24h}
-            sub="White-label Commercial License"
+            sub="White-label Commercial License · 50% target"
             accent="purple"
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
             label="Direct £25,000 (24h)"
             value={s.directSent24h}
-            sub="Xavira Control Stack"
+            sub="Xavira Control Stack · 50% target"
             accent="blue"
           />
           <StatCard
@@ -279,8 +290,8 @@ export default function SentMailPage() {
             How the system is mailing now
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Operator preview of the current outbound copy. Recent sent bodies are visible for proof,
-            then redacted by retention after the review window.
+            Operator preview of the current client-generation copy. Recent sent bodies are visible
+            for proof, then redacted by retention after the review window.
           </p>
         </CardHeader>
         <CardContent>

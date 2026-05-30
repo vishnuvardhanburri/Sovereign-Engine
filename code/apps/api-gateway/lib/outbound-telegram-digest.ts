@@ -1,4 +1,5 @@
 import { query } from '@/lib/db'
+import { SOVEREIGN_CLIENT_GENERATION_TARGET } from '@/lib/outbound-copy'
 
 const HUMAN_MATCHED_REPLY_SQL = `
   COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
@@ -207,13 +208,13 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
         return `High failure rate (${failed24h}/${sent24h}). Check SMTP credentials and domain health first.`
       }
       if (bounced24h > 2) {
-        return `${bounced24h} bounces detected. Run ZeroBounce validation on queued contacts before next send.`
+        return `${bounced24h} bounces detected. Tighten approval quality and suppress bounced patterns before the next client-generation cycle.`
       }
       if (replies24h > 0 && followUpsStopped24h < replies24h) {
         return `${replies24h} replies — verify follow-ups are stopped for replied contacts.`
       }
       if (queuedNow === 0 && sentToday === 0) {
-        return 'Nothing queued or sent today. Check DAILY_OUTBOUND_ENABLED and domain capacity.'
+        return 'Nothing queued or sent today. Build buyer-fit approved inventory before the next client-generation cycle.'
       }
       if (queuedNow > 0 && sentToday === 0) {
         return `${queuedNow} jobs queued but 0 sent. Check sender worker is running on Render.`
@@ -221,10 +222,16 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       if (followUpsDue > 0) {
         return `${followUpsDue} follow-ups are due. Ensure sequence worker is processing them.`
       }
-      if (sentToday > 0 && replies24h === 0) {
-        return `Sending healthy (${sentToday} today). Keep monitoring for first replies — refine copy if none in 48h.`
+      if (
+        sentToday >= SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor &&
+        replies24h < SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin
+      ) {
+        return `Client-generation target not hit yet: volume is in range (${sentToday} today), so tighten buyer fit, approval quality, and pain-led copy before increasing sends.`
       }
-      return 'System nominal. Continue monitoring response rate and domain health.'
+      if (sentToday > 0 && replies24h === 0) {
+        return `Sending healthy (${sentToday} today), but below the ${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor}-${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling} operating range. Keep building high-intent approved inventory.`
+      }
+      return 'System nominal. Keep optimizing for qualified client conversations, not raw send count.'
     }
 
     const nextAction = deriveNextAction()

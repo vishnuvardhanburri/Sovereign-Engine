@@ -8,10 +8,12 @@ import {
   renderSovereignHtmlEmail,
   renderSovereignTemplate,
   SOVEREIGN_BOOKING_URL,
+  SOVEREIGN_CLIENT_GENERATION_TARGET,
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS,
   sovereignBookingUrl,
   sovereignDealValueUsd,
   sovereignBodyForLead,
+  sovereignClientIntentScore,
   sovereignSubjectForLead,
 } from '@/lib/outbound-copy'
 
@@ -43,10 +45,27 @@ assert(sovereignDealValueUsd(directLead) === 25000, 'direct lead should be value
 assert(sovereignDealValueUsd(agencyLead) === 100000, 'agency lead should be valued at £100,000')
 assert(
   rankSovereignLeads([
-    { ...directLead, customFields: { fit_score: 100 } },
-    { ...agencyLead, customFields: { fit_score: 70 } },
+    { ...directLead, company: 'Low Intent SaaS', customFields: { fit_score: 62 } },
+    { ...agencyLead, customFields: { fit_score: 78, public_evidence_url: 'https://example-agency.com' } },
   ])[0]?.company === agencyLead.company,
-  'agency master-license leads should outrank direct leads even with lower fit score'
+  'client-generation ranking should prioritize buyer intent plus commercial value'
+)
+assert(
+  sovereignClientIntentScore({
+    ...agencyLead,
+    title: 'Founder',
+    customFields: {
+      fit_score: 92,
+      public_evidence_url: 'https://example-agency.com/services',
+      linkedin_url: 'https://www.linkedin.com/company/example-agency',
+    },
+  }) >= 85,
+  'high-intent agency leads should be scored as serious client opportunities'
+)
+assert(
+  SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor === 125 &&
+    SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling === 199,
+  'client-generation operating range should be explicit'
 )
 const balanced = balanceSovereignOfferMix(
   [
@@ -132,8 +151,8 @@ assert(
   'direct body should name concrete deliverability pain'
 )
 assert(
-  directBody.includes('short outbound infrastructure review'),
-  'direct body should offer a low-friction infrastructure review'
+  directBody.includes('qualified client conversations'),
+  'direct body should optimize for client conversations, not raw leads'
 )
 assert(directBody.includes('Example SaaS'), 'direct body should render company')
 assert(!directBody.includes('{{'), 'direct body should render all placeholders')
@@ -201,6 +220,7 @@ const agencyBody = renderSovereignTemplate(
 assert(agencyBody.includes('£100,000'), 'agency body should mention final commercial license price')
 assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
 assert(agencyBody.includes('3-4 client rollouts'), 'agency body should explain resale economics')
+assert(agencyBody.includes('client-generation infrastructure'), 'agency body should frame resale as client-generation infrastructure')
 assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
 assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')

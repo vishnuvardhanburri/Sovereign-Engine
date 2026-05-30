@@ -84,4 +84,19 @@ const dailyMessage = formatTelegramNotification({
 assert.match(dailyMessage, /Pipeline value: £425,000/)
 assert.match(dailyMessage, /Mix: 4 agency \(£100,000\) \/ 1 direct \(£25,000\)/)
 
+const digestMessage = formatTelegramNotification({
+  type: 'daily_outbound',
+  sentToday: 130,
+  sent24h: 130,
+  failed24h: 0,
+  bounced24h: 0,
+  replies24h: 1,
+  replyRate24h: 0.8,
+  queuedNow: 0,
+  queued: 0,
+})
+
+assert.match(digestMessage, /Qualified conversations:.*1/)
+assert.match(digestMessage, /Client-generation target: 1-2\/day from 125-199 compliant sends/)
+
 console.log('telegram notification tests passed')

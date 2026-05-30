@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { resolveClientId } from '@/lib/client-context'
+import { SOVEREIGN_CLIENT_GENERATION_TARGET } from '@/lib/outbound-copy'
 
 const HUMAN_MATCHED_REPLY_SQL = `
   COALESCE(metadata->>'matched_to_outbound', 'false') = 'true'
@@ -178,6 +179,18 @@ export async function GET(request: NextRequest) {
       replies24h,
       replyRate24h: sent24h > 0 ? Math.round((replies24h / sent24h) * 1000) / 10 : 0,
       replyTargetPct: 100,
+      clientConversationTargetMin:
+        SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin,
+      clientConversationTargetMax:
+        SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax,
+      operatingSendFloor: SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor,
+      operatingSendCeiling: SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling,
+      clientGenerationStatus:
+        replies24h >= SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin
+          ? 'on_track'
+          : Number(s?.sent_today ?? 0) >= SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor
+            ? 'tighten_targeting'
+            : 'building_inventory',
       deliveryConfidence24h,
       sent7d,
       replies7d,

@@ -1,6 +1,7 @@
 import { appEnv } from '@/lib/env'
 import { XAVIRA_COMMERCIAL_MODEL, formatGbp } from '@/lib/commercial-model'
 import { sendTelegramMessage } from '@/lib/telegram'
+import { SOVEREIGN_CLIENT_GENERATION_TARGET } from '@/lib/outbound-copy'
 
 export type TelegramNotificationType =
   | 'email_sent'
@@ -357,7 +358,8 @@ export function formatTelegramNotification(input: TelegramNotification, options?
           : '🚀 *Sovereign Engine — Daily Outbound Report*',
         '━━━━━━━━━━━━━━━━━━━━━━━',
         `📤 Sent today: *${sent}*   ❌ Failed: ${failed}   ⚠️ Bounced: ${bounced}`,
-        `💬 Replies: *${replies}* (${rr}% response rate)`,
+        `💬 Qualified conversations: *${replies}* (${rr}% response rate)`,
+        `🎯 Client-generation target: ${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin}-${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax}/day from ${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor}-${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling} compliant sends`,
         `📋 Queued this cycle: ${queuedThisCycle}   Queue now: ${queuedNow}`,
         agency || direct
           ? `Mix: ${agency} agency (${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label}) / ${direct} direct (${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label})`
