@@ -687,6 +687,54 @@ assert.deepEqual(
   []
 )
 
+const artifactMailbox = scoreProspectForResearchApproval({
+  id: 14,
+  email: 'ho@cylex-locale.fr',
+  email_domain: 'cylex-locale.fr',
+  company: 'Cylex Locale',
+  company_domain: 'cylex-locale.fr',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'business_domain_role_pattern',
+    fit_score: 95,
+    public_evidence_url: 'https://cylex-locale.fr/',
+  },
+})
+
+assert.equal(artifactMailbox.approved, false)
+assert.equal(artifactMailbox.verdict, 'blocked')
+assert.ok(artifactMailbox.blockers.includes('artifact_or_too_short_mailbox'))
+
+const weakEnterpriseInbox = scoreProspectForResearchApproval({
+  id: 15,
+  email: 'hello@openai.com',
+  email_domain: 'openai.com',
+  company: 'OpenAI',
+  company_domain: 'openai.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'pending',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'business_domain_role_pattern',
+    fit_score: 95,
+    public_evidence_url: 'https://openai.com/',
+  },
+})
+
+assert.equal(weakEnterpriseInbox.approved, false)
+assert.equal(weakEnterpriseInbox.verdict, 'blocked')
+assert.ok(
+  weakEnterpriseInbox.blockers.includes(
+    'weak_generic_enterprise_inbox_requires_strong_evidence'
+  )
+)
+
 console.log('prospect research tests passed')
 }
 

@@ -1343,6 +1343,59 @@ async function runResearchApproval(input: {
       .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
       .slice(0, 25)
 
+    if (!input.dryRun) {
+      const reviewRecords = decisions
+        .filter((decision) => !decision.approved)
+        .map((decision) => ({
+          id: decision.id,
+          send_status: decision.blockers.length > 0 ? 'blocked' : 'not_approved',
+          approval_required: true,
+          approval_blocked_reason: decision.blockers[0] ?? 'research_score_below_threshold',
+          research_score: decision.score,
+          hunter_confidence: decision.confidence,
+          hunter_verdict: decision.verdict,
+          hunter_reasons: decision.reasons,
+          hunter_blockers: decision.blockers,
+          research_evidence_url: decision.evidenceUrl,
+        }))
+
+      if (reviewRecords.length > 0) {
+        await query(
+          `UPDATE contacts
+           SET custom_fields = COALESCE(contacts.custom_fields, '{}'::jsonb)
+             || jsonb_build_object(
+               'send_status', updates.send_status,
+               'approval_required', updates.approval_required,
+               'approval_blocked_reason', updates.approval_blocked_reason,
+               'research_score', updates.research_score,
+               'hunter_confidence', updates.hunter_confidence,
+               'hunter_verdict', updates.hunter_verdict,
+               'hunter_reasons', updates.hunter_reasons,
+               'hunter_blockers', updates.hunter_blockers,
+               'research_evidence_url', updates.research_evidence_url,
+               'hunter_checked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+             ),
+             updated_at = CURRENT_TIMESTAMP
+           FROM jsonb_to_recordset($2::jsonb) AS updates(
+             id bigint,
+             send_status text,
+             approval_required boolean,
+             approval_blocked_reason text,
+             research_score int,
+             hunter_confidence int,
+             hunter_verdict text,
+             hunter_reasons jsonb,
+             hunter_blockers jsonb,
+             research_evidence_url text
+           )
+           WHERE contacts.client_id = $1
+             AND contacts.id = updates.id
+             AND COALESCE(contacts.custom_fields->>'send_status', 'not_approved') <> 'queued'`,
+          [input.clientId, JSON.stringify(reviewRecords)]
+        )
+      }
+    }
+
     if (input.dryRun) {
       return {
         stage: 'research_approval',
@@ -1407,18 +1460,20 @@ async function runResearchApproval(input: {
            'send_status', 'approved',
            'approval_required', false,
            'approved_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-           'approved_by', 'daily_research_approval_gate',
-           'approval_batch', 'daily_research_verified_best',
-           'research_score', scores.score,
-           'research_reasons', scores.reasons,
-           'research_evidence_url', scores.evidence_url,
-           'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
-         ),
+         'approved_by', 'daily_research_approval_gate',
+         'approval_batch', 'daily_research_verified_best',
+         'research_score', scores.score,
+         'research_reasons', scores.reasons,
+         'hunter_confidence', scores.confidence,
+         'hunter_verdict', 'approved',
+         'research_evidence_url', scores.evidence_url,
+         'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
+       ),
          verification_status = COALESCE(NULLIF(scores.verification_status, ''), contacts.verification_status),
          updated_at = CURRENT_TIMESTAMP
        FROM (
          SELECT *
-         FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text, email_evidence text, verification_status text)
+         FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, confidence int, reasons jsonb, evidence_url text, email_evidence text, verification_status text)
        ) AS scores
        WHERE contacts.client_id = $1
          AND contacts.id = ANY($2::bigint[])
@@ -1434,6 +1489,7 @@ async function runResearchApproval(input: {
           approvedCandidates.map((candidate) => ({
             id: candidate.id,
             score: candidate.score,
+            confidence: candidate.confidence,
             reasons: candidate.reasons,
             evidence_url: candidate.evidenceUrl,
             email_evidence: asString(contactById.get(candidate.id)?.custom_fields?.email_evidence),

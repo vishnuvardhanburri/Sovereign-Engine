@@ -31,6 +31,8 @@ export interface ResearchApprovalDecision {
   email: string
   company: string | null
   score: number
+  confidence: number
+  verdict: 'approved' | 'review' | 'blocked'
   approved: boolean
   reasons: string[]
   blockers: string[]

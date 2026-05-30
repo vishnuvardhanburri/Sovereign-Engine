@@ -21,6 +21,8 @@ export type ProspectResearchDecision = {
   email: string
   company: string | null
   score: number
+  confidence: number
+  verdict: 'approved' | 'review' | 'blocked'
   approved: boolean
   reasons: string[]
   blockers: string[]
@@ -164,6 +166,59 @@ const RISKY_GUESSED_ROLE_PREFIXES = new Set([
   'partnership',
   'partnerships',
 ])
+
+const WEAK_GENERIC_PREFIXES = new Set([
+  'contact',
+  'hello',
+  'hi',
+  'info',
+  'mail',
+  'team',
+])
+
+const COMMERCIAL_ROLE_PREFIXES = new Set([
+  'bd',
+  'business',
+  'growth',
+  'marketing',
+  'opportunities',
+  'opportunity',
+  'sales',
+])
+
+const PROTECTED_ENTERPRISE_DOMAINS = new Set([
+  '1password.com',
+  'ai.google',
+  'anthropic.com',
+  'clay.com',
+  'cloudflare.com',
+  'crowdstrike.com',
+  'deepai.org',
+  'langchain.com',
+  'microsoft.com',
+  'mistral.ai',
+  'okta.com',
+  'openai.com',
+  'rapid7.com',
+  'sentinelone.com',
+  'snyk.io',
+  'vellum.ai',
+  'wiz.io',
+  'zscaler.com',
+])
+
+const LOW_INTENT_DOMAIN_PATTERNS = [
+  /(^|\.)cylex-/,
+  /(^|\.)findglocal\./,
+  /(^|\.)mapquest\./,
+  /(^|\.)yellowpages\./,
+  /(^|\.)zillow\./,
+  /(^|\.)zumper\./,
+  /(^|\.)rew\.ca$/,
+  /directory/,
+  /classified/,
+  /locale/,
+]
 
 const SAFE_SOURCE_TYPES = new Set([
   'apify_google_maps',
@@ -346,9 +401,51 @@ function hasAcceptedBusinessRoleFallback(
   if (!BUSINESS_ROLE_FALLBACK_EVIDENCE.has(evidence)) return false
 
   const fitScore = scoreNumber(customFields.fit_score)
-  if (evidence === 'synthetic_role_pattern') return fitScore >= 85
-  if (evidence === 'maps_public_business_evidence') return fitScore >= 78
+  if (WEAK_GENERIC_PREFIXES.has(prefix)) {
+    if (evidence === 'synthetic_role_pattern') return fitScore >= 90
+    if (evidence === 'maps_public_business_evidence') return fitScore >= 90
+    if (evidence === 'business_domain_role_pattern') return fitScore >= 82
+    return fitScore >= 88
+  }
+  if (evidence === 'synthetic_role_pattern') return fitScore >= 88
+  if (evidence === 'maps_public_business_evidence') return fitScore >= 82
   return fitScore >= 70
+}
+
+function hasStrongEmailEvidence(
+  customFields: Record<string, unknown>,
+  verificationStatus: string
+): boolean {
+  return (
+    verificationStatus === 'valid' ||
+    hasExactPublicEmailEvidence(customFields.email_evidence) ||
+    hasAcceptedProviderValidationFallback(customFields)
+  )
+}
+
+function hasInstitutionalOrGovernmentDomain(domain: string): boolean {
+  const normalized = normalizeDomain(domain)
+  return /\.(edu|gov|mil)(\.[a-z]{2})?$/.test(normalized) || /\.ac\.[a-z]{2}$/.test(normalized)
+}
+
+function hasLowIntentDomain(domain: string): boolean {
+  const normalized = normalizeDomain(domain)
+  return LOW_INTENT_DOMAIN_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+function hasProtectedEnterpriseDomain(domain: string): boolean {
+  const normalized = normalizeDomain(domain)
+  const root = rootDomain(normalized)
+  return PROTECTED_ENTERPRISE_DOMAINS.has(normalized) || PROTECTED_ENTERPRISE_DOMAINS.has(root)
+}
+
+function isArtifactMailboxPrefix(prefix: string): boolean {
+  const normalized = prefix.trim().toLowerCase()
+  if (!normalized) return true
+  if (normalized.length <= 2) return true
+  if (/^\d/.test(normalized)) return true
+  if (/^[a-z]{3}$/.test(normalized) && !SAFE_BUSINESS_PREFIXES.has(normalized)) return true
+  return false
 }
 
 export function prospectNeedsExactPublicEmailEvidence(
@@ -382,6 +479,17 @@ export function approvedContactQueueBlockers(
   if (contact.bounced_at) blockers.push('previously_bounced')
   if (contact.unsubscribed_at) blockers.push('unsubscribed')
   if (BLOCKED_MAILBOX_PREFIXES.has(prefix)) blockers.push('blocked_mailbox_prefix')
+  if (isArtifactMailboxPrefix(prefix)) blockers.push('artifact_or_too_short_mailbox')
+  if (hasInstitutionalOrGovernmentDomain(email.split('@')[1] ?? '')) {
+    blockers.push('institutional_or_government_domain')
+  }
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
+    (hasProtectedEnterpriseDomain(email.split('@')[1] ?? '') || hasLowIntentDomain(email.split('@')[1] ?? '')) &&
+    !hasStrongEmailEvidence(customFields, verificationStatus)
+  ) {
+    blockers.push('weak_generic_inbox_requires_strong_evidence')
+  }
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) {
     blockers.push(`verification_${verificationStatus}`)
   }
@@ -657,6 +765,10 @@ export function scoreProspectForResearchApproval(
     blockers.push('blocked_mailbox_prefix')
   }
 
+  if (isArtifactMailboxPrefix(prefix)) {
+    blockers.push('artifact_or_too_short_mailbox')
+  }
+
   if (prefix.includes('+')) {
     blockers.push('tagged_or_test_address')
   }
@@ -674,6 +786,30 @@ export function scoreProspectForResearchApproval(
     !hasAcceptedProviderValidationFallback(customFields)
   ) {
     blockers.push('generic_inbox_requires_email_validation')
+  }
+
+  if (hasInstitutionalOrGovernmentDomain(emailDomain)) {
+    blockers.push('institutional_or_government_domain')
+  }
+
+  if (hasLowIntentDomain(emailDomain)) {
+    blockers.push('low_intent_public_directory_domain')
+  }
+
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
+    hasProtectedEnterpriseDomain(emailDomain) &&
+    !hasStrongEmailEvidence(customFields, verificationStatus)
+  ) {
+    blockers.push('weak_generic_enterprise_inbox_requires_strong_evidence')
+  }
+
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
+    hasLowIntentDomain(emailDomain) &&
+    !hasStrongEmailEvidence(customFields, verificationStatus)
+  ) {
+    blockers.push('weak_generic_low_intent_domain_requires_strong_evidence')
   }
 
   if (
@@ -696,7 +832,11 @@ export function scoreProspectForResearchApproval(
     reasons.push('trusted_source')
   }
 
-  if (SAFE_BUSINESS_PREFIXES.has(prefix)) {
+  if (COMMERCIAL_ROLE_PREFIXES.has(prefix)) {
+    score += 32
+    reasons.push('strong_commercial_inbox')
+    reasons.push('safe_business_inbox')
+  } else if (SAFE_BUSINESS_PREFIXES.has(prefix)) {
     score += 28
     reasons.push('safe_business_inbox')
   } else if (isPersonLikeMailboxPrefix(prefix)) {
@@ -775,16 +915,20 @@ export function scoreProspectForResearchApproval(
     reasons.push('business_role_fallback_accepted')
   }
 
-  const approved = blockers.length === 0 && score >= threshold
+  const confidence = Math.min(100, score)
+  const approved = blockers.length === 0 && confidence >= threshold
+  const verdict = approved ? 'approved' : blockers.length > 0 ? 'blocked' : 'review'
 
   return {
     id: Number(contact.id),
     email,
     company: contact.company ?? null,
-    score: Math.min(100, score),
+    score: confidence,
+    confidence,
+    verdict,
     approved,
-    reasons,
-    blockers,
+    reasons: Array.from(new Set(reasons)),
+    blockers: Array.from(new Set(blockers)),
     evidenceUrl,
     source,
   }

@@ -24,7 +24,7 @@ const directLead = {
   first_name: 'Ava',
   company: 'Example SaaS',
   companyDomain: 'example-saas.com',
-  title: 'RevOps',
+  title: 'VP Sales',
   reason_to_contact: 'active outbound campaigns',
 }
 

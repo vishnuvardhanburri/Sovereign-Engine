@@ -42,7 +42,7 @@ import { enrichContactProfile } from '@/lib/agents/data/lead-agent'
 import { verifyEmailAddress } from '@/lib/integrations/zerobounce'
 import { enrichContactWithFreeData } from '@/lib/integrations/free-enrichment'
 import { buildPersonalizedMessage } from '@/lib/agents/intelligence/personalization-agent'
-import { SOVEREIGN_BOOKING_URL, sovereignBookingCtaText } from '@/lib/outbound-copy'
+import { sovereignBookingCtaText, sovereignBookingUrl } from '@/lib/outbound-copy'
 import { recalculateDomainHealth, refreshDomainRiskLimits } from '@/lib/agents/data/risk-agent'
 import { suggestSubjectLines } from '@/lib/agents/intelligence/subject-generation-agent'
 import { isBusinessHourForTimezone, renderVariables } from '@/lib/personalization'
@@ -3276,7 +3276,7 @@ function ensureBookingCtaText(text: string): string {
 
 function renderOutboundHtml(text: string): string {
   const safeText = escapeHtml(text).replaceAll('\n', '<br />')
-  const safeBookingUrl = escapeHtml(SOVEREIGN_BOOKING_URL)
+  const safeBookingUrl = escapeHtml(sovereignBookingUrl())
   const bookingButton = [
     '<p style="margin:18px 0;">',
     `<a href="${safeBookingUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;">Book 20-min audit/demo</a>`,

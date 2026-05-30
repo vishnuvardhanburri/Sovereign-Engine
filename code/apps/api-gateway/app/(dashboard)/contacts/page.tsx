@@ -27,7 +27,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CheckCircle2, Search, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Search, ShieldCheck, Trash2 } from 'lucide-react'
 
 export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -60,6 +60,25 @@ export default function ContactsPage() {
   }
 
   const isApproved = (contact: Contact) => contact.customFields?.send_status === 'approved'
+  const hunterVerdict = (contact: Contact) => String(contact.customFields?.hunter_verdict ?? '')
+  const hunterConfidence = (contact: Contact) => Number(contact.customFields?.hunter_confidence ?? contact.customFields?.research_score ?? 0)
+  const hunterBlockers = (contact: Contact) => {
+    const blockers = contact.customFields?.hunter_blockers
+    return Array.isArray(blockers) ? blockers.map(String).filter(Boolean) : []
+  }
+  const getHunterBadge = (contact: Contact) => {
+    const verdict = hunterVerdict(contact)
+    if (isApproved(contact) || verdict === 'approved') {
+      return <Badge className="bg-emerald-500/10 text-emerald-500">verified {hunterConfidence(contact) || ''}</Badge>
+    }
+    if (verdict === 'blocked' || contact.customFields?.send_status === 'blocked') {
+      return <Badge className="bg-red-500/10 text-red-500">blocked {hunterConfidence(contact) || ''}</Badge>
+    }
+    if (verdict === 'review') {
+      return <Badge className="bg-amber-500/10 text-amber-500">review {hunterConfidence(contact) || ''}</Badge>
+    }
+    return <Badge className="bg-slate-500/10 text-slate-400">unchecked</Badge>
+  }
 
   return (
     <div className="space-y-6">
@@ -130,6 +149,7 @@ export default function ContactsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Hunter Gate</TableHead>
                   <TableHead>Outreach</TableHead>
                   <TableHead>Added Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -141,7 +161,7 @@ export default function ContactsPage() {
                     .fill(0)
                     .map((_, i) => (
                       <TableRow key={i}>
-                        {Array(7)
+                        {Array(8)
                           .fill(0)
                           .map((_, j) => (
                             <TableCell key={j}>
@@ -160,6 +180,19 @@ export default function ContactsPage() {
                         <Badge className={getStatusColor(contact.status)}>
                           {contact.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          {getHunterBadge(contact)}
+                          {hunterBlockers(contact).length > 0 ? (
+                            <div className="flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
+                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                              <span className="truncate" title={hunterBlockers(contact).join(', ')}>
+                                {hunterBlockers(contact).slice(0, 2).join(', ')}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {isApproved(contact) ? (
@@ -194,7 +227,7 @@ export default function ContactsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No contacts found
                     </TableCell>
                   </TableRow>

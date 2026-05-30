@@ -28,15 +28,40 @@ export const SOVEREIGN_STACK_DIRECT_SUBJECT =
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
   'white-label outbound infrastructure'
 
-export const SOVEREIGN_BOOKING_URL = 'https://cal.com/vishnuvardhanburri/30min'
+export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://vishnulabs.com/book'
+
+export function sovereignBookingUrl(): string {
+  const raw =
+    process.env.SOVEREIGN_BOOKING_URL ||
+    process.env.OUTBOUND_BOOKING_URL ||
+    process.env.NEXT_PUBLIC_SOVEREIGN_BOOKING_URL ||
+    SOVEREIGN_DEFAULT_BOOKING_URL
+  const trimmed = raw.trim()
+  if (!trimmed) return SOVEREIGN_DEFAULT_BOOKING_URL
+
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol === 'https:') return url.toString()
+  } catch {
+    return SOVEREIGN_DEFAULT_BOOKING_URL
+  }
+
+  return SOVEREIGN_DEFAULT_BOOKING_URL
+}
+
+export const SOVEREIGN_BOOKING_URL = SOVEREIGN_DEFAULT_BOOKING_URL
 
 export function sovereignBookingCtaText(): string {
-  return `Book a 20-minute audit + demo here: ${SOVEREIGN_BOOKING_URL}`
+  return `Book a 20-minute audit + demo here: ${sovereignBookingUrl()}`
 }
 
 export function withSovereignBookingCta(body: string): string {
   const trimmed = body.trim()
-  if (!trimmed || /cal\.com\/vishnuvardhanburri\/30min/i.test(trimmed)) {
+  if (
+    !trimmed ||
+    /cal\.com\/vishnuvardhanburri\/30min/i.test(trimmed) ||
+    trimmed.includes(sovereignBookingUrl())
+  ) {
     return trimmed
   }
 
@@ -543,11 +568,13 @@ function renderTextBlock(block: string): string {
 }
 
 export function renderSovereignHtmlEmail(text: string): string {
+  const bookingUrl = sovereignBookingUrl()
   const blocks = text.trim().split(/\n{2,}/)
   const htmlBlocks = blocks
     .map((block) => {
-      if (block.includes(SOVEREIGN_BOOKING_URL)) {
-        return `<p style="margin:20px 0 18px 0;"><a href="${SOVEREIGN_BOOKING_URL}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">Book 20-min audit</a></p><p style="margin:0 0 16px 0;color:#6b7280;font-size:12px;">Or open: <a href="${SOVEREIGN_BOOKING_URL}" style="color:#2563eb;">${SOVEREIGN_BOOKING_URL}</a></p>`
+      if (block.includes(SOVEREIGN_BOOKING_URL) || block.includes(bookingUrl)) {
+        const safeBookingUrl = escapeHtml(bookingUrl)
+        return `<p style="margin:20px 0 18px 0;"><a href="${safeBookingUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">Book 20-min audit</a></p><p style="margin:0 0 16px 0;color:#6b7280;font-size:12px;">Or open: <a href="${safeBookingUrl}" style="color:#2563eb;">${safeBookingUrl}</a></p>`
       }
 
       return renderTextBlock(block)

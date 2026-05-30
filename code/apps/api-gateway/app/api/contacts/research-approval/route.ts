@@ -134,6 +134,57 @@ async function researchApproval(request: NextRequest, apply: boolean) {
     })
   }
 
+  const reviewRecords = decisions
+    .filter((decision) => !decision.approved)
+    .map((decision) => ({
+      id: decision.id,
+      send_status: decision.blockers.length > 0 ? 'blocked' : 'not_approved',
+      approval_required: true,
+      approval_blocked_reason: decision.blockers[0] ?? 'research_score_below_threshold',
+      research_score: decision.score,
+      hunter_confidence: decision.confidence,
+      hunter_verdict: decision.verdict,
+      hunter_reasons: decision.reasons,
+      hunter_blockers: decision.blockers,
+      research_evidence_url: decision.evidenceUrl,
+    }))
+
+  if (reviewRecords.length > 0) {
+    await query(
+      `UPDATE contacts
+       SET custom_fields = COALESCE(contacts.custom_fields, '{}'::jsonb)
+         || jsonb_build_object(
+           'send_status', updates.send_status,
+           'approval_required', updates.approval_required,
+           'approval_blocked_reason', updates.approval_blocked_reason,
+           'research_score', updates.research_score,
+           'hunter_confidence', updates.hunter_confidence,
+           'hunter_verdict', updates.hunter_verdict,
+           'hunter_reasons', updates.hunter_reasons,
+           'hunter_blockers', updates.hunter_blockers,
+           'research_evidence_url', updates.research_evidence_url,
+           'hunter_checked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+         ),
+         updated_at = CURRENT_TIMESTAMP
+       FROM jsonb_to_recordset($2::jsonb) AS updates(
+         id bigint,
+         send_status text,
+         approval_required boolean,
+         approval_blocked_reason text,
+         research_score int,
+         hunter_confidence int,
+         hunter_verdict text,
+         hunter_reasons jsonb,
+         hunter_blockers jsonb,
+         research_evidence_url text
+       )
+       WHERE contacts.client_id = $1
+         AND contacts.id = updates.id
+         AND COALESCE(contacts.custom_fields->>'send_status', 'not_approved') <> 'queued'`,
+      [clientId, JSON.stringify(reviewRecords)]
+    )
+  }
+
   const candidateIds = approvedCandidates.map((candidate) => candidate.id)
   if (candidateIds.length === 0) {
     return NextResponse.json({
@@ -161,13 +212,15 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          'approval_batch', 'research_verified_best',
          'research_score', scores.score,
          'research_reasons', scores.reasons,
+         'hunter_confidence', scores.confidence,
+         'hunter_verdict', 'approved',
          'research_evidence_url', scores.evidence_url,
          'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
        ),
        updated_at = CURRENT_TIMESTAMP
      FROM (
        SELECT *
-       FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, reasons jsonb, evidence_url text, email_evidence text)
+       FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, confidence int, reasons jsonb, evidence_url text, email_evidence text)
      ) AS scores
      WHERE contacts.client_id = $1
        AND contacts.id = ANY($2::bigint[])
@@ -183,6 +236,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
         approvedCandidates.map((candidate) => ({
           id: candidate.id,
           score: candidate.score,
+          confidence: candidate.confidence,
           reasons: candidate.reasons,
           evidence_url: candidate.evidenceUrl,
           email_evidence: asString(contactById.get(candidate.id)?.custom_fields?.email_evidence),
