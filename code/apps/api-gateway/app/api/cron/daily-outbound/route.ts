@@ -74,6 +74,23 @@ type ApprovedLead = {
   deal_value_usd: number
 }
 
+type ApprovedContactRow = {
+  id: string
+  email: string
+  email_domain: string | null
+  first_name: string | null
+  company: string | null
+  company_domain: string | null
+  title: string | null
+  source: string | null
+  reason_to_contact: string | null
+  custom_fields: Record<string, unknown> | null
+  verification_status: string | null
+  status: string | null
+  bounced_at: string | null
+  unsubscribed_at: string | null
+}
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -1540,24 +1557,72 @@ async function runResearchApproval(input: {
   }
 }
 
-async function loadApprovedContacts(clientId: number, limit: number): Promise<ApprovedLead[]> {
+function approvedRowToResearchContact(row: ApprovedContactRow): ProspectResearchContact {
+  return {
+    id: row.id,
+    email: row.email,
+    email_domain: row.email_domain,
+    company: row.company,
+    company_domain: row.company_domain,
+    title: row.title,
+    source: row.source,
+    custom_fields: row.custom_fields,
+    verification_status: row.verification_status,
+    status: row.status,
+    bounced_at: row.bounced_at,
+    unsubscribed_at: row.unsubscribed_at,
+  }
+}
+
+async function quarantineApprovedContacts(
+  clientId: number,
+  blockedRows: Array<{ row: ApprovedContactRow; blockers: string[] }>
+): Promise<number> {
+  if (blockedRows.length === 0) return 0
+
+  const result = await query(
+    `UPDATE contacts
+     SET custom_fields = COALESCE(contacts.custom_fields, '{}'::jsonb)
+       || jsonb_build_object(
+         'send_status', 'blocked',
+         'approval_required', true,
+         'approval_blocked_reason', updates.approval_blocked_reason,
+         'blocked_by', 'approved_queue_recheck',
+         'blocked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+         'queue_gate_checked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+         'hunter_verdict', 'blocked',
+         'hunter_blockers', updates.hunter_blockers
+       ),
+       updated_at = CURRENT_TIMESTAMP
+     FROM jsonb_to_recordset($2::jsonb) AS updates(
+       id bigint,
+       approval_blocked_reason text,
+       hunter_blockers jsonb
+     )
+     WHERE contacts.client_id = $1
+       AND contacts.id = updates.id
+       AND COALESCE(contacts.custom_fields->>'send_status', 'not_approved') = 'approved'`,
+    [
+      clientId,
+      JSON.stringify(
+        blockedRows.map(({ row, blockers }) => ({
+          id: Number(row.id),
+          approval_blocked_reason: blockers[0] ?? 'approved_queue_recheck_failed',
+          hunter_blockers: blockers,
+        }))
+      ),
+    ]
+  )
+
+  return result.rowCount ?? 0
+}
+
+async function loadApprovedContacts(
+  clientId: number,
+  limit: number
+): Promise<{ leads: ApprovedLead[]; quarantinedApprovedContacts: number }> {
   const scanLimit = Math.min(Math.max(limit * 50, 500), 10_000)
-  const result = await query<{
-    id: string
-    email: string
-    email_domain: string | null
-    first_name: string | null
-    company: string | null
-    company_domain: string | null
-    title: string | null
-    source: string | null
-    reason_to_contact: string | null
-    custom_fields: Record<string, unknown> | null
-    verification_status: string | null
-    status: string | null
-    bounced_at: string | null
-    unsubscribed_at: string | null
-  }>(
+  const result = await query<ApprovedContactRow>(
     `SELECT
        c.id::text,
        c.email,
@@ -1597,51 +1662,46 @@ async function loadApprovedContacts(clientId: number, limit: number): Promise<Ap
     [clientId, scanLimit]
   )
 
-  const eligibleRows = result.rows.filter(
-    (row) =>
-      approvedContactQueueBlockers({
-        id: row.id,
-        email: row.email,
-        email_domain: row.email_domain,
+  const reviewedRows = result.rows.map((row) => ({
+    row,
+    blockers: approvedContactQueueBlockers(approvedRowToResearchContact(row)),
+  }))
+  const blockedRows = reviewedRows.filter(({ blockers }) => blockers.length > 0)
+  const quarantinedApprovedContacts = await quarantineApprovedContacts(clientId, blockedRows)
+  const eligibleRows = reviewedRows
+    .filter(({ blockers }) => blockers.length === 0)
+    .map(({ row }) => row)
+
+  const leads = balanceSovereignOfferMix(
+    eligibleRows.map((row) => {
+      const leadBase = {
         company: row.company,
-        company_domain: row.company_domain,
+        companyDomain: row.company_domain,
         title: row.title,
         source: row.source,
-        custom_fields: row.custom_fields,
-        verification_status: row.verification_status,
-        status: row.status,
-        bounced_at: row.bounced_at,
-        unsubscribed_at: row.unsubscribed_at,
-      }).length === 0
+        reasonToContact: row.reason_to_contact,
+        customFields: row.custom_fields,
+      }
+      const offerType = inferSovereignOfferType(leadBase)
+
+      return {
+        contact_id: Number(row.id),
+        email: row.email,
+        first_name: row.first_name || row.email.split('@')[0] || 'there',
+        company: row.company || row.email.split('@')[1] || 'your team',
+        title: row.title || undefined,
+        company_domain: row.company_domain || undefined,
+        consent_source: 'operator_approved_business_outreach',
+        reason_to_contact: row.reason_to_contact || 'reviewed approved business prospect',
+        offer_type: offerType,
+        deal_value_usd: sovereignDealValueUsd({ ...leadBase, offerType }),
+        customFields: row.custom_fields,
+      }
+    }),
+    limit
   )
 
-  const leads = eligibleRows.map((row) => {
-    const leadBase = {
-      company: row.company,
-      companyDomain: row.company_domain,
-      title: row.title,
-      source: row.source,
-      reasonToContact: row.reason_to_contact,
-      customFields: row.custom_fields,
-    }
-    const offerType = inferSovereignOfferType(leadBase)
-
-    return {
-      contact_id: Number(row.id),
-      email: row.email,
-      first_name: row.first_name || row.email.split('@')[0] || 'there',
-      company: row.company || row.email.split('@')[1] || 'your team',
-      title: row.title || undefined,
-      company_domain: row.company_domain || undefined,
-      consent_source: 'operator_approved_business_outreach',
-      reason_to_contact: row.reason_to_contact || 'reviewed approved business prospect',
-      offer_type: offerType,
-      deal_value_usd: sovereignDealValueUsd({ ...leadBase, offerType }),
-      customFields: row.custom_fields,
-    }
-  })
-
-  return balanceSovereignOfferMix(leads, limit)
+  return { leads, quarantinedApprovedContacts }
 }
 
 async function repairTerminalQueuedContacts(clientId: number): Promise<number> {
@@ -1756,7 +1816,10 @@ async function runQueue(input: {
     queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
     const repairedQueuedContacts = await repairTerminalQueuedContacts(input.clientId)
     const repairedOrphanedQueuedContacts = await repairOrphanedQueuedContacts(input.clientId, queue)
-    const leads = await loadApprovedContacts(input.clientId, input.sendLimit)
+    const { leads, quarantinedApprovedContacts } = await loadApprovedContacts(
+      input.clientId,
+      input.sendLimit
+    )
 
     if (leads.length === 0) {
       if (input.notifySkipped !== false) {
@@ -1777,6 +1840,7 @@ async function runQueue(input: {
           skipped: 'no_verified_approved_leads',
           repairedQueuedContacts,
           repairedOrphanedQueuedContacts,
+          quarantinedApprovedContacts,
           phase: input.phase || 'after_research',
         },
       }
@@ -1896,6 +1960,7 @@ async function runQueue(input: {
         lastJobId: liveAdded.at(-1)?.job.id ?? null,
         repairedQueuedContacts,
         repairedOrphanedQueuedContacts,
+        quarantinedApprovedContacts,
         phase: input.phase || 'after_research',
       },
     }

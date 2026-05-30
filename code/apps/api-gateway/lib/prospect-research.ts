@@ -220,6 +220,60 @@ const LOW_INTENT_DOMAIN_PATTERNS = [
   /locale/,
 ]
 
+const UNSAFE_OR_ADULT_PATTERNS = [
+  /\badult\b/,
+  /\bcasino\b/,
+  /\bescort\b/,
+  /\bgambling\b/,
+  /\bnude\b/,
+  /\bonlyfans\b/,
+  /\bporn(?:o|hub|ography)?\b/,
+  /\bsex\s*(?:chat|dating|site|video|worker)?\b/,
+  /\bxnxx\b/,
+  /\bxvideos\b/,
+]
+
+const NON_TARGET_CONTENT_PATTERNS = [
+  /\bancient origins\b/,
+  /\barticle\b/,
+  /\bclassifieds?\b/,
+  /\bcollege\b/,
+  /\bcourse\b/,
+  /\bdirectory\b/,
+  /\bdocumentation\b/,
+  /\bdocs?\b/,
+  /\bgovernment\b/,
+  /\bguide\b/,
+  /\bhistory\b/,
+  /\blaw school\b/,
+  /\blocal business(?:es)?\b/,
+  /\bmagazine\b/,
+  /\bmastering\b/,
+  /\bmodule\b/,
+  /\bmunicipal\b/,
+  /\bpackage\b/,
+  /\breal estate\b/,
+  /\brentals?\b/,
+  /\bschool\b/,
+  /\bstudent\b/,
+  /\btutorial\b/,
+  /\buniversity\b/,
+  /\bwhat is\b/,
+  /\byellow pages\b/,
+]
+
+const NON_TARGET_HOST_PATTERNS = [
+  /(^|\.)ancient-origins\.net$/,
+  /(^|\.)dev\.to$/,
+  /(^|\.)github\.com$/,
+  /(^|\.)medium\.com$/,
+  /(^|\.)pkg\.go\.dev$/,
+  /(^|\.)stackoverflow\.com$/,
+  /(^|\.)substack\.com$/,
+  /^docs?\./,
+  /^learn\./,
+]
+
 const SAFE_SOURCE_TYPES = new Set([
   'apify_google_maps',
   'google_maps_apify',
@@ -448,6 +502,87 @@ function isArtifactMailboxPrefix(prefix: string): boolean {
   return false
 }
 
+function prospectText(contact: ProspectResearchContact): string {
+  const customFields = contact.custom_fields ?? {}
+  const selectedCustomFields = [
+    'company',
+    'company_domain',
+    'data_source',
+    'description',
+    'email_evidence',
+    'industry',
+    'maps_category',
+    'public_evidence_url',
+    'public_snippet',
+    'public_title',
+    'reason_to_contact',
+    'search_query',
+    'search_snippet',
+    'search_title',
+    'source_url',
+    'website_text',
+  ]
+
+  return [
+    contact.email,
+    contact.email_domain,
+    contact.company,
+    contact.company_domain,
+    contact.title,
+    contact.source,
+    ...selectedCustomFields.map((key) => customFields[key]),
+  ]
+    .map((value) => String(value ?? '').toLowerCase())
+    .filter(Boolean)
+    .join(' ')
+}
+
+function hasUnsafeOrAdultProspectSignal(contact: ProspectResearchContact): boolean {
+  const text = prospectText(contact)
+  return UNSAFE_OR_ADULT_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+function hasNonTargetHostSignal(contact: ProspectResearchContact): boolean {
+  const customFields = contact.custom_fields ?? {}
+  const hosts = [
+    contact.email_domain,
+    contact.company_domain,
+    getEvidenceHost(asString(customFields.public_evidence_url) || asString(customFields.source_url)),
+  ]
+    .map((value) => normalizeDomain(value || ''))
+    .filter(Boolean)
+
+  return hosts.some((host) => NON_TARGET_HOST_PATTERNS.some((pattern) => pattern.test(host)))
+}
+
+function looksLikeContentPageInsteadOfCompany(contact: ProspectResearchContact): boolean {
+  const customFields = contact.custom_fields ?? {}
+  const titleText = [
+    contact.company,
+    contact.title,
+    customFields.public_title,
+    customFields.search_title,
+  ]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ')
+  const fullText = prospectText(contact)
+  const companyWords = String(contact.company ?? '').trim().split(/\s+/).filter(Boolean).length
+
+  return (
+    NON_TARGET_CONTENT_PATTERNS.some((pattern) => pattern.test(titleText || fullText)) ||
+    companyWords >= 9
+  )
+}
+
+function prospectContentBlockers(contact: ProspectResearchContact): string[] {
+  const blockers: string[] = []
+  if (hasUnsafeOrAdultProspectSignal(contact)) blockers.push('unsafe_or_adult_prospect')
+  if (hasNonTargetHostSignal(contact)) blockers.push('content_or_documentation_host')
+  if (looksLikeContentPageInsteadOfCompany(contact)) blockers.push('content_page_not_company')
+  return blockers
+}
+
 export function prospectNeedsExactPublicEmailEvidence(
   contact: ProspectResearchContact
 ): boolean {
@@ -483,6 +618,15 @@ export function approvedContactQueueBlockers(
   if (hasInstitutionalOrGovernmentDomain(email.split('@')[1] ?? '')) {
     blockers.push('institutional_or_government_domain')
   }
+  if (hasLowIntentDomain(email.split('@')[1] ?? '')) {
+    blockers.push('low_intent_public_directory_domain')
+  }
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
+    hasProtectedEnterpriseDomain(email.split('@')[1] ?? '')
+  ) {
+    blockers.push('weak_generic_enterprise_inbox_requires_manual_review')
+  }
   if (
     WEAK_GENERIC_PREFIXES.has(prefix) &&
     (hasProtectedEnterpriseDomain(email.split('@')[1] ?? '') || hasLowIntentDomain(email.split('@')[1] ?? '')) &&
@@ -513,6 +657,7 @@ export function approvedContactQueueBlockers(
   if (prospectNeedsExactPublicEmailEvidence(contact)) {
     blockers.push('risky_role_requires_exact_public_email_evidence')
   }
+  blockers.push(...prospectContentBlockers(contact))
 
   return Array.from(new Set(blockers))
 }
@@ -798,6 +943,13 @@ export function scoreProspectForResearchApproval(
 
   if (
     WEAK_GENERIC_PREFIXES.has(prefix) &&
+    hasProtectedEnterpriseDomain(emailDomain)
+  ) {
+    blockers.push('weak_generic_enterprise_inbox_requires_manual_review')
+  }
+
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
     hasProtectedEnterpriseDomain(emailDomain) &&
     !hasStrongEmailEvidence(customFields, verificationStatus)
   ) {
@@ -831,6 +983,8 @@ export function scoreProspectForResearchApproval(
     score += 8
     reasons.push('trusted_source')
   }
+
+  blockers.push(...prospectContentBlockers(contact))
 
   if (COMMERCIAL_ROLE_PREFIXES.has(prefix)) {
     score += 32

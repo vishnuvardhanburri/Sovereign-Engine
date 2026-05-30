@@ -735,6 +735,113 @@ assert.ok(
   )
 )
 
+const adultContentLead = scoreProspectForResearchApproval({
+  id: 16,
+  email: 'hello@pornobrasil.com',
+  email_domain: 'pornobrasil.com',
+  company: 'Porno Brasil',
+  company_domain: 'pornobrasil.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 100,
+    public_evidence_url: 'https://pornobrasil.com/',
+    reason_to_contact: 'Public search result matched a consumer adult-content site.',
+  },
+})
+
+assert.equal(adultContentLead.approved, false)
+assert.equal(adultContentLead.verdict, 'blocked')
+assert.ok(adultContentLead.blockers.includes('unsafe_or_adult_prospect'))
+assert.ok(
+  approvedContactQueueBlockers({
+    id: 16,
+    email: 'hello@pornobrasil.com',
+    email_domain: 'pornobrasil.com',
+    company: 'Porno Brasil',
+    company_domain: 'pornobrasil.com',
+    source: 'public_search',
+    status: 'active',
+    verification_status: 'valid',
+    custom_fields: adultContentLead.evidenceUrl
+      ? {
+          send_status: 'approved',
+          email_evidence: 'public_domain_email',
+          public_evidence_url: adultContentLead.evidenceUrl,
+        }
+      : { send_status: 'approved' },
+  }).includes('unsafe_or_adult_prospect')
+)
+
+const packageDocLead = scoreProspectForResearchApproval({
+  id: 17,
+  email: 'hello@pkg.go.dev',
+  email_domain: 'pkg.go.dev',
+  company: 'grule-rule-engine module',
+  company_domain: 'pkg.go.dev',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 98,
+    public_evidence_url: 'https://pkg.go.dev/github.com/hyperjumptech/grule-rule-engine',
+    public_title: 'grule-rule-engine module - pkg.go.dev',
+  },
+})
+
+assert.equal(packageDocLead.approved, false)
+assert.ok(packageDocLead.blockers.includes('content_or_documentation_host'))
+assert.ok(packageDocLead.blockers.includes('content_page_not_company'))
+
+const articleTitleLead = scoreProspectForResearchApproval({
+  id: 18,
+  email: 'hello@tech.netcorecloud.com',
+  email_domain: 'tech.netcorecloud.com',
+  company: 'Mastering Decision-Making with Grule',
+  company_domain: 'tech.netcorecloud.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 99,
+    public_evidence_url: 'https://tech.netcorecloud.com/mastering-decision-making-with-grule/',
+    public_title: 'Mastering Decision-Making with Grule',
+  },
+})
+
+assert.equal(articleTitleLead.approved, false)
+assert.ok(articleTitleLead.blockers.includes('content_page_not_company'))
+
+const publicDirectoryWithStrongEvidence = approvedContactQueueBlockers({
+  id: 19,
+  email: 'hello@rew.ca',
+  email_domain: 'rew.ca',
+  company: 'REW Real Estate',
+  company_domain: 'rew.ca',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    send_status: 'approved',
+    email_evidence: 'public_domain_email',
+    public_evidence_url: 'https://rew.ca/',
+    reason_to_contact: 'Real estate portal discovered from public search.',
+  },
+})
+
+assert.ok(publicDirectoryWithStrongEvidence.includes('low_intent_public_directory_domain'))
+assert.ok(publicDirectoryWithStrongEvidence.includes('content_page_not_company'))
+
 console.log('prospect research tests passed')
 }
 
