@@ -112,9 +112,12 @@ const BLOCKED_MAILBOX_PREFIXES = new Set([
   'pr',
   'press',
   'privacy',
+  'reportincident',
   'security',
   'support',
   'tax',
+  'test',
+  'testsecurity',
   'webmaster',
 ])
 
@@ -246,6 +249,9 @@ const NON_TARGET_CONTENT_PATTERNS = [
   /\bguide\b/,
   /\bhistory\b/,
   /\blaw school\b/,
+  /\blaw\s+(?:degree|admission|school|student)\b/,
+  /\bleaderboard\b/,
+  /\bllm\s+degree\b/,
   /\blocal business(?:es)?\b/,
   /\bmagazine\b/,
   /\bmastering\b/,
@@ -255,6 +261,7 @@ const NON_TARGET_CONTENT_PATTERNS = [
   /\breal estate\b/,
   /\brentals?\b/,
   /\bschool\b/,
+  /\bsports?\b/,
   /\bstudent\b/,
   /\btutorial\b/,
   /\buniversity\b/,
@@ -266,6 +273,8 @@ const NON_TARGET_HOST_PATTERNS = [
   /(^|\.)ancient-origins\.net$/,
   /(^|\.)dev\.to$/,
   /(^|\.)github\.com$/,
+  /(^|\.)geeksforgeeks\.org$/,
+  /(^|\.)lsac\.org$/,
   /(^|\.)medium\.com$/,
   /(^|\.)pkg\.go\.dev$/,
   /(^|\.)stackoverflow\.com$/,
@@ -498,6 +507,8 @@ function isArtifactMailboxPrefix(prefix: string): boolean {
   if (!normalized) return true
   if (normalized.length <= 2) return true
   if (/^\d/.test(normalized)) return true
+  if (/^test(?:[._-]?[a-z0-9]+)?$/.test(normalized)) return true
+  if (/^(?:listed|listing|reportincident|incident)$/i.test(normalized)) return true
   if (/^[a-z]{3}$/.test(normalized) && !SAFE_BUSINESS_PREFIXES.has(normalized)) return true
   return false
 }

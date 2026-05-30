@@ -156,7 +156,8 @@ export function rankSovereignLeads<T extends SovereignCopyLead>(leads: T[]): T[]
 
 export function balanceSovereignOfferMix<T extends SovereignCopyLead>(
   leads: T[],
-  limit: number
+  limit: number,
+  options: { allowRemainderFill?: boolean } = {}
 ): T[] {
   const normalizedLimit = Math.max(0, Math.trunc(limit))
   if (normalizedLimit <= 0) return []
@@ -164,8 +165,16 @@ export function balanceSovereignOfferMix<T extends SovereignCopyLead>(
   const ranked = rankSovereignLeads(leads)
   const agency = ranked.filter((lead) => inferSovereignOfferType(lead) === 'agency')
   const direct = ranked.filter((lead) => inferSovereignOfferType(lead) === 'direct')
-  const targetAgency = Math.ceil(normalizedLimit / 2)
-  const targetDirect = normalizedLimit - targetAgency
+  const pairSlots = Math.floor(normalizedLimit / 2)
+  const balancedPairs = options.allowRemainderFill
+    ? pairSlots
+    : Math.min(pairSlots, agency.length, direct.length)
+  const targetAgency = options.allowRemainderFill
+    ? Math.ceil(normalizedLimit / 2)
+    : balancedPairs
+  const targetDirect = options.allowRemainderFill
+    ? normalizedLimit - targetAgency
+    : balancedPairs
   const selected: T[] = []
   const agencySlice = agency.slice(0, targetAgency)
   const directSlice = direct.slice(0, targetDirect)
@@ -176,6 +185,10 @@ export function balanceSovereignOfferMix<T extends SovereignCopyLead>(
   }
   const selectedSet = new Set(selected)
   const remainder = ranked.filter((lead) => !selectedSet.has(lead))
+
+  if (!options.allowRemainderFill) {
+    return selected.slice(0, normalizedLimit)
+  }
 
   return [...selected, ...remainder.slice(0, normalizedLimit - selected.length)]
 }

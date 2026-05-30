@@ -842,6 +842,53 @@ const publicDirectoryWithStrongEvidence = approvedContactQueueBlockers({
 assert.ok(publicDirectoryWithStrongEvidence.includes('low_intent_public_directory_domain'))
 assert.ok(publicDirectoryWithStrongEvidence.includes('content_page_not_company'))
 
+const leaderboardArticleLead = scoreProspectForResearchApproval({
+  id: 20,
+  email: 'anita@vellum.ai',
+  email_domain: 'vellum.ai',
+  company: 'LLM Leaderboard 2026 - Compare Top AI Models',
+  company_domain: 'vellum.ai',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 96,
+    public_evidence_url: 'https://www.vellum.ai/llm-leaderboard',
+    public_title: 'LLM Leaderboard 2026 - Compare Top AI Models',
+  },
+})
+
+assert.equal(leaderboardArticleLead.approved, false)
+assert.ok(leaderboardArticleLead.blockers.includes('content_page_not_company'))
+
+const testMailboxLead = scoreProspectForResearchApproval({
+  id: 21,
+  email: 'testsecurity@lsac.org',
+  email_domain: 'lsac.org',
+  company: 'LLM Degree',
+  company_domain: 'lsac.org',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 99,
+    public_evidence_url: 'https://www.lsac.org/llm-degree',
+    public_title: 'LLM Degree',
+  },
+})
+
+assert.equal(testMailboxLead.approved, false)
+assert.ok(testMailboxLead.blockers.includes('blocked_mailbox_prefix'))
+assert.ok(testMailboxLead.blockers.includes('artifact_or_too_short_mailbox'))
+assert.ok(testMailboxLead.blockers.includes('content_or_documentation_host'))
+assert.ok(testMailboxLead.blockers.includes('content_page_not_company'))
+
 console.log('prospect research tests passed')
 }
 

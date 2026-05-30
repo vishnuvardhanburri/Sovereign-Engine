@@ -64,6 +64,22 @@ assert(
   balanced.filter((lead) => inferSovereignOfferType(lead) === 'direct').length === 2,
   'balanced queue should reserve about half for direct offers'
 )
+const directHeavyBalanced = balanceSovereignOfferMix(
+  [
+    { ...agencyLead, company: 'Only Agency', customFields: { fit_score: 99 } },
+    { ...directLead, company: 'Direct A', customFields: { fit_score: 98 } },
+    { ...directLead, company: 'Direct B', customFields: { fit_score: 97 } },
+    { ...directLead, company: 'Direct C', customFields: { fit_score: 96 } },
+    { ...directLead, company: 'Direct D', customFields: { fit_score: 95 } },
+  ],
+  6
+)
+assert(
+  directHeavyBalanced.filter((lead) => inferSovereignOfferType(lead) === 'agency').length ===
+    directHeavyBalanced.filter((lead) => inferSovereignOfferType(lead) === 'direct').length,
+  'direct-heavy pools must not fill missing agency slots'
+)
+assert(directHeavyBalanced.length === 2, 'strict mix should expose agency inventory shortfall')
 assert(
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,3,5,8',
   'default sequence should use Day 1, Day 3, Day 5, Day 8 cadence'

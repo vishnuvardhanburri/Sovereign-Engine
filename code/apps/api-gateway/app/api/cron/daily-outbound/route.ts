@@ -338,17 +338,6 @@ function hunterName(email: HunterDomainEmail): string | undefined {
   return [email.firstName, email.lastName].filter(Boolean).join(' ') || undefined
 }
 
-function pickRotatingValue(value: string | undefined, fallback: string): string {
-  const items = String(value || fallback)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-  if (items.length <= 1) return items[0] || fallback
-  const day = Math.floor(Date.now() / 86_400_000)
-  return items[day % items.length] || fallback
-}
-
 async function maybeRunDailyMaintenance(clientId: number): Promise<{
   ran: boolean
   reason: string
@@ -550,10 +539,12 @@ async function runLeadScoutStage(input: {
   evidenceRequestTimeoutMs?: string | null
 }): Promise<StageResult> {
   try {
+    const defaultIndustry =
+      process.env.DAILY_OUTBOUND_PRIMARY_INDUSTRY ||
+      process.env.DAILY_OUTBOUND_RESEARCH_INDUSTRY ||
+      'agency'
     const result = scoutOpenLeads({
-      industry:
-        input.industry ||
-        pickRotatingValue(process.env.LEAD_SCOUT_INDUSTRIES || process.env.LEAD_SCOUT_INDUSTRY, 'agency'),
+      industry: input.industry || defaultIndustry,
       persona: input.persona || process.env.LEAD_SCOUT_PERSONA || 'partnerships',
       region: input.region || process.env.LEAD_SCOUT_REGION || 'global',
       limit: input.limit,
@@ -630,13 +621,15 @@ async function runPublicSearchStage(input: {
 }): Promise<StageResult> {
   try {
     const apiKey = process.env.SERPAPI_API_KEY || process.env.PUBLIC_SEARCH_SERPAPI_KEY || ''
+    const defaultIndustry =
+      process.env.DAILY_OUTBOUND_PRIMARY_INDUSTRY ||
+      process.env.DAILY_OUTBOUND_RESEARCH_INDUSTRY ||
+      'agency'
 
     const result = await searchPublicSearchLeads({
       provider: apiKey ? 'serpapi' : 'bing_html',
       apiKey,
-      industry:
-        input.industry ||
-        pickRotatingValue(process.env.LEAD_SCOUT_INDUSTRIES || process.env.LEAD_SCOUT_INDUSTRY, 'agency'),
+      industry: input.industry || defaultIndustry,
       persona: input.persona || process.env.LEAD_SCOUT_PERSONA || 'founder',
       region: input.region || process.env.LEAD_SCOUT_REGION || process.env.APIFY_GOOGLE_MAPS_LOCATION || 'United States',
       limit: input.limit,
@@ -1165,16 +1158,15 @@ function balanceResearchApprovalMix(
     }) === 'agency'
   })
   const direct = ranked.filter((decision) => !agency.includes(decision))
-  const targetAgency = Math.ceil(normalizedLimit / 2)
-  const targetDirect = normalizedLimit - targetAgency
+  const balancedPairs = Math.min(Math.floor(normalizedLimit / 2), agency.length, direct.length)
+  const targetAgency = balancedPairs
+  const targetDirect = balancedPairs
   const selected = [
     ...agency.slice(0, targetAgency),
     ...direct.slice(0, targetDirect),
   ]
-  const selectedIds = new Set(selected.map((decision) => decision.id))
-  const remainder = ranked.filter((decision) => !selectedIds.has(decision.id))
 
-  return [...selected, ...remainder.slice(0, normalizedLimit - selected.length)]
+  return selected
 }
 
 function decorateProviderValidationUpdate(contact: ProspectResearchContact): ProspectResearchContact {
@@ -1620,7 +1612,14 @@ async function quarantineApprovedContacts(
 async function loadApprovedContacts(
   clientId: number,
   limit: number
-): Promise<{ leads: ApprovedLead[]; quarantinedApprovedContacts: number }> {
+): Promise<{
+  leads: ApprovedLead[]
+  quarantinedApprovedContacts: number
+  eligibleAgencyContacts: number
+  eligibleDirectContacts: number
+  agencyShortfall: number
+  directShortfall: number
+}> {
   const scanLimit = Math.min(Math.max(limit * 50, 500), 10_000)
   const result = await query<ApprovedContactRow>(
     `SELECT
@@ -1672,8 +1671,7 @@ async function loadApprovedContacts(
     .filter(({ blockers }) => blockers.length === 0)
     .map(({ row }) => row)
 
-  const leads = balanceSovereignOfferMix(
-    eligibleRows.map((row) => {
+  const preparedLeads = eligibleRows.map((row) => {
       const leadBase = {
         company: row.company,
         companyDomain: row.company_domain,
@@ -1697,11 +1695,20 @@ async function loadApprovedContacts(
         deal_value_usd: sovereignDealValueUsd({ ...leadBase, offerType }),
         customFields: row.custom_fields,
       }
-    }),
-    limit
-  )
+    })
+  const eligibleAgencyContacts = preparedLeads.filter((lead) => lead.offer_type === 'agency').length
+  const eligibleDirectContacts = preparedLeads.length - eligibleAgencyContacts
+  const targetPerSide = Math.floor(Math.max(0, Math.trunc(limit)) / 2)
+  const leads = balanceSovereignOfferMix(preparedLeads, limit)
 
-  return { leads, quarantinedApprovedContacts }
+  return {
+    leads,
+    quarantinedApprovedContacts,
+    eligibleAgencyContacts,
+    eligibleDirectContacts,
+    agencyShortfall: Math.max(0, targetPerSide - eligibleAgencyContacts),
+    directShortfall: Math.max(0, targetPerSide - eligibleDirectContacts),
+  }
 }
 
 async function repairTerminalQueuedContacts(clientId: number): Promise<number> {
@@ -1816,10 +1823,14 @@ async function runQueue(input: {
     queue = new Queue(queueName, { connection: { url: appEnv.redisUrl() } })
     const repairedQueuedContacts = await repairTerminalQueuedContacts(input.clientId)
     const repairedOrphanedQueuedContacts = await repairOrphanedQueuedContacts(input.clientId, queue)
-    const { leads, quarantinedApprovedContacts } = await loadApprovedContacts(
-      input.clientId,
-      input.sendLimit
-    )
+    const {
+      leads,
+      quarantinedApprovedContacts,
+      eligibleAgencyContacts,
+      eligibleDirectContacts,
+      agencyShortfall,
+      directShortfall,
+    } = await loadApprovedContacts(input.clientId, input.sendLimit)
 
     if (leads.length === 0) {
       if (input.notifySkipped !== false) {
@@ -1841,6 +1852,11 @@ async function runQueue(input: {
           repairedQueuedContacts,
           repairedOrphanedQueuedContacts,
           quarantinedApprovedContacts,
+          eligibleAgencyContacts,
+          eligibleDirectContacts,
+          agencyShortfall,
+          directShortfall,
+          mixPolicy: 'strict_50_50',
           phase: input.phase || 'after_research',
         },
       }
@@ -1961,6 +1977,11 @@ async function runQueue(input: {
         repairedQueuedContacts,
         repairedOrphanedQueuedContacts,
         quarantinedApprovedContacts,
+        eligibleAgencyContacts,
+        eligibleDirectContacts,
+        agencyShortfall,
+        directShortfall,
+        mixPolicy: 'strict_50_50',
         phase: input.phase || 'after_research',
       },
     }
@@ -2555,6 +2576,14 @@ export async function GET(request: NextRequest) {
       (total, stage) => total + getNumericField(stage.data, 'directQueued'),
       0
     )
+    const agencyShortfall = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'agencyShortfall'),
+      0
+    )
+    const directShortfall = queueStages.reduce(
+      (total, stage) => total + getNumericField(stage.data, 'directShortfall'),
+      0
+    )
     const approved = getNumericField(approvalStage?.data, 'approved')
     const imported = getNumericField(sheetStage?.data, 'imported')
     const mapsImported = getNumericField(mapsStage?.data, 'imported')
@@ -2633,6 +2662,8 @@ export async function GET(request: NextRequest) {
       estimatedPipelineValueUsd,
       agencyQueued,
       directQueued,
+      agencyShortfall,
+      directShortfall,
       providerValidationChecks,
       providerValidationValid,
       providerValidationInvalid,
@@ -2693,6 +2724,8 @@ export async function GET(request: NextRequest) {
           `queued=${queued}`,
           `agency=${agencyQueued}`,
           `direct=${directQueued}`,
+          `agencyShortfall=${agencyShortfall}`,
+          `directShortfall=${directShortfall}`,
           `failures=${hardFailures.length}`,
           `capacity=${capacityDiagnosis.currentRemainingCapacity}`,
           `blocker=${capacityDiagnosis.primaryBlocker}`,
