@@ -1704,6 +1704,31 @@ async function loadApprovedContacts(
   agencyShortfall: number
   directShortfall: number
 }> {
+  const recentMixResult = await query<{ agency_sent: string; direct_sent: string }>(
+    `SELECT
+       COUNT(*) FILTER (
+         WHERE e.event_type = 'sent'
+           AND e.created_at >= NOW() - INTERVAL '24 hours'
+           AND COALESCE(e.metadata->>'offer_type','') = 'agency'
+       )::text AS agency_sent,
+       COUNT(*) FILTER (
+         WHERE e.event_type = 'sent'
+           AND e.created_at >= NOW() - INTERVAL '24 hours'
+           AND COALESCE(e.metadata->>'offer_type','direct') <> 'agency'
+       )::text AS direct_sent
+     FROM events e
+     WHERE e.client_id = $1`,
+    [clientId]
+  )
+  const agencySent24h = Number(recentMixResult.rows[0]?.agency_sent ?? 0)
+  const directSent24h = Number(recentMixResult.rows[0]?.direct_sent ?? 0)
+  const preferredOfferType =
+    agencySent24h < directSent24h
+      ? 'agency'
+      : directSent24h < agencySent24h
+        ? 'direct'
+        : undefined
+  const preferredSlots = Math.abs(agencySent24h - directSent24h)
   const scanLimit = Math.min(Math.max(limit * 50, 500), 10_000)
   const result = await query<ApprovedContactRow>(
     `SELECT
@@ -1783,7 +1808,10 @@ async function loadApprovedContacts(
   const eligibleAgencyContacts = preparedLeads.filter((lead) => lead.offer_type === 'agency').length
   const eligibleDirectContacts = preparedLeads.length - eligibleAgencyContacts
   const targetPerSide = Math.floor(Math.max(0, Math.trunc(limit)) / 2)
-  const leads = balanceSovereignOfferMix(preparedLeads, limit)
+  const leads = balanceSovereignOfferMix(preparedLeads, limit, {
+    preferredOfferType,
+    preferredSlots,
+  })
 
   return {
     leads,

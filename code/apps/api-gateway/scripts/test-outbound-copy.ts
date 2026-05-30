@@ -100,6 +100,20 @@ assert(
   'direct-heavy pools must not fill missing agency slots'
 )
 assert(directHeavyBalanced.length === 2, 'strict mix should expose agency inventory shortfall')
+const debtAwareAgencyRepair = balanceSovereignOfferMix(
+  [
+    { ...agencyLead, company: 'Agency Repair A', customFields: { fit_score: 99 } },
+    { ...agencyLead, company: 'Agency Repair B', customFields: { fit_score: 98 } },
+    { ...agencyLead, company: 'Agency Repair C', customFields: { fit_score: 97 } },
+  ],
+  6,
+  { preferredOfferType: 'agency', preferredSlots: 47 }
+)
+assert(
+  debtAwareAgencyRepair.length === 3 &&
+    debtAwareAgencyRepair.every((lead) => inferSovereignOfferType(lead) === 'agency'),
+  'debt-aware mix should use agency inventory to repair a direct-heavy day instead of freezing queueing'
+)
 assert(
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,3,5,8',
   'default sequence should use Day 1, Day 3, Day 5, Day 8 cadence'
