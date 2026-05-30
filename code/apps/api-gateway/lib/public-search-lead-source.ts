@@ -107,6 +107,9 @@ const LOW_VALUE_PATH_RE =
 const CONTENT_RESULT_RE =
   /\b(?:article|blog|case study|course|definition|explained|guide|how to|intro|introduction|learn|news|resources?|training|tutorial|types of|what is|whitepaper)\b/i
 
+const BUSINESS_RESULT_RE =
+  /\b(?:agency|ai|automation|b2b|clients|cloud|compliance|consulting|cybersecurity|deliverability|demand generation|enterprise|get in touch|growth|infrastructure|lead generation|managed service|mssp|outbound|platform|private ai|revops|sales operations|security operations|services|software|solution|white[-\s]?label)\b/i
+
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -169,16 +172,14 @@ function companyFromTitle(title: string, domain: string): string {
 function isLowIntentSearchResult(result: SerpApiOrganicResult): boolean {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase()
   const contentSignals = CONTENT_RESULT_RE.test(text)
-  const commercialSignals =
-    /\b(?:agency|book a demo|clients|contact sales|enterprise|get in touch|platform|revops|sales team|services|software|solution)\b/.test(
-      text
-    )
+  const commercialSignals = BUSINESS_RESULT_RE.test(text)
   return contentSignals && !commercialSignals
 }
 
-function normalizeDomainFromUrl(rawUrl: string): string | null {
+function normalizeDomainFromUrl(rawUrl: string, displayedLink?: string): string | null {
   try {
-    const url = new URL(rawUrl)
+    const candidate = rawUrl || (displayedLink ? `https://${displayedLink}` : '')
+    const url = new URL(candidate)
     if (!['http:', 'https:'].includes(url.protocol)) return null
     const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
     if (!hostname || !hostname.includes('.') || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null
@@ -187,7 +188,19 @@ function normalizeDomainFromUrl(rawUrl: string): string | null {
     if (LOW_VALUE_PATH_RE.test(url.pathname)) return null
     return hostname
   } catch {
-    return null
+    if (!displayedLink) return null
+    try {
+      const fallback = displayedLink
+        .toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .split(/[/?#]/)[0]
+      if (!fallback || !fallback.includes('.') || /^\d+\.\d+\.\d+\.\d+$/.test(fallback)) return null
+      const blocked = Array.from(BLOCKED_HOSTS).some((host) => fallback === host || fallback.endsWith(`.${host}`))
+      return blocked ? null : fallback
+    } catch {
+      return null
+    }
   }
 }
 
@@ -246,7 +259,7 @@ function defaultQueries(industry: string, region: string): string[] {
 
 function scoreResult(result: SerpApiOrganicResult, industry: string): number {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase()
-  let score = 42
+  let score = 50
   if (text.includes(industry)) score += 10
   if (/\b(outbound|lead generation|revops|sales operations|appointment setting|demand generation)\b/i.test(text)) score += 15
   if (/\b(agency|services|clients|b2b|marketing agency|growth agency|consulting|done-for-you)\b/i.test(text)) score += 12
@@ -254,6 +267,7 @@ function scoreResult(result: SerpApiOrganicResult, industry: string): number {
   if (/\b(contact sales|book a demo|get in touch|sales team)\b/i.test(text)) score += 8
   if (/\b(blog|news|podcast|article|job|career)\b/i.test(text)) score -= 10
   if (/\b(what is|complete guide|best practices|ultimate guide|resources|learn|definition|introduction|tutorial|course|training|types of|explained)\b/i.test(text)) score -= 36
+  if (BUSINESS_RESULT_RE.test(text)) score += 8
   return Math.max(0, Math.min(score, 98))
 }
 
@@ -514,7 +528,7 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
       for (const result of organicResults) {
         scannedResults += 1
         const link = String(result.link || '').trim()
-        const domain = normalizeDomainFromUrl(link)
+        const domain = normalizeDomainFromUrl(link, result.displayed_link)
         if (!domain || byDomain.has(domain)) {
           rejected += 1
           continue
@@ -525,12 +539,15 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
         }
 
         const fitScore = scoreResult(result, industry)
-        if (fitScore < 58) {
+        const hasBusinessSignal = BUSINESS_RESULT_RE.test(
+          `${result.title || ''} ${result.snippet || ''} ${result.link || ''} ${result.displayed_link || ''}`
+        )
+        if (fitScore < 45 || (!hasBusinessSignal && fitScore < 58)) {
           rejected += 1
           continue
         }
 
-        const businessRoleEligible = fitScore >= 70
+        const businessRoleEligible = fitScore >= 58 && hasBusinessSignal
 
         const contentResult = looksLikeContentResult(result)
         const company = companyFromTitle(String(result.title || ''), domain)
