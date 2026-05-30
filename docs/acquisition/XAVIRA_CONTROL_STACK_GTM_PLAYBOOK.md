@@ -490,6 +490,8 @@ The white-label/commercial license allows partners to:
 
 Essentially, partners can operate their own outbound infrastructure platform using the Xavira Control Stack."
 
+"The commercial math is the reason this makes sense for agencies: package the stack as a premium client deployment, recover the license across roughly 3-4 serious client rollouts, then keep deploying on the same infrastructure base."
+
 ### £25,000 GBP internal license explanation
 
 "The Internal Enterprise License is designed for organizations using the platform internally.
@@ -516,6 +518,8 @@ The license does not include reseller or white-label rights."
 - infrastructure deployment support
 
 This is intended for agencies, infrastructure operators, and enterprise consultancies building commercial services on top of the platform."
+
+"A partner is not just buying access. They are buying the right to create a high-ticket service line. Roughly 3-4 serious client deployments can recover the license cost, and every additional rollout compounds on the same Xavira operating layer."
 
 ### Strategic partnership outreach
 
@@ -656,6 +660,8 @@ The internal license is for a company that wants to own the stack inside its own
 ### £100,000 GBP white-label commercial license
 
 The commercial license is for teams that want to deploy Xavira Control Stack as part of their own market offer. It includes white-label rights, reseller rights, commercial deployment rights, branding customization, multi-client deployment rights, and licensing support.
+
+It should be explained as an agency revenue asset: the license can be recovered through roughly 3-4 serious client deployments, then reused across additional client accounts as the partner's own branded communication operations infrastructure.
 
 ### £3,000 GBP/month operations and maintenance
 

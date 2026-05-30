@@ -13,6 +13,8 @@ export const XAVIRA_COMMERCIAL_MODEL = {
     price: 100_000,
     label: '£100,000',
     rights: 'White-label, reseller, commercial deployment, and multi-client operations rights',
+    partnerEconomics:
+      'Designed for agencies to package as a premium client deployment; roughly 3-4 serious client rollouts can recover the license cost, then the stack becomes a reusable operating asset.',
   },
   operationsMaintenance: {
     name: 'Operations & Maintenance',

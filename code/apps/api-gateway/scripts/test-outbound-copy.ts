@@ -9,6 +9,7 @@ import {
   renderSovereignTemplate,
   SOVEREIGN_BOOKING_URL,
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS,
+  sovereignBookingUrl,
   sovereignDealValueUsd,
   sovereignBodyForLead,
   sovereignSubjectForLead,
@@ -97,6 +98,28 @@ assert(
   'agency subject should use premium white-label copy'
 )
 
+const previousBookingUrl = process.env.SOVEREIGN_BOOKING_URL
+const previousOutboundBookingUrl = process.env.OUTBOUND_BOOKING_URL
+const previousAllowedBookingDomains = process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS
+delete process.env.SOVEREIGN_BOOKING_URL
+process.env.OUTBOUND_BOOKING_URL = 'https://cal.com/vishnuvardhanburri/30min'
+delete process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS
+assert(
+  sovereignBookingUrl() === SOVEREIGN_BOOKING_URL,
+  'booking URL should default to owned domain when external booking host is not allowlisted'
+)
+process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS = 'cal.com'
+assert(
+  sovereignBookingUrl().startsWith('https://cal.com/'),
+  'operators can explicitly allow a third-party booking host'
+)
+if (previousBookingUrl === undefined) delete process.env.SOVEREIGN_BOOKING_URL
+else process.env.SOVEREIGN_BOOKING_URL = previousBookingUrl
+if (previousOutboundBookingUrl === undefined) delete process.env.OUTBOUND_BOOKING_URL
+else process.env.OUTBOUND_BOOKING_URL = previousOutboundBookingUrl
+if (previousAllowedBookingDomains === undefined) delete process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS
+else process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS = previousAllowedBookingDomains
+
 const directBody = renderSovereignTemplate(
   sovereignBodyForLead(directLead),
   directLead,
@@ -177,6 +200,7 @@ const agencyBody = renderSovereignTemplate(
 )
 assert(agencyBody.includes('£100,000'), 'agency body should mention final commercial license price')
 assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
+assert(agencyBody.includes('3-4 client rollouts'), 'agency body should explain resale economics')
 assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
 assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')

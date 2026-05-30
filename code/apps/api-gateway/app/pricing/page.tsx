@@ -30,6 +30,7 @@ const plans = [
       'Branding customization rights',
       'Commercial usage rights',
       'Infrastructure deployment assistance',
+      'Partner economics: package client deployments so 3-4 serious wins can recover the license cost',
     ],
     featured: true,
   },
@@ -120,6 +121,22 @@ export default function PricingPage() {
           governance controls, and commercial rights. Xavira Control Stack is not sold as bulk
           email software, a cold email tool, or a lead-generation platform.
         </p>
+
+        <div className="mt-8 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-6">
+          <div className="text-sm font-bold uppercase tracking-[0.22em] text-cyan-200">
+            White-label partner economics
+          </div>
+          <h2 className="mt-3 text-2xl font-black">
+            The commercial license is built to become an agency revenue asset.
+          </h2>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
+            A licensed partner can package Xavira Control Stack as a premium client deployment:
+            outbound governance, deliverability operations, AI safety controls, proof dashboards,
+            and ongoing operational support under their own brand. The £100,000 GBP license is
+            designed so roughly 3-4 serious client rollouts can recover the license cost, then
+            every additional client deployment compounds on the same infrastructure base.
+          </p>
+        </div>
 
         <div className="mt-12 grid gap-5 md:grid-cols-2">
           <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-6">

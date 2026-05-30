@@ -64,6 +64,8 @@ Allowed:
 
 Buyer language: This is not software access. It is a commercial infrastructure license that lets a partner build a premium operating model around Xavira Control Stack.
 
+Partner economics: The £100,000 GBP license is designed to become a reusable agency revenue asset. A partner can package Xavira Control Stack as a premium client deployment covering outbound governance, deliverability operations, AI safety controls, proof dashboards, and ongoing operational support. Roughly 3-4 serious client rollouts can recover the license cost; after that, each additional deployment compounds on the same infrastructure base.
+
 ## 4. Commercial Rights Page
 
 Internal Enterprise License rights:
@@ -191,6 +193,8 @@ The £25,000 Internal Enterprise License is for teams that need operational cont
 ## 12. White-Label License Explanation
 
 The £100,000 White-Label Commercial License is for firms that want to build a commercial service line on top of Xavira Control Stack. The price reflects commercial deployment rights, reseller rights, white-label rights, branding customization, multi-client operations, and infrastructure deployment assistance.
+
+The commercial reason is simple: agencies are not buying a dashboard for one internal team. They are buying the right to package a premium operating system for clients. With a serious deployment fee per client, roughly 3-4 client wins can recover the £100,000 GBP license cost, while the same platform continues supporting additional client accounts.
 
 ## 13. Maintenance Explanation
 

@@ -30,6 +30,21 @@ export const SOVEREIGN_STACK_AGENCY_SUBJECT =
 
 export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://vishnulabs.com/book'
 
+function allowedBookingDomains(): string[] {
+  const raw = process.env.SOVEREIGN_ALLOWED_BOOKING_DOMAINS || 'vishnulabs.com,www.vishnulabs.com'
+  return raw
+    .split(',')
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isAllowedBookingHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase()
+  return allowedBookingDomains().some(
+    (domain) => normalized === domain || normalized.endsWith(`.${domain}`)
+  )
+}
+
 export function sovereignBookingUrl(): string {
   const raw =
     process.env.SOVEREIGN_BOOKING_URL ||
@@ -41,7 +56,7 @@ export function sovereignBookingUrl(): string {
 
   try {
     const url = new URL(trimmed)
-    if (url.protocol === 'https:') return url.toString()
+    if (url.protocol === 'https:' && isAllowedBookingHost(url.hostname)) return url.toString()
   } catch {
     return SOVEREIGN_DEFAULT_BOOKING_URL
   }
@@ -254,7 +269,7 @@ That is the gap Xavira Control Stack is built to own:
 * Sovereign Engine for outbound operations, queues, reputation, and delivery proof
 * Sovereign Shield for AI governance, PII controls, and audit evidence
 
-For agencies, the commercial value is not another service line. It is a premium infrastructure product you can deploy around clients:
+For agencies, the commercial value is simple: turn operational proof into a client-facing infrastructure layer:
 * white-label rights
 * reseller rights
 * commercial deployment rights
@@ -262,7 +277,7 @@ For agencies, the commercial value is not another service line. It is a premium 
 * multi-client deployment support
 * ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP/month operations and maintenance support
 
-The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP.
+The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. Package Xavira as a serious client deployment, recover the license across roughly 3-4 client rollouts, then keep using the same infrastructure base for future accounts.
 
 If {{Company}} wants a defensible outbound infrastructure offer instead of only execution, would a short walkthrough be useful?
 
@@ -689,6 +704,7 @@ export async function buildSovereignCopyForLead(
             bullets: [
               'White-label rights, reseller rights, and commercial deployment rights',
               'Branding customization across dashboards and control surfaces',
+              'Partner economics designed to recover the license across roughly 3-4 serious client deployments',
               'Xavira core updates, deployment support, and maintenance options',
             ],
           }
@@ -717,6 +733,7 @@ export async function buildSovereignCopyForLead(
       'If competitorSignal exists, phrase it as a category trend, not as a fake customer claim.',
       'Keep the email short, useful, and human; avoid brochure language.',
       'Use one clear ask and one booking link only.',
+      'Do not use hype, urgency, discounts, guarantees, or spammy promotional phrasing.',
       'Explain the product benefit in simple words: owned control, safer outbound, cleaner follow-ups, reduced AI data leak risk, and stronger client trust.',
     ],
   })
