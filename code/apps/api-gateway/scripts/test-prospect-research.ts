@@ -889,6 +889,75 @@ assert.ok(testMailboxLead.blockers.includes('artifact_or_too_short_mailbox'))
 assert.ok(testMailboxLead.blockers.includes('content_or_documentation_host'))
 assert.ok(testMailboxLead.blockers.includes('content_page_not_company'))
 
+const nintendoGameLead = scoreProspectForResearchApproval({
+  id: 22,
+  email: 'hello@nintendo.com',
+  email_domain: 'nintendo.com',
+  company: 'Outbound for Nintendo Switch',
+  company_domain: 'nintendo.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 99,
+    public_evidence_url: 'https://nintendo.com/',
+    reason_to_contact: 'Buy Outbound and shop other great Nintendo products online at the official Nintendo Store.',
+  },
+})
+
+assert.equal(nintendoGameLead.approved, false)
+assert.ok(nintendoGameLead.blockers.includes('content_or_documentation_host'))
+assert.ok(nintendoGameLead.blockers.includes('content_page_not_company'))
+
+const fandomGameLead = scoreProspectForResearchApproval({
+  id: 23,
+  email: 'hello@outbound.fandom.com',
+  email_domain: 'outbound.fandom.com',
+  company: 'Outbound Wiki',
+  company_domain: 'outbound.fandom.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 99,
+    public_evidence_url: 'https://outbound.fandom.com/',
+    reason_to_contact: 'Template:Infobox Outbound is a cozy open-world survival and crafting game.',
+  },
+})
+
+assert.equal(fandomGameLead.approved, false)
+assert.ok(fandomGameLead.blockers.includes('content_or_documentation_host'))
+assert.ok(fandomGameLead.blockers.includes('content_page_not_company'))
+
+const questAppointmentLead = scoreProspectForResearchApproval({
+  id: 24,
+  email: 'hello@appointment.questdiagnostics.com',
+  email_domain: 'appointment.questdiagnostics.com',
+  company: 'Schedule Appointment',
+  company_domain: 'appointment.questdiagnostics.com',
+  source: 'public_search',
+  status: 'active',
+  verification_status: 'valid',
+  custom_fields: {
+    public_search: true,
+    auto_approval_eligible: true,
+    email_evidence: 'public_domain_email',
+    fit_score: 99,
+    public_evidence_url: 'https://appointment.questdiagnostics.com/',
+    reason_to_contact: 'Schedule your Quest Diagnostics appointment online for lab services.',
+  },
+})
+
+assert.equal(questAppointmentLead.approved, false)
+assert.ok(questAppointmentLead.blockers.includes('content_or_documentation_host'))
+assert.ok(questAppointmentLead.blockers.includes('content_page_not_company'))
+
 console.log('prospect research tests passed')
 }
 

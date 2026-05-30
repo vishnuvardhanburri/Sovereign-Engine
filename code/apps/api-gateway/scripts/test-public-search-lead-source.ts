@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
-import { publicSearchLeadsToContacts, searchPublicSearchLeads } from '../lib/public-search-lead-source'
+import {
+  isPublicSearchResultQualifiedForTarget,
+  publicSearchLeadsToContacts,
+  searchPublicSearchLeads,
+} from '../lib/public-search-lead-source'
 
 async function main() {
   const result = await searchPublicSearchLeads({
@@ -35,6 +39,45 @@ async function main() {
   assert.equal(contact.customFields?.auto_approval_eligible, true)
   assert.equal(contact.customFields?.email_evidence, 'business_domain_role_pattern')
   assert.equal(contact.customFields?.public_search, true)
+
+  assert.equal(
+    isPublicSearchResultQualifiedForTarget(
+      {
+        title: 'Outbound for Nintendo Switch',
+        link: 'https://nintendo.com/',
+        displayed_link: 'nintendo.com',
+        snippet: 'Buy Outbound and shop other great Nintendo products online at the official Nintendo Store.',
+      },
+      'agency'
+    ),
+    false
+  )
+
+  assert.equal(
+    isPublicSearchResultQualifiedForTarget(
+      {
+        title: 'Outbound Wiki',
+        link: 'https://outbound.fandom.com/',
+        displayed_link: 'outbound.fandom.com',
+        snippet: 'Template:Infobox Outbound is a cozy open-world survival and crafting game.',
+      },
+      'agency'
+    ),
+    false
+  )
+
+  assert.equal(
+    isPublicSearchResultQualifiedForTarget(
+      {
+        title: 'Acme Demand Generation Agency',
+        link: 'https://exampleagency.com/',
+        displayed_link: 'exampleagency.com',
+        snippet: 'B2B demand generation agency helping SaaS teams with outbound sales and RevOps.',
+      },
+      'agency'
+    ),
+    true
+  )
 
   console.log('public search lead source tests passed')
 }

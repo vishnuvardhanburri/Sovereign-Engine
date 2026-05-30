@@ -91,6 +91,20 @@ type ApprovedContactRow = {
   unsubscribed_at: string | null
 }
 
+type DiscoveryStageInput = {
+  clientId: number
+  dryRun: boolean
+  limit: number
+  industry?: string | null
+  persona?: string | null
+  region?: string | null
+  evidenceDeadlineMs?: string | null
+  evidenceMaxPagesPerLead?: string | null
+  evidenceRequestTimeoutMs?: string | null
+}
+
+const DIRECT_DISCOVERY_INDUSTRIES = ['ai', 'cybersecurity', 'devtools', 'saas']
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -200,6 +214,55 @@ async function getSentToday(clientId: number): Promise<number> {
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function splitDiscoveryLimit(limit: number): { agency: number; direct: number } {
+  const normalized = Math.max(0, Math.trunc(limit))
+  if (normalized <= 1) return { agency: normalized, direct: 0 }
+  const agency = Math.ceil(normalized / 2)
+  return { agency, direct: normalized - agency }
+}
+
+function resolveDirectDiscoveryIndustry(): string {
+  const configured = (process.env.DAILY_OUTBOUND_DIRECT_INDUSTRIES || process.env.LEAD_SCOUT_DIRECT_INDUSTRIES || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => DIRECT_DISCOVERY_INDUSTRIES.includes(value))
+  const industries = configured.length > 0 ? configured : DIRECT_DISCOVERY_INDUSTRIES
+  const rotationIndex = Math.floor(Date.now() / 3_600_000) % industries.length
+  return industries[rotationIndex] || 'ai'
+}
+
+function combineDiscoveryStages(
+  stageName: 'lead_scout' | 'public_search',
+  stages: StageResult[],
+  input: { limit: number; directIndustry: string }
+): StageResult {
+  const sum = (field: string) =>
+    stages.reduce((total, stage) => total + Number(stage.data?.[field] ?? 0), 0)
+  const firstError = stages.find((stage) => !stage.ok)?.error
+
+  return {
+    stage: stageName,
+    ok: stages.every((stage) => stage.ok),
+    status: firstError ? 207 : 200,
+    error: firstError,
+    data: {
+      balancedDiscovery: true,
+      mixPolicy: 'strict_50_50_source_supply',
+      limit: input.limit,
+      agencyIndustry: 'agency',
+      directIndustry: input.directIndustry,
+      imported: sum('imported'),
+      scanned: sum('scanned'),
+      prepared: sum('prepared'),
+      rejected: sum('rejected'),
+      evidenceBacked: sum('evidenceBacked'),
+      blockedUnverified: sum('blockedUnverified'),
+      agency: stages[0]?.data ?? null,
+      direct: stages[1]?.data ?? null,
+    },
+  }
 }
 
 function asBool(value: unknown): boolean {
@@ -527,17 +590,7 @@ async function runSenderReconcileStage(clientId: number): Promise<StageResult> {
   }
 }
 
-async function runLeadScoutStage(input: {
-  clientId: number
-  dryRun: boolean
-  limit: number
-  industry?: string | null
-  persona?: string | null
-  region?: string | null
-  evidenceDeadlineMs?: string | null
-  evidenceMaxPagesPerLead?: string | null
-  evidenceRequestTimeoutMs?: string | null
-}): Promise<StageResult> {
+async function runLeadScoutStage(input: DiscoveryStageInput): Promise<StageResult> {
   try {
     const defaultIndustry =
       process.env.DAILY_OUTBOUND_PRIMARY_INDUSTRY ||
@@ -607,18 +660,27 @@ async function runLeadScoutStage(input: {
   }
 }
 
-async function runPublicSearchStage(input: {
-  clientId: number
-  dryRun: boolean
-  limit: number
-  industry?: string | null
-  persona?: string | null
-  region?: string | null
-  queries?: string[] | undefined
-  evidenceDeadlineMs?: string | null
-  evidenceMaxPagesPerLead?: string | null
-  evidenceRequestTimeoutMs?: string | null
-}): Promise<StageResult> {
+async function runBalancedLeadScoutStage(input: DiscoveryStageInput): Promise<StageResult> {
+  if (asString(input.industry)) {
+    return runLeadScoutStage(input)
+  }
+
+  const limits = splitDiscoveryLimit(input.limit)
+  const directIndustry = resolveDirectDiscoveryIndustry()
+  const stages = [
+    await runLeadScoutStage({ ...input, limit: limits.agency, industry: 'agency' }),
+    ...(limits.direct > 0
+      ? [await runLeadScoutStage({ ...input, limit: limits.direct, industry: directIndustry })]
+      : []),
+  ]
+
+  return combineDiscoveryStages('lead_scout', stages, {
+    limit: input.limit,
+    directIndustry,
+  })
+}
+
+async function runPublicSearchStage(input: DiscoveryStageInput & { queries?: string[] | undefined }): Promise<StageResult> {
   try {
     const apiKey = process.env.SERPAPI_API_KEY || process.env.PUBLIC_SEARCH_SERPAPI_KEY || ''
     const defaultIndustry =
@@ -700,6 +762,28 @@ async function runPublicSearchStage(input: {
       error: safeError(error),
     }
   }
+}
+
+async function runBalancedPublicSearchStage(
+  input: DiscoveryStageInput & { queries?: string[] | undefined }
+): Promise<StageResult> {
+  if (asString(input.industry) || input.queries?.length) {
+    return runPublicSearchStage(input)
+  }
+
+  const limits = splitDiscoveryLimit(input.limit)
+  const directIndustry = resolveDirectDiscoveryIndustry()
+  const stages = [
+    await runPublicSearchStage({ ...input, limit: limits.agency, industry: 'agency' }),
+    ...(limits.direct > 0
+      ? [await runPublicSearchStage({ ...input, limit: limits.direct, industry: directIndustry })]
+      : []),
+  ]
+
+  return combineDiscoveryStages('public_search', stages, {
+    limit: input.limit,
+    directIndustry,
+  })
 }
 
 async function runSheetImport(input: {
@@ -2340,7 +2424,7 @@ export async function GET(request: NextRequest) {
 
     if (!queuedBeforeResearch && plan.runPublicSearch) {
       stages.push(
-        await runPublicSearchStage({
+        await runBalancedPublicSearchStage({
           clientId: plan.clientId,
           dryRun: plan.dryRun,
           limit: plan.publicSearchLimit,
@@ -2364,7 +2448,7 @@ export async function GET(request: NextRequest) {
 
     if (!queuedBeforeResearch && plan.runLeadScout) {
       stages.push(
-        await runLeadScoutStage({
+        await runBalancedLeadScoutStage({
           clientId: plan.clientId,
           dryRun: plan.dryRun,
           limit: plan.leadScoutLimit,

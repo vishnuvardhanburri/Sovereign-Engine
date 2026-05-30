@@ -76,18 +76,25 @@ const BLOCKED_HOSTS = new Set([
   'coursera.org',
   'edx.org',
   'epicgames.com',
+  'fandom.com',
   'geeksforgeeks.org',
   'indeed.com',
   'instagram.com',
+  'ign.com',
   'investopedia.com',
   'javatpoint.com',
   'linkedin.com',
   'medium.com',
+  'nintendo.com',
   'producthunt.com',
+  'questdiagnostics.com',
   'reddit.com',
   'saasworthy.com',
+  'sports.ndtv.com',
   'steampowered.com',
   'techcrunch.com',
+  'thegamesedge.com',
+  'theoutbound.com',
   'tutorialspoint.com',
   'twitter.com',
   'udemy.com',
@@ -101,14 +108,45 @@ const BLOCKED_HOSTS = new Set([
   'youtube.com',
 ])
 
+const BLOCKED_HOST_PATTERNS = [
+  /(^|\.)annuaire\./,
+  /(^|\.)fandom\.com$/,
+  /(^|\.)findglocal\./,
+  /(^|\.)ign\.com$/,
+  /(^|\.)meilleursagents\.com$/,
+  /(^|\.)ndtv\.com$/,
+  /(^|\.)petitesaffiches\.fr$/,
+  /(^|\.)rew\.ca$/,
+  /(^|\.)zillow\.com$/,
+  /(^|\.)zumper\.com$/,
+]
+
 const LOW_VALUE_PATH_RE =
   /\b(?:careers?|certification|course|developer-docs|docs?|help|jobs?|legal|login|privacy|signin|signup|support|terms|training)\b/i
 
 const CONTENT_RESULT_RE =
   /\b(?:article|blog|case study|course|definition|explained|guide|how to|intro|introduction|learn|news|resources?|training|tutorial|types of|what is|whitepaper)\b/i
 
+const NON_TARGET_RESULT_RE =
+  /\b(?:admission|adventures?\s+near\s+you|adult|apartment|benchmark(?:s|ing)?|building\s+details|camping|classifieds?|cozy\s+open[-\s]?world|crafting|degree|fandom|free\s+porn|game(?:play|s|ing)?|hiking|ign|kickstarter|leaderboard|llm\s+degree|mls\s+listings?|nintendo\s+switch|open[-\s]?world|porn(?:o|hub|ography)?|property|rankings?|real\s+estate|rentals?|schedule\s+appointment|sex\s*(?:chat|dating|site|video|worker)?|sports?|steam|student|survival|template:infobox|traduci|translation|walkthrough|wiki|xnxx|xvideos)\b/i
+
 const BUSINESS_RESULT_RE =
   /\b(?:agency|ai|automation|b2b|clients|cloud|compliance|consulting|cybersecurity|deliverability|demand generation|enterprise|get in touch|growth|infrastructure|lead generation|managed service|mssp|outbound|platform|private ai|revops|sales operations|security operations|services|software|solution|white[-\s]?label)\b/i
+
+const AGENCY_TARGET_RE =
+  /\b(?:abm|appointment\s+setting|b2b\s+(?:demand|lead|marketing|sales)|client\s+acquisition|demand\s+generation|done[-\s]?for[-\s]?you\s+outbound|go[-\s]?to[-\s]?market|gtm|lead\s+generation|outbound\s+(?:sales|agency|services?|operator|ops|operations)|revenue\s+operations|revops|sales\s+development|sdr\s+as\s+a\s+service|white[-\s]?label\s+(?:agency|outbound|lead))\b/i
+
+const AI_TARGET_RE =
+  /\b(?:agent\s+infrastructure|ai\s+(?:governance|infrastructure|ops|operations|platform|security)|enterprise\s+ai|llm\s+(?:governance|infrastructure|ops|platform)|model\s+governance|private\s+ai|rag\s+infrastructure)\b/i
+
+const CYBERSECURITY_TARGET_RE =
+  /\b(?:attack\s+surface|cybersecurity|incident\s+response|managed\s+security|mssp|security\s+(?:operations|platform)|soc|threat\s+(?:detection|intelligence))\b/i
+
+const DEVTOOLS_TARGET_RE =
+  /\b(?:cloud\s+infrastructure|developer\s+(?:platform|tools)|devops|infrastructure\s+(?:automation|platform)|observability|platform\s+engineering|workflow\s+orchestration)\b/i
+
+const SAAS_TARGET_RE =
+  /\b(?:b2b\s+saas|customer\s+engagement|enterprise\s+saas|revenue\s+operations|sales\s+engagement|workflow\s+platform)\b/i
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value)
@@ -158,13 +196,49 @@ function looksLikeContentResult(result: Pick<SerpApiOrganicResult, 'title' | 'sn
   return CONTENT_RESULT_RE.test(text)
 }
 
+function searchResultText(result: Pick<SerpApiOrganicResult, 'title' | 'snippet' | 'link' | 'displayed_link'>): string {
+  return `${result.title || ''} ${result.snippet || ''} ${result.link || ''} ${result.displayed_link || ''}`
+}
+
+function hasIndustryTargetSignal(text: string, industry: string): boolean {
+  const normalized = text.toLowerCase()
+  if (industry === 'agency') {
+    return AGENCY_TARGET_RE.test(normalized)
+  }
+  if (industry === 'ai') {
+    return AI_TARGET_RE.test(normalized)
+  }
+  if (industry === 'cybersecurity') {
+    return CYBERSECURITY_TARGET_RE.test(normalized)
+  }
+  if (industry === 'devtools') {
+    return DEVTOOLS_TARGET_RE.test(normalized)
+  }
+  if (industry === 'saas') {
+    return SAAS_TARGET_RE.test(normalized)
+  }
+  return BUSINESS_RESULT_RE.test(normalized)
+}
+
+export function isPublicSearchResultQualifiedForTarget(
+  result: Pick<SerpApiOrganicResult, 'title' | 'snippet' | 'link' | 'displayed_link'>,
+  industry: string
+): boolean {
+  const text = searchResultText(result)
+  if (NON_TARGET_RESULT_RE.test(text)) return false
+  if (looksLikeContentResult(result) && !hasIndustryTargetSignal(text, industry)) return false
+  return hasIndustryTargetSignal(text, industry)
+}
+
 function companyFromTitle(title: string, domain: string): string {
   const cleaned = title
     .split(/\s[|-]\s/)[0]
     .replace(/\b(contact|sales|demo|home|official site|homepage)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
-  if (cleaned && cleaned.length <= 80 && !CONTENT_RESULT_RE.test(cleaned)) return cleaned
+  if (cleaned && cleaned.length <= 80 && !CONTENT_RESULT_RE.test(cleaned) && !NON_TARGET_RESULT_RE.test(cleaned)) {
+    return cleaned
+  }
 
   return companyFromDomain(domain)
 }
@@ -173,6 +247,7 @@ function isLowIntentSearchResult(result: SerpApiOrganicResult): boolean {
   const text = `${result.title || ''} ${result.snippet || ''} ${result.link || ''}`.toLowerCase()
   const contentSignals = CONTENT_RESULT_RE.test(text)
   const commercialSignals = BUSINESS_RESULT_RE.test(text)
+  if (NON_TARGET_RESULT_RE.test(text)) return true
   return contentSignals && !commercialSignals
 }
 
@@ -184,7 +259,7 @@ function normalizeDomainFromUrl(rawUrl: string, displayedLink?: string): string 
     const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
     if (!hostname || !hostname.includes('.') || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null
     const blocked = Array.from(BLOCKED_HOSTS).some((host) => hostname === host || hostname.endsWith(`.${host}`))
-    if (blocked) return null
+    if (blocked || BLOCKED_HOST_PATTERNS.some((pattern) => pattern.test(hostname))) return null
     if (LOW_VALUE_PATH_RE.test(url.pathname)) return null
     return hostname
   } catch {
@@ -197,7 +272,7 @@ function normalizeDomainFromUrl(rawUrl: string, displayedLink?: string): string 
         .split(/[/?#]/)[0]
       if (!fallback || !fallback.includes('.') || /^\d+\.\d+\.\d+\.\d+$/.test(fallback)) return null
       const blocked = Array.from(BLOCKED_HOSTS).some((host) => fallback === host || fallback.endsWith(`.${host}`))
-      return blocked ? null : fallback
+      return blocked || BLOCKED_HOST_PATTERNS.some((pattern) => pattern.test(fallback)) ? null : fallback
     } catch {
       return null
     }
@@ -221,35 +296,35 @@ function rootEvidenceUrl(rawUrl: string): string {
 function defaultQueries(industry: string, region: string): string[] {
   const queryGroups: Record<string, string[]> = {
     agency: [
-      'outbound agency contact B2B',
-      'lead generation agency contact B2B',
-      'RevOps agency contact sales operations',
-      'AI automation agency contact B2B',
-      'appointment setting agency contact B2B',
+      '"lead generation agency" "contact" "B2B"',
+      '"outbound sales agency" "contact" "B2B"',
+      '"appointment setting agency" "contact" "B2B"',
+      '"RevOps agency" "contact" "sales operations"',
+      '"B2B demand generation agency" "contact"',
     ],
     cybersecurity: [
-      'cybersecurity SaaS contact sales',
-      'AI security contact enterprise',
-      'MSSP contact managed security',
-      'security operations platform contact sales',
+      '"cybersecurity platform" "contact sales"',
+      '"AI security" "enterprise" "contact"',
+      '"MSSP" "managed security" "contact"',
+      '"security operations platform" "contact sales"',
     ],
     ai: [
-      'AI infrastructure contact sales',
-      'LLM infrastructure contact enterprise',
-      'AI governance contact sales',
-      'private AI contact enterprise',
+      '"AI infrastructure" "contact sales"',
+      '"LLM infrastructure" "enterprise" "contact"',
+      '"AI governance" "contact sales"',
+      '"private AI" "enterprise" "contact"',
     ],
     devtools: [
-      'developer tools contact sales',
-      'cloud infrastructure contact sales',
-      'observability platform contact sales',
-      'workflow orchestration contact sales',
+      '"developer tools" "contact sales"',
+      '"cloud infrastructure" "contact sales"',
+      '"observability platform" "contact sales"',
+      '"workflow orchestration" "contact sales"',
     ],
     saas: [
-      'B2B SaaS contact sales',
-      'sales engagement contact sales',
-      'revenue operations contact sales',
-      'customer engagement platform contact sales people',
+      '"B2B SaaS" "contact sales"',
+      '"sales engagement" "contact sales"',
+      '"revenue operations" "contact sales"',
+      '"customer engagement platform" "contact sales"',
     ],
   }
 
@@ -533,7 +608,7 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
           rejected += 1
           continue
         }
-        if (isLowIntentSearchResult(result)) {
+        if (isLowIntentSearchResult(result) || !isPublicSearchResultQualifiedForTarget(result, industry)) {
           rejected += 1
           continue
         }
@@ -547,7 +622,10 @@ export async function searchPublicSearchLeads(input: PublicSearchLeadSearchInput
           continue
         }
 
-        const businessRoleEligible = fitScore >= 58 && hasBusinessSignal
+        const businessRoleEligible =
+          fitScore >= 68 &&
+          hasBusinessSignal &&
+          isPublicSearchResultQualifiedForTarget(result, industry)
 
         const contentResult = looksLikeContentResult(result)
         const company = companyFromTitle(String(result.title || ''), domain)

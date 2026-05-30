@@ -7,8 +7,13 @@ import {
   prospectNeedsExactPublicEmailEvidence,
   scoreProspectForResearchApproval,
   type ProspectResearchContact,
+  type ProspectResearchDecision,
 } from '@/lib/prospect-research'
 import { notifyTelegramEvent } from '@/lib/telegram-notifications'
+import {
+  inferSovereignOfferType,
+  type SovereignOfferType,
+} from '@/lib/outbound-copy'
 
 function clampLimit(value: unknown, fallback: number): number {
   const parsed = Number(value)
@@ -49,9 +54,20 @@ async function getResearchPool(clientId: number) {
        AND unsubscribed_at IS NULL
        AND COALESCE(custom_fields->>'send_status', 'not_approved') <> 'approved'
        AND (
-         source IN ('google_sheet_import', 'open_lead_graph', 'owned_open_lead_graph')
+         source IN (
+           'google_sheet_import',
+           'open_lead_graph',
+           'owned_open_lead_graph',
+           'google_maps_apify',
+           'apify_google_maps',
+           'hunter_domain_search',
+           'public_search'
+         )
          OR COALESCE(custom_fields->>'sheet_import', 'false') = 'true'
          OR COALESCE(custom_fields->>'lead_scout', 'false') = 'true'
+         OR COALESCE(custom_fields->>'maps_import', 'false') = 'true'
+         OR COALESCE(custom_fields->>'hunter_domain_search', 'false') = 'true'
+         OR COALESCE(custom_fields->>'public_search', 'false') = 'true'
        )
      ORDER BY created_at ASC
      LIMIT 500`,
@@ -59,6 +75,54 @@ async function getResearchPool(clientId: number) {
   )
 
   return result.rows
+}
+
+function offerTypeForResearchContact(contact?: ProspectResearchContact): SovereignOfferType {
+  if (!contact) return 'direct'
+
+  return inferSovereignOfferType({
+    company: contact.company,
+    companyDomain: contact.company_domain,
+    title: contact.title,
+    source: contact.source,
+    customFields: contact.custom_fields,
+  })
+}
+
+function sortResearchDecisions(decisions: ProspectResearchDecision[]) {
+  return [...decisions].sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
+}
+
+function balanceResearchApprovalCandidates(
+  decisions: ProspectResearchDecision[],
+  contactById: Map<number, ProspectResearchContact>,
+  limit: number
+) {
+  const approved = sortResearchDecisions(decisions.filter((decision) => decision.approved))
+  const agency = approved.filter(
+    (decision) => offerTypeForResearchContact(contactById.get(decision.id)) === 'agency'
+  )
+  const direct = approved.filter(
+    (decision) => offerTypeForResearchContact(contactById.get(decision.id)) === 'direct'
+  )
+  const targetPairs = Math.floor(limit / 2)
+  const pairCount = Math.min(targetPairs, agency.length, direct.length)
+  const candidates: ProspectResearchDecision[] = []
+
+  for (let index = 0; index < pairCount; index += 1) {
+    candidates.push(agency[index], direct[index])
+  }
+
+  return {
+    candidates,
+    agencyReady: agency.length,
+    directReady: direct.length,
+    agencySelected: pairCount,
+    directSelected: pairCount,
+    agencyShortfall: Math.max(0, targetPairs - agency.length),
+    directShortfall: Math.max(0, targetPairs - direct.length),
+    mixPolicy: 'strict_50_50' as const,
+  }
 }
 
 async function researchApproval(request: NextRequest, apply: boolean) {
@@ -102,10 +166,8 @@ async function researchApproval(request: NextRequest, apply: boolean) {
   const decisions = enrichedPool.map((contact) =>
     scoreProspectForResearchApproval(contact, { threshold })
   )
-  const approvedCandidates = decisions
-    .filter((decision) => decision.approved)
-    .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
-    .slice(0, limit)
+  const approvalMix = balanceResearchApprovalCandidates(decisions, contactById, limit)
+  const approvedCandidates = approvalMix.candidates
   const blocked = decisions
     .filter((decision) => !decision.approved)
     .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))
@@ -122,11 +184,13 @@ async function researchApproval(request: NextRequest, apply: boolean) {
       evidenceFetches,
       evidenceMatches,
       approvalReady: approvedCandidates.length,
+      approvalMix,
       candidates: approvedCandidates,
       blocked,
       guardrails: [
         'Approves business inboxes only',
-        'Requires public evidence/source URL',
+        'Requires source quality, domain fit, and provider-safe evidence',
+        'Enforces strict 50/50 agency/direct approval balance',
         'Requires email and company domain alignment',
         'Blocks personal, support, legal, security, bounced, and unsubscribed contacts',
         'Approval does not send email; cron queues approved contacts separately',
@@ -197,6 +261,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
       evidenceMatches,
       blocked,
       skipped: 'no_research_verified_prospects',
+      approvalMix,
       systemApprovalWindow: approvalWindow,
     })
   }
@@ -209,7 +274,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          'approval_required', false,
          'approved_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
          'approved_by', 'research_approval_gate',
-         'approval_batch', 'research_verified_best',
+         'approval_batch', 'research_verified_best_strict_50_50',
          'research_score', scores.score,
          'research_reasons', scores.reasons,
          'hunter_confidence', scores.confidence,
@@ -249,7 +314,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
   void notifyTelegramEvent({
     type: 'contacts_approved',
     approved,
-    mode: 'research_verified_best',
+    mode: 'research_verified_best_strict_50_50',
   })
 
   return NextResponse.json({
@@ -261,6 +326,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
     scanned: decisions.length,
     evidenceFetches,
     evidenceMatches,
+    approvalMix,
     contacts: result.rows,
     blocked,
     systemApprovalWindow: approvalWindow,
