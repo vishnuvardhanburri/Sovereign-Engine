@@ -93,7 +93,7 @@ export function inferSovereignOfferType(input: SovereignCopyLead): SovereignOffe
     .join(' ')
 
   if (
-    /\bagency\b|\bagencies\b|marketing agency|performance marketing|digital marketing|growth marketing|seo agency|paid acquisition/.test(
+    /\bagency\b|\bagencies\b|lead generation|lead-gen|outbound agency|outbound operator|appointment setting|sales development|sdr as a service|revops|revenue operations|demand generation|demand gen|go-to-market|gtm|marketing agency|performance marketing|digital marketing|growth marketing|seo agency|paid acquisition/.test(
       text
     )
   ) {

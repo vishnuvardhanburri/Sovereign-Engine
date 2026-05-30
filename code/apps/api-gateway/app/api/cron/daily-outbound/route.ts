@@ -2139,6 +2139,63 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (!queuedBeforeResearch && plan.runResearchApproval) {
+      const fastApprovalStage = await runResearchApproval({
+        clientId: plan.clientId,
+        dryRun: plan.dryRun,
+        approveLimit: plan.approveLimit,
+        recoveryMode,
+        growthMode: plan.mode === 'growth',
+        evidenceFetchLimit: 0,
+        providerValidationLimit: 0,
+      })
+      stages.push(fastApprovalStage)
+
+      if (plan.runQueue) {
+        const fastQueueStage = await runQueue({
+          clientId: plan.clientId,
+          sendLimit: plan.sendLimit,
+          phase: 'before_research',
+        })
+        stages.push(fastQueueStage)
+
+        if (getNumericField(fastQueueStage.data, 'queued') > 0) {
+          queuedBeforeResearch = true
+          const skipped = 'deferred_after_fast_approval_queue'
+          stages.push({
+            stage: 'public_search',
+            ok: true,
+            status: 204,
+            skipped,
+          })
+          stages.push({
+            stage: 'lead_scout',
+            ok: true,
+            status: 204,
+            skipped,
+          })
+          stages.push({
+            stage: 'maps_import',
+            ok: true,
+            status: 204,
+            skipped,
+          })
+          stages.push({
+            stage: 'sheet_import',
+            ok: true,
+            status: 204,
+            skipped,
+          })
+          stages.push({
+            stage: 'hunter_domain_search',
+            ok: true,
+            status: 204,
+            skipped,
+          })
+        }
+      }
+    }
+
     if (!queuedBeforeResearch && plan.runPublicSearch) {
       stages.push(
         await runPublicSearchStage({
