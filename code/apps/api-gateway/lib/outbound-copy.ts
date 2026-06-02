@@ -851,7 +851,7 @@ export async function buildSovereignCopyForLead(
             bullets: [
               'White-label rights, reseller rights, and commercial deployment rights',
               'Branding customization across dashboards and control surfaces',
-              'Partner economics designed to recover the license across roughly 3-4 serious client deployments',
+              'Partner economics designed to recover the £160,000 license across roughly 3-4 serious client rollouts',
               'Xavira core updates, deployment support, and maintenance options',
             ],
           }

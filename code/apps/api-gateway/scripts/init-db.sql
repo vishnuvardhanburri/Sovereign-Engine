@@ -1989,7 +1989,7 @@ VALUES (
   250000,
   10000,
   '{"sovereign_engine":true,"sovereign_shield":true,"autonomous_ingestion":true,"local_ai":true,"command_center":true}'::jsonb,
-  '{"package":"internal_enterprise","price_usd":25000,"maintenance_monthly_usd_range":[3000,10000]}'::jsonb
+  '{"package":"internal_enterprise","price_gbp":40000,"maintenance_monthly_gbp":3000}'::jsonb
 )
 ON CONFLICT (client_id, license_type) DO NOTHING;
 

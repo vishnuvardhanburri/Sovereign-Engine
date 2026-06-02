@@ -4,17 +4,17 @@ export const XAVIRA_COMMERCIAL_MODEL = {
   productName: 'Xavira Control Stack',
   internalEnterpriseLicense: {
     name: 'Internal Enterprise License',
-    price: 25_000,
-    label: '£25,000',
+    price: 40_000,
+    label: '£40,000',
     rights: 'Internal operational usage rights only',
   },
   whiteLabelCommercialLicense: {
     name: 'White-Label Commercial License',
-    price: 100_000,
-    label: '£100,000',
+    price: 160_000,
+    label: '£160,000',
     rights: 'White-label, reseller, commercial deployment, and multi-client operations rights',
     partnerEconomics:
-      'Designed for agencies to package as a premium client deployment; roughly 3-4 serious client rollouts can recover the license cost, then the stack becomes a reusable operating asset.',
+      'Designed for agencies to package as a premium client-generation deployment; roughly 3-4 serious client rollouts can recover the £160,000 license cost, then the stack becomes a reusable commercial operating asset.',
   },
   operationsMaintenance: {
     name: 'Operations & Maintenance',

@@ -99,8 +99,8 @@ function statusBadge(type: SentItem['type']) {
 function offerBadge(offerType: string | null) {
   if (!offerType) return null
   if (offerType === 'agency')
-    return <Badge className="bg-purple-500/10 text-purple-400 text-xs">£100,000 White-label</Badge>
-  return <Badge className="bg-blue-500/10 text-blue-400 text-xs">£25,000 Internal</Badge>
+    return <Badge className="bg-purple-500/10 text-purple-400 text-xs">£160,000 White-label</Badge>
+  return <Badge className="bg-blue-500/10 text-blue-400 text-xs">£40,000 Internal</Badge>
 }
 
 function StatCard({
@@ -255,14 +255,14 @@ export default function SentMailPage() {
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
-            label="Agency £100,000 (24h)"
+            label="Agency £160,000 (24h)"
             value={s.agencySent24h}
             sub="White-label Commercial License · 50% target"
             accent="purple"
           />
           <StatCard
             icon={<Mail className="w-4 h-4" />}
-            label="Direct £25,000 (24h)"
+            label="Direct £40,000 (24h)"
             value={s.directSent24h}
             sub="Xavira Control Stack · 50% target"
             accent="blue"
@@ -501,7 +501,7 @@ export default function SentMailPage() {
                   <div><span className="text-muted-foreground">Provider:</span> {selected.provider}</div>
                 ) : null}
                 {selected.offerType ? (
-                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '£100,000 White-Label Commercial License' : '£25,000 Internal Enterprise License'}</div>
+                  <div><span className="text-muted-foreground">Offer:</span> {selected.offerType === 'agency' ? '£160,000 White-Label Commercial License' : '£40,000 Internal Enterprise License'}</div>
                 ) : null}
                 {selected.error ? (
                   <div className="text-amber-600 break-words"><span className="text-muted-foreground">Error:</span> {selected.error}</div>

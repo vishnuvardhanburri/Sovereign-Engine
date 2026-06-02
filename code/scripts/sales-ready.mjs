@@ -35,22 +35,22 @@ async function healthStatus() {
 }
 
 const dealTrackerCsv = `deal_name,target_amount,buyer_segment,buyer_name,company,status,next_action,deadline,notes
-Fast License 1,25000,Outbound agency,,,lead_needed,send 20 targeted messages,today,Close first fast cash buyer
-Fast License 2,25000,AI automation or lead-gen agency,,,lead_needed,book 2 demo calls,this_week,Second $25K proof deal
-Strategic License A,75000,Growth infrastructure company,,,lead_needed,send strategic buyer message,this_week,Do not discount below $75K
-Acquisition Buyer A,125000,Micro-SaaS/acquirer,,,lead_needed,share demo after reply,this_week,Protect $125K+ anchor
-Acquisition Buyer B,200000,Strategic infra buyer,,,lead_needed,start acquisition discussion,next_14_days,Part of $600K target
+Fast License 1,40000,Outbound agency,,,lead_needed,send 20 targeted messages,today,Close first fast cash buyer
+Fast License 2,40000,AI automation or lead-gen agency,,,lead_needed,book 2 demo calls,this_week,Second £40K proof deal
+Strategic License A,160000,Growth infrastructure company,,,lead_needed,send strategic buyer message,this_week,Do not discount below £160K
+Strategic Buyer A,160000,Micro-SaaS/acquirer,,,lead_needed,share demo after reply,this_week,Protect £160K white-label anchor
+Strategic Buyer B,160000,Strategic infra buyer,,,lead_needed,start commercial license discussion,next_14_days,Second £160K commercial license path
 `
 
 const leadListCsv = `company,website,buyer_name,buyer_role,buyer_email,linkedin,segment,deal_target,reason_to_buy,status,next_action,last_contacted_at,notes
-,,,,,,outbound_agency,25000,,not_contacted,send_fast_license_message,,
-,,,,,,ai_automation_agency,25000,,not_contacted,send_fast_license_message,,
-,,,,,,growth_infra_company,75000,,not_contacted,send_strategic_license_message,,
-,,,,,,micro_saas_buyer,125000,,not_contacted,send_acquisition_message,,
-,,,,,,strategic_infra_buyer,200000,,not_contacted,send_acquisition_message,,
+,,,,,,outbound_agency,40000,,not_contacted,send_fast_license_message,,
+,,,,,,ai_automation_agency,40000,,not_contacted,send_fast_license_message,,
+,,,,,,growth_infra_company,160000,,not_contacted,send_strategic_license_message,,
+,,,,,,micro_saas_buyer,160000,,not_contacted,send_strategic_license_message,,
+,,,,,,strategic_infra_buyer,160000,,not_contacted,send_strategic_license_message,,
 `
 
-const fast25kMessage = `# £25,000 Internal Enterprise License Messages
+const fast40kMessage = `# £40,000 Internal Enterprise License Messages
 
 ## Subject Options
 
@@ -68,7 +68,7 @@ I built Sovereign Engine + Sovereign Shield: a private outbound revenue infrastr
 
 It is not positioned as another email tool. It is an internal infrastructure system for teams that care about deliverability, monitoring, safe scaling, and operator control.
 
-We are opening two fast £25,000 GBP Internal Enterprise License deployment slots while continuing larger strategic conversations.
+We are opening two fast £40,000 GBP Internal Enterprise License deployment slots while continuing larger strategic conversations.
 
 Would it make sense to show you the 5-minute local proof walkthrough?
 
@@ -81,12 +81,12 @@ The fastest way to judge this is not a sales deck. I can show local Docker launc
 If your team works with outbound, lead-gen, or growth infrastructure, this may be worth a quick look.
 `
 
-const strategic600kMessage = `# $600K Strategic Pipeline Messages
+const strategic160kMessage = `# £160,000 White-Label Commercial License Messages
 
 ## Subject Options
 
-- acquisition-ready outbound infrastructure
-- strategic asset: deliverability operating system
+- white-label outbound infrastructure
+- commercial infrastructure license
 - private growth infrastructure platform
 
 ## Message
@@ -95,13 +95,13 @@ Hi {{first_name}},
 
 I am Vishnu, founder of Xavira Tech Labs.
 
-We built Sovereign Engine + Sovereign Shield as an acquisition-ready infrastructure asset: deliverability operating system, reputation command center, health oracle, audit/security evidence, Docker deployment, and cross-platform control-plane architecture.
+We built Sovereign Engine + Sovereign Shield as a commercial infrastructure asset: deliverability operating system, reputation command center, health oracle, audit/security evidence, Docker deployment, and cross-platform control-plane architecture.
 
 We are currently exploring:
 
-- $25K private license/deployment slots for fast operators
-- $75K+ strategic private licenses
-- $125K+ full acquisition conversations
+- £40K Internal Enterprise License deployment slots for fast operators
+- £160K White-Label Commercial License conversations
+- commercial deployment and maintenance conversations
 
 If your team is buying or building outbound, growth, security, or automation infrastructure, this may be faster than starting from zero.
 
@@ -128,11 +128,11 @@ Thanks for taking a look. I will keep this practical. Sovereign Engine is not an
 
 ## Close
 
-Which path fits you better: the $25K private license/deployment sprint, or a broader strategic license/acquisition conversation?
+Which path fits you better: the £40K Internal Enterprise License deployment sprint, or the £160K White-Label Commercial License path?
 
 ## If They Ask Price
 
-Fast license/deployment is $25K. Strategic license starts at $75K. Full acquisition discussion starts at $125K.
+Internal Enterprise License is £40,000 GBP. White-Label Commercial License is £160,000 GBP. Operations & Maintenance is £3,000/month.
 
 ## If They Ask About Production
 
@@ -153,7 +153,7 @@ const dailyPlan = `# 7-Day Closing Plan
 ## Day 1
 
 - Build 50-person list.
-- Send first 20 $25K fast-license messages.
+- Send first 20 £40K fast-license messages.
 - Send 10 LinkedIn messages.
 
 ## Day 2
@@ -164,13 +164,13 @@ const dailyPlan = `# 7-Day Closing Plan
 
 ## Days 3-4
 
-- Push $25K close to fast operators.
-- Push $75K-$125K path to bigger buyers.
+- Push £40K close to fast operators.
+- Push £160K white-label path to bigger buyers.
 
 ## Days 5-7
 
-- Close two $25K buyers.
-- Keep 3 strategic acquisition conversations active.
+- Close two £40K internal buyers.
+- Keep 3 £160K white-label commercial conversations active.
 
 ## Rule
 
@@ -193,8 +193,8 @@ ${health.ok ? 'PASS' : 'NEEDS START'} - ${health.note}
 
 ## Immediate Goal
 
-- Close 2 x $25K fast license/deployment deals.
-- Keep $600K strategic pipeline alive through $75K licenses and $125K+ acquisition talks.
+- Close 2 x £40K fast license/deployment deals.
+- Build the £160K white-label commercial pipeline while closing £40K internal license deployments.
 
 ## Run Demo
 
@@ -221,16 +221,16 @@ Demo1234!
 
 - deal-tracker.csv
 - lead-list.csv
-- outreach-25k.md
-- outreach-600k.md
+- outreach-40k.md
+- outreach-160k.md
 - call-script.md
 - daily-plan.md
 `)
 
   await write('deal-tracker.csv', dealTrackerCsv)
   await write('lead-list.csv', leadListCsv)
-  await write('outreach-25k.md', fast25kMessage)
-  await write('outreach-600k.md', strategic600kMessage)
+  await write('outreach-40k.md', fast40kMessage)
+  await write('outreach-160k.md', strategic160kMessage)
   await write('call-script.md', callScript)
   await write('daily-plan.md', dailyPlan)
 

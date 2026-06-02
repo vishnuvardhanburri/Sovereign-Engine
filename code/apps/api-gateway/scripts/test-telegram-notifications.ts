@@ -9,9 +9,13 @@ assert.equal(maskEmail('sales@verified-agency.com'), 's***s@verified-agency.com'
 assert.equal(maskEmail('ab@company.com'), 'a*@company.com')
 assert.equal(maskEmail('bad-value'), 'bad-value')
 
-assert.equal(shouldNotifyTelegram('email_sent', { TELEGRAM_NOTIFY_SENT: 'false' }), false)
+assert.equal(shouldNotifyTelegram('email_sent', { TELEGRAM_NOTIFY_SENT: 'true' }), false)
+assert.equal(shouldNotifyTelegram('email_sent', { TELEGRAM_NOTIFY_SENT_EVENTS: 'true' }), true)
 assert.equal(shouldNotifyTelegram('email_failed', { TELEGRAM_NOTIFY_FAILED: '0' }), false)
-assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORTS: 'yes' }), true)
+assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORTS: 'yes' }), false)
+assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORT_EVENTS: 'yes' }), true)
+assert.equal(shouldNotifyTelegram('queue_batch', { TELEGRAM_NOTIFY_QUEUE: 'yes' }), false)
+assert.equal(shouldNotifyTelegram('daily_outbound', { TELEGRAM_NOTIFY_QUEUE: 'yes' }), true)
 
 const sent = formatTelegramNotification({
   type: 'email_sent',
@@ -73,7 +77,7 @@ const dailyMessage = formatTelegramNotification({
   imported: 100,
   approved: 12,
   queued: 5,
-  estimatedPipelineValueUsd: 425000,
+  estimatedPipelineValueUsd: 680000,
   agencyQueued: 4,
   directQueued: 1,
   sendLimit: 5,
@@ -81,8 +85,8 @@ const dailyMessage = formatTelegramNotification({
   failures: 0,
 })
 
-assert.match(dailyMessage, /Pipeline value: £425,000/)
-assert.match(dailyMessage, /Mix: 4 agency \(£100,000\) \/ 1 direct \(£25,000\)/)
+assert.match(dailyMessage, /Pipeline value: £680,000/)
+assert.match(dailyMessage, /Mix: 4 agency \(£160,000\) \/ 1 direct \(£40,000\)/)
 
 const digestMessage = formatTelegramNotification({
   type: 'daily_outbound',
@@ -92,11 +96,25 @@ const digestMessage = formatTelegramNotification({
   bounced24h: 0,
   replies24h: 1,
   replyRate24h: 0.8,
+  approvedReadyNow: 42,
+  approvedAgencyReadyNow: 21,
+  approvedDirectReadyNow: 21,
+  queuePending: 5,
+  queueProcessing: 1,
+  queueRetry: 0,
+  queueFailed: 0,
+  queueCompleted24h: 125,
+  agencySent24h: 65,
+  directSent24h: 65,
+  remainingToOperatingFloor: 0,
   queuedNow: 0,
   queued: 0,
 })
 
-assert.match(digestMessage, /Qualified conversations:.*1/)
-assert.match(digestMessage, /Client-generation target: 1-2\/day from 125-199 compliant sends/)
+assert.match(digestMessage, /Co-Founder Operator Report/)
+assert.match(digestMessage, /Client conversations: 1 replies \/ 130 sent = 0\.8%/)
+assert.match(digestMessage, /Queue: 5 pending \/ 1 active \/ 0 retry \/ 0 failed \/ 125 completed 24h/)
+assert.match(digestMessage, /Offer mix 24h: 65 white-label £160,000 \/ 65 internal £40,000/)
+assert.match(digestMessage, /Ready inventory: 21 agency \/ 21 direct/)
 
 console.log('telegram notification tests passed')

@@ -63,7 +63,7 @@ async function checkPricingCopy() {
   const ok =
     response.ok &&
     text.includes('Xavira Control Stack') &&
-    text.includes('25,000') &&
+        text.includes('40,000') &&
     text.includes('White-label')
   record(ok, 'pricing positioning', ok ? 'Xavira Control Stack licensing copy visible' : `HTTP ${response.status}`)
 }

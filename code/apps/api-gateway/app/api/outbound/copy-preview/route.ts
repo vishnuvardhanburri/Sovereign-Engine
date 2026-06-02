@@ -13,7 +13,7 @@ type PreviewLead = SovereignCopyLead & {
 
 const sampleLeads: PreviewLead[] = [
   {
-    label: '£25,000 internal enterprise license',
+    label: '£40,000 internal enterprise license',
     first_name: 'there',
     company: 'GrowthOps AI',
     companyDomain: 'growthops.ai',
@@ -27,7 +27,7 @@ const sampleLeads: PreviewLead[] = [
     },
   },
   {
-    label: '£100,000 white-label commercial license',
+    label: '£160,000 white-label commercial license',
     first_name: 'there',
     company: 'Northstar RevOps',
     companyDomain: 'northstarrevops.com',

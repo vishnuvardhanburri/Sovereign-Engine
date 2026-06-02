@@ -41,6 +41,19 @@ export type OutboundTelegramDigest = {
   followUpsSent24h: number
   followUpsStopped24h: number
   queuedNow: number
+  approvedReadyNow: number
+  approvedAgencyReadyNow: number
+  approvedDirectReadyNow: number
+  queuePending: number
+  queueProcessing: number
+  queueRetry: number
+  queueFailed: number
+  queueCompleted24h: number
+  agencySent24h: number
+  directSent24h: number
+  agencyReplies24h: number
+  directReplies24h: number
+  remainingToOperatingFloor: number
   /** Most frequent failure error string in the last 24h, or null if no failures */
   topFailureReason: string | null
   /** Heuristic next-action recommendation based on current system state */
@@ -66,7 +79,7 @@ function replyRate(sent: number, replies: number): number {
 
 export async function getOutboundTelegramDigest(clientId: number): Promise<OutboundTelegramDigest> {
   try {
-    const [eventsRes, followUpsRes, queueRes] = await Promise.all([
+    const [eventsRes, followUpsRes, queueRes, approvedRes, mixRes] = await Promise.all([
       // Delivery events: sent / failed / bounce + reply signals from events table
       query<{
         event_type: string
@@ -113,14 +126,111 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
         [clientId]
       ).catch(() => ({ rows: [] as {status:string;is_followup:string;updated_today:string;cnt:string}[], rowCount: 0 })),
 
-      // Current queue depth (pending jobs)
-      query<{ cnt: string }>(
-        `SELECT COUNT(*) AS cnt
+      // Current queue health. Keep compatibility with legacy BullMQ-like statuses.
+      query<{
+        pending: string
+        processing: string
+        retry: string
+        failed: string
+        completed_24h: string
+      }>(
+        `SELECT
+           COUNT(*) FILTER (WHERE status IN ('pending','waiting','delayed'))::text AS pending,
+           COUNT(*) FILTER (WHERE status IN ('processing','active'))::text AS processing,
+           COUNT(*) FILTER (WHERE status = 'retry')::text AS retry,
+           COUNT(*) FILTER (WHERE status = 'failed')::text AS failed,
+           COUNT(*) FILTER (
+             WHERE status = 'completed'
+               AND updated_at >= NOW() - INTERVAL '24 hours'
+           )::text AS completed_24h
          FROM queue_jobs
-         WHERE client_id = $1
-           AND status IN ('pending','waiting','delayed')`,
+         WHERE client_id = $1`,
         [clientId]
-      ).catch(() => ({ rows: [{ cnt: '0' }], rowCount: 1 })),
+      ).catch(() => ({
+        rows: [{ pending: '0', processing: '0', retry: '0', failed: '0', completed_24h: '0' }],
+        rowCount: 1,
+      })),
+
+      // Approved inventory that can be queued on the next cycle.
+      query<{
+        total: string
+        agency: string
+        direct: string
+      }>(
+        `WITH approved AS (
+           SELECT
+             c.*,
+             LOWER(
+               COALESCE(c.custom_fields->>'offer_type','') || ' ' ||
+               COALESCE(c.custom_fields->>'sovereign_offer_type','') || ' ' ||
+               COALESCE(c.company,'') || ' ' ||
+               COALESCE(c.title,'') || ' ' ||
+               COALESCE(c.source,'') || ' ' ||
+               COALESCE(c.custom_fields->>'reason_to_contact','')
+             ) AS signal
+           FROM contacts c
+           WHERE c.client_id = $1
+             AND c.status = 'active'
+             AND c.bounced_at IS NULL
+             AND c.unsubscribed_at IS NULL
+             AND COALESCE(c.custom_fields->>'send_status', 'not_approved') = 'approved'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM suppression_list s
+               WHERE s.client_id = c.client_id
+                 AND LOWER(s.email) = LOWER(c.email)
+             )
+         )
+         SELECT
+           COUNT(*)::text AS total,
+           COUNT(*) FILTER (
+             WHERE signal ~ '(agency|revops|lead.?gen|outbound|marketing|white.?label|consult)'
+           )::text AS agency,
+           COUNT(*) FILTER (
+             WHERE NOT (signal ~ '(agency|revops|lead.?gen|outbound|marketing|white.?label|consult)')
+           )::text AS direct
+         FROM approved`,
+        [clientId]
+      ).catch(() => ({ rows: [{ total: '0', agency: '0', direct: '0' }], rowCount: 1 })),
+
+      // Offer mix and reply split for the executive hourly report.
+      query<{
+        agency_sent_24h: string
+        direct_sent_24h: string
+        agency_replies_24h: string
+        direct_replies_24h: string
+      }>(
+        `SELECT
+           COUNT(*) FILTER (
+             WHERE event_type = 'sent'
+               AND created_at >= NOW() - INTERVAL '24 hours'
+               AND COALESCE(metadata->>'offer_type','') = 'agency'
+           )::text AS agency_sent_24h,
+           COUNT(*) FILTER (
+             WHERE event_type = 'sent'
+               AND created_at >= NOW() - INTERVAL '24 hours'
+               AND COALESCE(metadata->>'offer_type','direct') <> 'agency'
+           )::text AS direct_sent_24h,
+           COUNT(*) FILTER (
+             WHERE event_type = 'reply'
+               AND created_at >= NOW() - INTERVAL '24 hours'
+               AND (${HUMAN_MATCHED_REPLY_SQL})
+               AND COALESCE(metadata->>'offer_type','') = 'agency'
+           )::text AS agency_replies_24h,
+           COUNT(*) FILTER (
+             WHERE event_type = 'reply'
+               AND created_at >= NOW() - INTERVAL '24 hours'
+               AND (${HUMAN_MATCHED_REPLY_SQL})
+               AND COALESCE(metadata->>'offer_type','direct') <> 'agency'
+           )::text AS direct_replies_24h
+         FROM events
+         WHERE client_id = $1
+           AND created_at >= NOW() - INTERVAL '24 hours'`,
+        [clientId]
+      ).catch(() => ({
+        rows: [{ agency_sent_24h: '0', direct_sent_24h: '0', agency_replies_24h: '0', direct_replies_24h: '0' }],
+        rowCount: 1,
+      })),
     ])
 
     // Aggregate event counts
@@ -182,7 +292,23 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       if ((status === 'stopped' || status === 'cancelled') && recentlyUpdated) followUpsStopped24h += cnt
     }
 
-    const queuedNow = safeInt(queueRes.rows[0]?.cnt)
+    const queuePending = safeInt(queueRes.rows[0]?.pending)
+    const queueProcessing = safeInt(queueRes.rows[0]?.processing)
+    const queueRetry = safeInt(queueRes.rows[0]?.retry)
+    const queueFailed = safeInt(queueRes.rows[0]?.failed)
+    const queueCompleted24h = safeInt(queueRes.rows[0]?.completed_24h)
+    const queuedNow = queuePending
+    const approvedReadyNow = safeInt(approvedRes.rows[0]?.total)
+    const approvedAgencyReadyNow = safeInt(approvedRes.rows[0]?.agency)
+    const approvedDirectReadyNow = safeInt(approvedRes.rows[0]?.direct)
+    const agencySent24h = safeInt(mixRes.rows[0]?.agency_sent_24h)
+    const directSent24h = safeInt(mixRes.rows[0]?.direct_sent_24h)
+    const agencyReplies24h = safeInt(mixRes.rows[0]?.agency_replies_24h)
+    const directReplies24h = safeInt(mixRes.rows[0]?.direct_replies_24h)
+    const remainingToOperatingFloor = Math.max(
+      0,
+      SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor - sentToday
+    )
 
     // Top failure reason in last 24h
     const topFailureRes = await query<{ error: string; cnt: string }>(
@@ -294,6 +420,19 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       followUpsSent24h,
       followUpsStopped24h,
       queuedNow,
+      approvedReadyNow,
+      approvedAgencyReadyNow,
+      approvedDirectReadyNow,
+      queuePending,
+      queueProcessing,
+      queueRetry,
+      queueFailed,
+      queueCompleted24h,
+      agencySent24h,
+      directSent24h,
+      agencyReplies24h,
+      directReplies24h,
+      remainingToOperatingFloor,
       topFailureReason,
       nextAction,
       lastEvents,
@@ -316,6 +455,19 @@ export async function getOutboundTelegramDigest(clientId: number): Promise<Outbo
       followUpsSent24h: 0,
       followUpsStopped24h: 0,
       queuedNow: 0,
+      approvedReadyNow: 0,
+      approvedAgencyReadyNow: 0,
+      approvedDirectReadyNow: 0,
+      queuePending: 0,
+      queueProcessing: 0,
+      queueRetry: 0,
+      queueFailed: 0,
+      queueCompleted24h: 0,
+      agencySent24h: 0,
+      directSent24h: 0,
+      agencyReplies24h: 0,
+      directReplies24h: 0,
+      remainingToOperatingFloor: SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor,
       topFailureReason: null,
       nextAction: 'Digest query failed — check DB connectivity.',
       lastEvents: [],

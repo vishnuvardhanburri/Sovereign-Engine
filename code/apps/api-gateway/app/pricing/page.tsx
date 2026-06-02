@@ -132,7 +132,7 @@ export default function PricingPage() {
           <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-300">
             A licensed partner can package Xavira Control Stack as a premium client deployment:
             outbound governance, deliverability operations, AI safety controls, proof dashboards,
-            and ongoing operational support under their own brand. The £100,000 GBP license is
+            and ongoing operational support under their own brand. The £160,000 GBP license is
             designed so roughly 3-4 serious client rollouts can recover the license cost, then
             every additional client deployment compounds on the same infrastructure base.
           </p>

@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
           recipientData: body.recipientData ?? {},
           campaignContext: body.campaignContext ?? {},
           requiredOffer:
-            'Xavira Control Stack: £25,000 GBP Internal Enterprise License combining Sovereign Engine outbound operations control plane and Sovereign Shield private AI governance layer.',
+            'Xavira Control Stack: £40,000 GBP Internal Enterprise License combining Sovereign Engine outbound operations control plane and Sovereign Shield private AI governance layer.',
         }),
         fallback,
       })
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           company: body.company ?? body.recipientData?.company ?? null,
           industry: body.industry ?? body.campaignContext?.industry ?? null,
           offer:
-            'Xavira Control Stack: outbound operations control plane plus private AI governance layer. Internal Enterprise License £25,000 GBP; White-Label Commercial License £100,000 GBP; Operations & Maintenance £3,000 GBP/month.',
+            'Xavira Control Stack: outbound operations control plane plus private AI governance layer. Internal Enterprise License £40,000 GBP; White-Label Commercial License £160,000 GBP; Operations & Maintenance £3,000 GBP/month.',
         }),
         fallback,
       })

@@ -110,6 +110,19 @@ type TelegramNotification =
       primaryBlocker?: string | null
       nextAction?: string | null
       topFailureReason?: string | null
+      approvedReadyNow?: number
+      approvedAgencyReadyNow?: number
+      approvedDirectReadyNow?: number
+      queuePending?: number
+      queueProcessing?: number
+      queueRetry?: number
+      queueFailed?: number
+      queueCompleted24h?: number
+      agencySent24h?: number
+      directSent24h?: number
+      agencyReplies24h?: number
+      directReplies24h?: number
+      remainingToOperatingFloor?: number
       // Digest fields from getOutboundTelegramDigest
       sentToday?: number
       sent24h?: number
@@ -146,10 +159,20 @@ function envBool(value: string | undefined, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+function stageEventEnabled(env: TelegramEnv, flag: string): boolean {
+  return envBool(env.TELEGRAM_NOTIFY_STAGE_EVENTS, false) || envBool(env[flag], false)
+}
+
 function clip(value: string | null | undefined, max = 240): string {
   const text = String(value ?? '').trim()
   if (text.length <= max) return text
   return `${text.slice(0, max - 1)}...`
+}
+
+function percentBar(value: number): string {
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
+  const filled = Math.round(safe / 10)
+  return `[${'#'.repeat(filled)}${'-'.repeat(10 - filled)}]`
 }
 
 function formatTopReasons(reasons?: Record<string, number> | null): string | null {
@@ -186,21 +209,27 @@ export function maskEmail(email: string, showFull = false): string {
 export function shouldNotifyTelegram(type: TelegramNotificationType, env: TelegramEnv = process.env): boolean {
   if (!envBool(env.TELEGRAM_NOTIFICATIONS_ENABLED, true)) return false
 
-  const eventFlags: Record<TelegramNotificationType, string> = {
-    email_sent: 'TELEGRAM_NOTIFY_SENT',
-    email_failed: 'TELEGRAM_NOTIFY_FAILED',
-    lead_scout: 'TELEGRAM_NOTIFY_IMPORTS',
-    sheet_import: 'TELEGRAM_NOTIFY_IMPORTS',
-    maps_import: 'TELEGRAM_NOTIFY_IMPORTS',
-    hunter_domain_search: 'TELEGRAM_NOTIFY_IMPORTS',
-    contacts_approved: 'TELEGRAM_NOTIFY_APPROVALS',
-    queue_batch: 'TELEGRAM_NOTIFY_QUEUE',
-    queue_skipped: 'TELEGRAM_NOTIFY_QUEUE',
-    daily_outbound: 'TELEGRAM_NOTIFY_QUEUE',
-    reputation_recovery: 'TELEGRAM_NOTIFY_QUEUE',
+  switch (type) {
+    case 'email_sent':
+      return envBool(env.TELEGRAM_NOTIFY_SENT_EVENTS, false)
+    case 'email_failed':
+      return envBool(env.TELEGRAM_NOTIFY_FAILED, true)
+    case 'lead_scout':
+    case 'sheet_import':
+    case 'maps_import':
+    case 'hunter_domain_search':
+      return stageEventEnabled(env, 'TELEGRAM_NOTIFY_IMPORT_EVENTS')
+    case 'contacts_approved':
+      return stageEventEnabled(env, 'TELEGRAM_NOTIFY_APPROVAL_EVENTS')
+    case 'queue_batch':
+    case 'queue_skipped':
+      return stageEventEnabled(env, 'TELEGRAM_NOTIFY_QUEUE_EVENTS')
+    case 'daily_outbound':
+    case 'reputation_recovery':
+      return envBool(env.TELEGRAM_NOTIFY_QUEUE, true)
   }
 
-  return envBool(env[eventFlags[type]], true)
+  return false
 }
 
 export function formatTelegramNotification(input: TelegramNotification, options?: { showFullEmails?: boolean }): string {
@@ -325,19 +354,45 @@ export function formatTelegramNotification(input: TelegramNotification, options?
 
     if (hasDigest) {
       const sent = input.sentToday ?? 0
+      const sent24h = input.sent24h ?? sent
       const failed = input.failed24h ?? 0
       const bounced = input.bounced24h ?? 0
       const replies = input.replies24h ?? 0
       const rr = (input.replyRate24h ?? 0).toFixed(1)
       const queuedThisCycle = input.queued ?? 0
       const queuedNow = input.queuedNow ?? 0
-      const agency = input.agencyQueued ?? 0
-      const direct = input.directQueued ?? 0
+      const readyNow = input.approvedReadyNow ?? 0
+      const ableToSend = readyNow + queuedNow
+      const agencySent24h = input.agencySent24h ?? input.agencyQueued ?? 0
+      const directSent24h = input.directSent24h ?? input.directQueued ?? 0
+      const agencyReady = input.approvedAgencyReadyNow ?? 0
+      const directReady = input.approvedDirectReadyNow ?? 0
       const pipeline = input.estimatedPipelineValueUsd
       const fu_due = input.followUpsDue ?? 0
       const fu_pending = input.followUpsPending ?? 0
       const fu_sent = input.followUpsSent24h ?? 0
       const fu_stopped = input.followUpsStopped24h ?? 0
+      const queuePending = input.queuePending ?? queuedNow
+      const queueProcessing = input.queueProcessing ?? 0
+      const queueRetry = input.queueRetry ?? 0
+      const queueFailed = input.queueFailed ?? 0
+      const completed24h = input.queueCompleted24h ?? 0
+      const remainingToFloor = input.remainingToOperatingFloor ?? Math.max(
+        0,
+        SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor - sent
+      )
+      const queueStatus =
+        queueFailed > 0 ? 'attention' : queueRetry > 0 ? 'watch' : 'stable'
+      const mixTotal = agencySent24h + directSent24h
+      const agencyShare = mixTotal > 0 ? Math.round((agencySent24h / mixTotal) * 100) : 0
+      const mixAction =
+        mixTotal === 0
+          ? 'Build both white-label and internal inventory.'
+          : agencyShare < 45
+            ? 'Prioritize agency / white-label buyers next cycle.'
+            : agencyShare > 55
+              ? 'Prioritize internal-license buyers next cycle.'
+              : '50/50 offer mix is on track.'
       const blocker = input.primaryBlocker
       const topFailure = input.topFailureReason
       const computedNextAction =
@@ -354,26 +409,30 @@ export function formatTelegramNotification(input: TelegramNotification, options?
 
       const lines: (string | null)[] = [
         input.dryRun
-          ? '🔍 *Sovereign Engine — Dry Run Preview*'
-          : '🚀 *Sovereign Engine — Daily Outbound Report*',
+          ? 'Sovereign Engine — Co-Founder Dry Run'
+          : 'Sovereign Engine — Co-Founder Operator Report',
         '━━━━━━━━━━━━━━━━━━━━━━━',
-        `📤 Sent today: *${sent}*   ❌ Failed: ${failed}   ⚠️ Bounced: ${bounced}`,
-        `💬 Qualified conversations: *${replies}* (${rr}% response rate)`,
-        `🎯 Client-generation target: ${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin}-${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax}/day from ${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor}-${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling} compliant sends`,
-        `📋 Queued this cycle: ${queuedThisCycle}   Queue now: ${queuedNow}`,
-        agency || direct
-          ? `Mix: ${agency} agency (${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label}) / ${direct} direct (${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label})`
-          : null,
+        `Status: ${queueStatus.toUpperCase()} | Provider: resend | Delivery: ${failed} failed / ${bounced} bounced`,
+        `Sent: ${sent} today / ${sent24h} in 24h | Range: ${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendFloor}-${SOVEREIGN_CLIENT_GENERATION_TARGET.operatingSendCeiling}`,
+        `Need for floor: ${remainingToFloor} more today | Able to send now: ${ableToSend}`,
+        `Queue: ${queuePending} pending / ${queueProcessing} active / ${queueRetry} retry / ${queueFailed} failed / ${completed24h} completed 24h`,
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+        `Client conversations: ${replies} replies / ${sent24h} sent = ${rr}% ${percentBar(input.replyRate24h ?? 0)}`,
+        `Target: ${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin}-${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax} qualified conversations/day`,
+        '━━━━━━━━━━━━━━━━━━━━━━━',
+        `Offer mix 24h: ${agencySent24h} white-label ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} / ${directSent24h} internal ${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label}`,
+        `Ready inventory: ${agencyReady} agency / ${directReady} direct`,
+        `Mix action: ${mixAction}`,
         pipeline
           ? `Pipeline value: *${formatGbp(pipeline)}*`
           : null,
         '━━━━━━━━━━━━━━━━━━━━━━━',
-        `🔁 Follow-ups: ${fu_due} due / ${fu_pending} pending / ${fu_sent} sent today / ${fu_stopped} stopped`,
+        `Follow-ups: ${fu_due} due / ${fu_pending} pending / ${fu_sent} sent today / ${fu_stopped} stopped`,
         '━━━━━━━━━━━━━━━━━━━━━━━',
-        topFailure ? `❗ Top failure: \`${clip(topFailure, 100)}\`` : null,
-        blocker && blocker !== 'ready' ? `🚧 Blocker: ${clip(blocker, 100)}` : null,
-        computedNextAction ? `💡 Next action: ${clip(computedNextAction, 200)}` : null,
-        lastLines.length ? `\nRecent events:\n${lastLines.join('\n')}` : null,
+        topFailure ? `Top failure: ${clip(topFailure, 100)}` : null,
+        blocker && blocker !== 'ready' ? `Blocker: ${clip(blocker, 100)}` : null,
+        computedNextAction ? `Next action: ${clip(computedNextAction, 220)}` : null,
+        lastLines.length ? `\nRecent proof:\n${lastLines.join('\n')}` : null,
       ]
 
       return lines.filter(Boolean).join('\n')
