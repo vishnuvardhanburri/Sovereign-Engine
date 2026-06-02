@@ -249,7 +249,7 @@ function combineDiscoveryStages(
     error: firstError,
     data: {
       balancedDiscovery: true,
-      mixPolicy: 'strict_50_50_source_supply',
+      mixPolicy: 'target_50_50_source_supply',
       limit: input.limit,
       agencyIndustry: 'agency',
       directIndustry: input.directIndustry,
@@ -1861,6 +1861,7 @@ async function loadApprovedContacts(
   const eligibleDirectContacts = preparedLeads.length - eligibleAgencyContacts
   const targetPerSide = Math.floor(Math.max(0, Math.trunc(limit)) / 2)
   const leads = balanceSovereignOfferMix(preparedLeads, limit, {
+    allowRemainderFill: true,
     preferredOfferType,
     preferredSlots,
   })
@@ -2020,7 +2021,7 @@ async function runQueue(input: {
           eligibleDirectContacts,
           agencyShortfall,
           directShortfall,
-          mixPolicy: 'strict_50_50',
+          mixPolicy: 'target_50_50_fill_best_available',
           phase: input.phase || 'after_research',
         },
       }
@@ -2145,7 +2146,7 @@ async function runQueue(input: {
         eligibleDirectContacts,
         agencyShortfall,
         directShortfall,
-        mixPolicy: 'strict_50_50',
+        mixPolicy: 'target_50_50_fill_best_available',
         phase: input.phase || 'after_research',
       },
     }

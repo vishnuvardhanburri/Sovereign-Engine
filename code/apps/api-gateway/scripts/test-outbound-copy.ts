@@ -100,6 +100,21 @@ assert(
   'direct-heavy pools must not fill missing agency slots'
 )
 assert(directHeavyBalanced.length === 2, 'strict mix should expose agency inventory shortfall')
+const directHeavyFilled = balanceSovereignOfferMix(
+  [
+    { ...agencyLead, company: 'Only Agency', customFields: { fit_score: 99 } },
+    { ...directLead, company: 'Direct A', customFields: { fit_score: 98 } },
+    { ...directLead, company: 'Direct B', customFields: { fit_score: 97 } },
+    { ...directLead, company: 'Direct C', customFields: { fit_score: 96 } },
+    { ...directLead, company: 'Direct D', customFields: { fit_score: 95 } },
+  ],
+  6,
+  { allowRemainderFill: true }
+)
+assert(
+  directHeavyFilled.length === 5,
+  'target 50/50 mode should keep sending with best available inventory instead of freezing'
+)
 const debtAwareAgencyRepair = balanceSovereignOfferMix(
   [
     { ...agencyLead, company: 'Agency Repair A', customFields: { fit_score: 99 } },

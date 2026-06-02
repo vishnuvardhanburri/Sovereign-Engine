@@ -422,7 +422,7 @@ For agencies, the commercial value is simple: turn operational proof into a clie
 * commercial deployment rights
 * branding customization
 * multi-client deployment support
-* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP/month operations and maintenance support
+* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP operations and maintenance support
 
 The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. Package Xavira as a serious client-generation infrastructure deployment, recover the license across roughly 3-4 client rollouts, then keep using the same infrastructure base for future accounts.
 

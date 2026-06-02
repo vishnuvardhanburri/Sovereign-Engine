@@ -113,15 +113,27 @@ function balanceResearchApprovalCandidates(
     candidates.push(agency[index], direct[index])
   }
 
+  const selectedIds = new Set(candidates.map((candidate) => candidate.id))
+  const remainingSlots = Math.max(0, limit - candidates.length)
+  const remainder = approved
+    .filter((decision) => !selectedIds.has(decision.id))
+    .slice(0, remainingSlots)
+  candidates.push(...remainder)
+
+  const agencySelected = candidates.filter(
+    (decision) => offerTypeForResearchContact(contactById.get(decision.id)) === 'agency'
+  ).length
+  const directSelected = candidates.length - agencySelected
+
   return {
     candidates,
     agencyReady: agency.length,
     directReady: direct.length,
-    agencySelected: pairCount,
-    directSelected: pairCount,
+    agencySelected,
+    directSelected,
     agencyShortfall: Math.max(0, targetPairs - agency.length),
     directShortfall: Math.max(0, targetPairs - direct.length),
-    mixPolicy: 'strict_50_50' as const,
+    mixPolicy: 'target_50_50_fill_best_available' as const,
   }
 }
 
@@ -297,7 +309,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          'approval_required', false,
          'approved_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
          'approved_by', 'research_approval_gate',
-         'approval_batch', 'research_verified_best_strict_50_50',
+         'approval_batch', 'research_verified_best_target_50_50_fill',
          'research_score', scores.score,
          'research_reasons', scores.reasons,
          'hunter_confidence', scores.confidence,
@@ -362,7 +374,7 @@ async function researchApproval(request: NextRequest, apply: boolean) {
   void notifyTelegramEvent({
     type: 'contacts_approved',
     approved,
-    mode: 'research_verified_best_strict_50_50',
+    mode: 'research_verified_best_target_50_50_fill',
   })
 
   return NextResponse.json({
