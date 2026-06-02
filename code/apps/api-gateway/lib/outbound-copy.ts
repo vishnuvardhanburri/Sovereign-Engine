@@ -23,12 +23,12 @@ export type SovereignCopyLead = {
 }
 
 export const SOVEREIGN_STACK_DIRECT_SUBJECT =
-  'quick deliverability question'
+  'quick question about outbound infrastructure'
 
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
-  'white-label outbound infrastructure'
+  'white-label communication infrastructure'
 
-export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://www.vishnuvardhanburri.in/contact'
+export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://www.vishnuvardhanburri.in'
 export const SOVEREIGN_CLIENT_GENERATION_TARGET = {
   dailyQualifiedConversationsMin: 1,
   dailyQualifiedConversationsMax: 2,
@@ -76,7 +76,7 @@ export function sovereignBookingUrl(): string {
 export const SOVEREIGN_BOOKING_URL = SOVEREIGN_DEFAULT_BOOKING_URL
 
 export function sovereignBookingCtaText(): string {
-  return `Book a 20-minute audit + demo here: ${sovereignBookingUrl()}`
+  return `If helpful, here is the page I usually share before a walkthrough: ${sovereignBookingUrl()}`
 }
 
 export function withSovereignBookingCta(body: string): string {
@@ -378,26 +378,24 @@ export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchC
 export function sovereignDirectEmail1Body(): string {
   return `Hi {{FirstName}},
 
-{{pain_line}}
+I came across {{Company}} while researching teams that rely heavily on outbound growth and operational communications.
 
-The expensive part is not sending more email. It is knowing which buyers deserve research, which inbox is safe, which follow-up should stop, and which AI-written message could create risk before Gmail/Outlook throttling or reply quality drops.
+One thing we see repeatedly is that teams invest heavily in campaigns but have very little visibility into the infrastructure layer behind them.
 
-Xavira Control Stack gives the operator one control layer for:
-* Gmail/Outlook sender and domain health
-* queue and follow-up discipline
-* reply, bounce, and suppression visibility
-* AI governance and PII-safe copy checks
-* proof of what was sent, blocked, or stopped
+That usually creates problems around:
+* deliverability degradation
+* reputation risk
+* provider throttling
+* governance gaps
+* operational blind spots
 
-The reason teams buy it is simple: if outbound is part of pipeline, the goal is not lead generation. It is turning a controlled daily motion into qualified client conversations without burning domains or trust.
+At Xavira Tech Labs, we built Xavira Control Stack to help organizations monitor, govern, and operate communication infrastructure more safely at scale.
 
-If {{Company}} is pushing outbound this quarter, I can run a short outbound infrastructure review and show the first 3 risks I would fix before scaling.
-
-${sovereignBookingCtaText()}
+Would be happy to share a short walkthrough if this is relevant to your roadmap.
 
 Best,
 Vishnu
-Founder - Xavira Tech Labs
+Founder
 Xavira Tech Labs
 
 {{physical_address}}
@@ -408,27 +406,24 @@ If this is not relevant, reply "no" and I will not follow up.`
 export function sovereignAgencyEmail1Body(): string {
   return `Hi {{FirstName}},
 
-{{pain_line}}
+I came across {{Company}} while researching agencies and operators building serious outbound, RevOps, or client-generation infrastructure.
 
-Most agencies can launch campaigns. Fewer can prove to clients that domain health, sender rotation, suppression, follow-ups, and AI copy governance are controlled.
+Most agencies can launch campaigns. Fewer can give clients a governed infrastructure layer that shows sender health, queue discipline, suppression, delivery proof, and AI copy controls in one place.
 
-That is the gap Xavira Control Stack is built to own:
+That is what Xavira Control Stack is built for:
 * Sovereign Engine for outbound operations, queues, reputation, and delivery proof
 * Sovereign Shield for AI governance, PII controls, and audit evidence
 
-For agencies, the commercial value is simple: turn operational proof into a client-facing infrastructure layer:
+For agencies, the white-label commercial license is designed to become a client-facing infrastructure offer:
 * white-label rights
 * reseller rights
 * commercial deployment rights
 * branding customization
 * multi-client deployment support
-* ${XAVIRA_COMMERCIAL_MODEL.operationsMaintenance.label} GBP operations and maintenance support
 
-The white-label commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. Package Xavira as a serious client-generation infrastructure deployment, recover the license across roughly 3-4 client rollouts, then keep using the same infrastructure base for future accounts.
+The commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. A partner can recover that across roughly 3-4 serious client deployments, then keep using the same infrastructure base for future accounts.
 
-If {{Company}} wants a defensible outbound infrastructure offer instead of only execution, would a short walkthrough be useful?
-
-${sovereignBookingCtaText()}
+If this is relevant to {{Company}}'s roadmap, I would be happy to walk through the architecture and commercial model.
 
 Best,
 Vishnu
@@ -450,22 +445,18 @@ export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
   {
     id: 'sovereign-stack-step-2',
     day: 3,
-    subject: 'following up',
+    subject: 're: outbound infrastructure',
     body: `Hi {{FirstName}},
 
-Just wanted to follow up on my earlier note.
+Just following up on my earlier note.
 
-A lot of outbound teams look healthy initially, but once sending volume increases:
-* inbox placement drops
-* provider throttling increases
-* reply rates collapse
-* domains slowly burn
+One thing we have noticed is that most teams focus on campaigns, sequences, and tooling, but rarely have visibility into the infrastructure layer itself.
 
-That operational layer is exactly what we focus on at Xavira Tech Labs.
+That is usually where issues around reputation, deliverability, governance, and operational risk begin to appear.
 
-Happy to share a quick infrastructure review if useful.
+If useful, I am happy to show how we are approaching this with Xavira Control Stack.
 
-${sovereignBookingCtaText()}
+No pitch deck - just a practical walkthrough of the architecture and operational model.
 
 Best,
 Vishnu
@@ -478,24 +469,21 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-3',
-    day: 5,
-    subject: 'worth a quick look?',
+    day: 6,
+    subject: 'worth a conversation?',
     body: `Hi {{FirstName}},
 
-Wanted to send one final follow-up.
+A quick follow-up.
 
-We built Sovereign Engine specifically for:
-* outbound infrastructure visibility
-* provider-aware monitoring
-* reputation protection
-* safer outbound scaling
-* operational governance
+I am not sure if communication infrastructure, deliverability governance, or AI operational controls are priorities for {{Company}} right now.
 
-Most teams only notice deliverability problems after performance drops.
+If they are, I would be happy to share:
+* architecture overview
+* operational model
+* governance approach
+* deployment options
 
-Happy to show a short walkthrough if relevant.
-
-${sovereignBookingCtaText()}
+Even if there is no immediate fit, it is often useful to compare infrastructure approaches.
 
 Best,
 Vishnu
@@ -508,17 +496,24 @@ If this is not relevant, reply "no" and I will not follow up.`,
   },
   {
     id: 'sovereign-stack-step-4',
-    day: 8,
+    day: 10,
     subject: 'closing the loop',
     body: `Hi {{FirstName}},
 
-I will close the loop here.
+I will close the loop after this message.
 
-If outbound reliability, infrastructure governance, or deliverability monitoring becomes relevant later, happy to reconnect.
+The reason I reached out is that we built Xavira Control Stack to solve operational problems that typically do not become visible until organizations scale.
 
-Wishing you and {{Company}} continued growth.
+That includes:
+* outbound governance
+* deliverability protection
+* infrastructure observability
+* AI governance
+* communication operations
 
-${sovereignBookingCtaText()}
+If this becomes relevant later, feel free to reach out.
+
+Wishing you and the team continued success.
 
 Best,
 Vishnu
@@ -749,7 +744,7 @@ export function renderSovereignHtmlEmail(text: string): string {
     .map((block) => {
       if (block.includes(SOVEREIGN_BOOKING_URL) || block.includes(bookingUrl)) {
         const safeBookingUrl = escapeHtml(bookingUrl)
-        return `<p style="margin:20px 0 18px 0;"><a href="${safeBookingUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">Book 20-min audit</a></p><p style="margin:0 0 16px 0;color:#6b7280;font-size:12px;">Or open: <a href="${safeBookingUrl}" style="color:#2563eb;">${safeBookingUrl}</a></p>`
+        return `<p style="margin:20px 0 18px 0;"><a href="${safeBookingUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;font-size:14px;">View walkthrough page</a></p><p style="margin:0 0 16px 0;color:#6b7280;font-size:12px;">Or open: <a href="${safeBookingUrl}" style="color:#2563eb;">${safeBookingUrl}</a></p>`
       }
 
       return renderTextBlock(block)

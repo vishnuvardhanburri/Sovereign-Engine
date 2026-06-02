@@ -130,20 +130,20 @@ assert(
   'debt-aware mix should use agency inventory to repair a direct-heavy day instead of freezing queueing'
 )
 assert(
-  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,3,5,8',
-  'default sequence should use Day 1, Day 3, Day 5, Day 8 cadence'
+  SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.day).join(',') === '0,3,6,10',
+  'default sequence should use Day 1, Day 3, Day 6, Day 10 cadence'
 )
 assert(
   SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.at(-1)?.subject === 'closing the loop',
   'final sequence step should be the soft breakup'
 )
 assert(
-  sovereignSubjectForLead(directLead).includes('deliverability'),
-  'direct subject should lead with deliverability pain'
+  sovereignSubjectForLead(directLead).includes('outbound infrastructure'),
+  'direct subject should lead with enterprise outbound infrastructure'
 )
 assert(
-  sovereignSubjectForLead(agencyLead).includes('white-label outbound'),
-  'agency subject should use premium white-label copy'
+  sovereignSubjectForLead(agencyLead).includes('white-label communication'),
+  'agency subject should use premium white-label communication copy'
 )
 
 const previousBookingUrl = process.env.SOVEREIGN_BOOKING_URL
@@ -174,14 +174,13 @@ const directBody = renderSovereignTemplate(
   'Xavira Tech Labs, India'
 )
 assert(directBody.includes('Xavira Control Stack'), 'direct body should mention Xavira Control Stack')
-assert(directBody.includes(SOVEREIGN_BOOKING_URL), 'direct body should include booking link')
 assert(
-  directBody.includes('Gmail/Outlook throttling'),
-  'direct body should name concrete deliverability pain'
+  directBody.includes('infrastructure layer'),
+  'direct body should lead with infrastructure-layer visibility'
 )
 assert(
-  directBody.includes('qualified client conversations'),
-  'direct body should optimize for client conversations, not raw leads'
+  directBody.includes('operational blind spots'),
+  'direct body should name operational blind spots without sounding spammy'
 )
 assert(directBody.includes('Example SaaS'), 'direct body should render company')
 assert(!directBody.includes('{{'), 'direct body should render all placeholders')
@@ -190,10 +189,6 @@ assert(
   'pain line should be company-specific'
 )
 assert(!/Quick check/i.test(sovereignSubjectForLead(directLead)), 'subjects should avoid generic quick-check wording')
-
-const directHtml = renderSovereignHtmlEmail(directBody)
-assert(directHtml.includes(`href="${SOVEREIGN_BOOKING_URL}"`), 'html should include booking button URL')
-assert(directHtml.includes('Book 20-min audit'), 'html should render a small CTA button')
 
 const genericInboxBody = renderSovereignTemplate(
   sovereignBodyForLead({ first_name: 'hello', company: 'Inbox Co' }),
@@ -248,10 +243,9 @@ const agencyBody = renderSovereignTemplate(
 )
 assert(agencyBody.includes('£160,000'), 'agency body should mention final commercial license price')
 assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
-assert(agencyBody.includes('3-4 client rollouts'), 'agency body should explain resale economics')
-assert(agencyBody.includes('client-generation infrastructure'), 'agency body should frame resale as client-generation infrastructure')
+assert(agencyBody.includes('3-4 serious client deployments'), 'agency body should explain resale economics')
+assert(agencyBody.includes('client-facing infrastructure'), 'agency body should frame resale as client-facing infrastructure')
 assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
-assert(agencyBody.includes(SOVEREIGN_BOOKING_URL), 'agency body should include booking link')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')
 
 const researchContext = buildLeadResearchContext({
@@ -277,10 +271,10 @@ async function main() {
     physicalAddress: 'Xavira Tech Labs, India',
     useOpenRouter: false,
   })
-  assert(rendered.html.includes('Book 20-min audit'), 'built copy should include HTML CTA')
+  assert(rendered.html.includes('View walkthrough page'), 'built copy should include soft HTML CTA')
   assert(
-    rendered.text.includes('short outbound infrastructure review'),
-    'built copy should use the new pain-led review ask'
+    rendered.text.includes('short walkthrough'),
+    'built copy should use the premium walkthrough ask'
   )
 
   console.log('outbound copy tests passed')
