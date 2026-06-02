@@ -1,10 +1,7 @@
 import { tryOpenRouterJson } from '@/lib/ai/openrouter'
 import { appEnv } from '@/lib/env'
 import { buildSalesBrainContext } from '@/lib/sales-brain'
-import {
-  XAVIRA_COMMERCIAL_MODEL,
-  commercialDealValueGbp,
-} from '@/lib/commercial-model'
+import { commercialDealValueGbp } from '@/lib/commercial-model'
 
 export type SovereignOfferType = 'direct' | 'agency'
 
@@ -91,7 +88,7 @@ export function withSovereignBookingCta(body: string): string {
 
   const cta = sovereignBookingCtaText()
   const optOutMatch = trimmed.match(
-    /\n\nIf this is not relevant, reply "no" and I will not follow up\.$/i
+    /\n\nIf this (?:is not|isn't) relevant, (?:just )?reply "no" and I (?:will not|won't) follow up\.$/i
   )
   if (optOutMatch?.index !== undefined) {
     return `${trimmed.slice(0, optOutMatch.index).trim()}\n\n${cta}${trimmed.slice(
@@ -117,6 +114,39 @@ type LeadResearchContext = {
   socialSignal?: string
   competitorSignal?: string
   researchSummary?: string
+}
+
+export type SovereignBuyerIndustry =
+  | 'agency'
+  | 'revops'
+  | 'cybersecurity'
+  | 'ai'
+  | 'devtools'
+  | 'saas'
+  | 'compliance'
+  | 'enterprise'
+  | 'default'
+
+export type SovereignBuyerPersona =
+  | 'founder'
+  | 'revenue'
+  | 'partnerships'
+  | 'technical'
+  | 'security'
+  | 'operations'
+  | 'generic'
+
+export type SovereignCopyDecision = {
+  offerType: SovereignOfferType
+  industry: SovereignBuyerIndustry
+  persona: SovereignBuyerPersona
+  subject: string
+  hook: string
+  pain: string
+  value: string
+  cta: string
+  followupObservation: string
+  proof: string
 }
 
 export function inferSovereignOfferType(input: SovereignCopyLead): SovereignOfferType {
@@ -375,23 +405,206 @@ export function buildLeadResearchContext(lead: SovereignCopyLead): LeadResearchC
   }
 }
 
+function leadTextForCopyAgent(lead: SovereignCopyLead): string {
+  const custom = lead.customFields ?? {}
+  return [
+    lead.company,
+    lead.companyDomain,
+    lead.title,
+    lead.source,
+    lead.reason_to_contact,
+    lead.reasonToContact,
+    custom.industry,
+    custom.segment,
+    custom.persona,
+    custom.research_summary,
+    custom.public_evidence_url,
+    custom.research_evidence_url,
+    custom.social_signal,
+    custom.category_signal,
+    custom.competitor_signal,
+    custom.source_url,
+    custom.linkedin_url,
+  ]
+    .map((value) => String(value ?? '').toLowerCase())
+    .join(' ')
+}
+
+export function detectSovereignBuyerIndustry(lead: SovereignCopyLead): SovereignBuyerIndustry {
+  const text = leadTextForCopyAgent(lead)
+  const offerType = inferSovereignOfferType(lead)
+  if (
+    offerType === 'agency' ||
+    /\bagency\b|\bagencies\b|lead[- ]?gen|outbound agency|appointment setting|demand gen|growth marketing|performance marketing|client acquisition/.test(
+      text
+    )
+  ) {
+    if (/\brevops\b|revenue operations|pipeline operations|gtm ops|go[- ]?to[- ]?market operations/.test(text)) {
+      return 'revops'
+    }
+    return 'agency'
+  }
+  if (/\bcyber\b|cybersecurity|security operations|\bsoc\b|mssp|zero trust|endpoint security|incident response/.test(text)) {
+    return 'cybersecurity'
+  }
+  if (/\bcompliance\b|governance|privacy|gdpr|dpdp|audit|risk management|trust center/.test(text)) {
+    return 'compliance'
+  }
+  if (/\bai\b|llm|machine learning|generative|automation|agentic|model governance/.test(text)) {
+    return 'ai'
+  }
+  if (/\bdevtools\b|developer tools|api platform|infrastructure|platform engineering|github|sdk|observability/.test(text)) {
+    return 'devtools'
+  }
+  if (/\bsaas\b|software|b2b|cloud platform|subscription/.test(text)) {
+    return 'saas'
+  }
+  if (/\benterprise\b|procurement|large accounts|strategic accounts|mid-market/.test(text)) {
+    return 'enterprise'
+  }
+  return 'default'
+}
+
+export function detectSovereignBuyerPersona(lead: SovereignCopyLead): SovereignBuyerPersona {
+  const text = leadTextForCopyAgent(lead)
+  if (/\bfounder\b|co[- ]?founder|\bceo\b|owner|managing partner|principal/.test(text)) return 'founder'
+  if (/partnerships?|alliances?|channel|ecosystem/.test(text)) return 'partnerships'
+  if (/revenue|growth|sales|gtm|go[- ]?to[- ]?market|demand gen|client acquisition|commercial/.test(text)) {
+    return 'revenue'
+  }
+  if (/\bcto\b|engineering|platform|product|devops|developer|technical|architect/.test(text)) return 'technical'
+  if (/security|compliance|risk|trust|governance|privacy/.test(text)) return 'security'
+  if (/operations|revops|ops|delivery|customer success/.test(text)) return 'operations'
+  return 'generic'
+}
+
+function subjectForCopyDecision(
+  offerType: SovereignOfferType,
+  industry: SovereignBuyerIndustry,
+  persona: SovereignBuyerPersona
+): string {
+  if (offerType === 'agency') {
+    if (persona === 'partnerships') return 'infrastructure partnership question'
+    if (industry === 'revops') return 'pipeline operations layer'
+    return SOVEREIGN_STACK_AGENCY_SUBJECT
+  }
+  if (industry === 'cybersecurity' || industry === 'compliance') return 'governance infrastructure question'
+  if (industry === 'ai' || industry === 'devtools') return 'communication governance question'
+  return SOVEREIGN_STACK_DIRECT_SUBJECT
+}
+
+function hookForCopyDecision(
+  company: string,
+  industry: SovereignBuyerIndustry,
+  persona: SovereignBuyerPersona
+): string {
+  if (industry === 'agency') {
+    return `I came across ${company} while researching agencies building serious outbound, RevOps, or client acquisition operations.`
+  }
+  if (industry === 'revops') {
+    return `I came across ${company} while looking at teams responsible for pipeline quality and communication operations.`
+  }
+  if (industry === 'cybersecurity' || industry === 'compliance') {
+    return `I came across ${company} while researching trust-heavy teams where outreach, AI governance, and operational proof have to be handled carefully.`
+  }
+  if (industry === 'ai' || industry === 'devtools') {
+    return `I came across ${company} while researching technical teams selling into skeptical buyers where communication has to feel controlled, not automated.`
+  }
+  if (persona === 'founder') {
+    return `I came across ${company} while looking at founder-led teams where outbound quality can quietly affect pipeline trust.`
+  }
+  return `I came across ${company} while researching teams that rely on outbound growth and operational communications.`
+}
+
+function painForCopyDecision(industry: SovereignBuyerIndustry): string {
+  if (industry === 'agency') {
+    return 'Most agencies can launch campaigns. The harder part is proving the infrastructure behind those campaigns is controlled.'
+  }
+  if (industry === 'revops') {
+    return 'Activity metrics can show volume, but they rarely show reputation risk, queue discipline, suppression gaps, or where qualified conversations are being lost.'
+  }
+  if (industry === 'cybersecurity' || industry === 'compliance') {
+    return 'Trust-heavy buyers ignore anything that feels uncontrolled. Governance, suppression, auditability, and clean follow-up discipline matter before the demo.'
+  }
+  if (industry === 'ai' || industry === 'devtools') {
+    return 'Strong technical products still lose buyers when outreach feels generic or when the communication layer has no governance around follow-up, suppression, and proof.'
+  }
+  return 'Most teams can see campaign activity. The harder part is visibility into the infrastructure layer: sender health, queue discipline, suppression, and the operational blind spots that decide whether qualified conversations actually happen.'
+}
+
+function valueForCopyDecision(offerType: SovereignOfferType, industry: SovereignBuyerIndustry): string {
+  if (offerType === 'agency') {
+    return 'Xavira Control Stack gives agencies a client-facing communication operations layer around sender health, delivery proof, queue discipline, suppression, follow-ups, and AI governance.'
+  }
+  if (industry === 'cybersecurity' || industry === 'compliance') {
+    return 'Xavira Control Stack gives operators one governed layer for communication proof, suppression, follow-ups, delivery confidence, and AI governance.'
+  }
+  return 'Xavira Control Stack gives operators one governed layer for sender health, queue discipline, suppression, follow-ups, delivery proof, and AI governance.'
+}
+
+function ctaForCopyDecision(
+  company: string,
+  industry: SovereignBuyerIndustry,
+  persona: SovereignBuyerPersona
+): string {
+  if (industry === 'agency' || industry === 'revops' || persona === 'partnerships') {
+    return `Worth a brief conversation to see whether this could fit ${company}'s client-services roadmap?`
+  }
+  if (persona === 'founder') {
+    return 'Worth a brief conversation to see whether this is worth your attention now, or not a priority?'
+  }
+  if (persona === 'technical' || persona === 'security') {
+    return 'Worth a brief conversation to compare the architecture and governance model?'
+  }
+  return `Worth a brief conversation to compare how ${company} handles this today?`
+}
+
+function followupObservationForCopyDecision(industry: SovereignBuyerIndustry): string {
+  if (industry === 'agency') {
+    return 'Most agencies focus on campaign execution, but the client trust gap usually sits in the operational layer behind the campaigns.'
+  }
+  if (industry === 'revops') {
+    return 'Most pipeline reports explain activity, but not whether sender health, suppression, and follow-up governance are protecting qualified conversations.'
+  }
+  if (industry === 'cybersecurity' || industry === 'compliance') {
+    return 'For trust-heavy buyers, the message is only one part of the risk; governance, suppression, and auditability decide whether outreach feels safe.'
+  }
+  if (industry === 'ai' || industry === 'devtools') {
+    return 'Technical buyers notice when outreach feels generic. The operating layer behind the message has to protect timing, proof, suppression, and trust.'
+  }
+  return 'Most teams focus on campaigns and sequences, but rarely have clean visibility into the operational layer behind the outreach.'
+}
+
+export function buildSovereignCopyDecision(lead: SovereignCopyLead): SovereignCopyDecision {
+  const company = safeCompanyName(lead)
+  const offerType = inferSovereignOfferType(lead)
+  const industry = detectSovereignBuyerIndustry(lead)
+  const persona = detectSovereignBuyerPersona(lead)
+
+  return {
+    offerType,
+    industry,
+    persona,
+    subject: subjectForCopyDecision(offerType, industry, persona),
+    hook: hookForCopyDecision(company, industry, persona),
+    pain: painForCopyDecision(industry),
+    value: valueForCopyDecision(offerType, industry),
+    cta: ctaForCopyDecision(company, industry, persona),
+    followupObservation: followupObservationForCopyDecision(industry),
+    proof: buildSovereignPainLine(lead),
+  }
+}
+
 export function sovereignDirectEmail1Body(): string {
   return `Hi {{FirstName}},
 
-I came across {{Company}} while researching teams that rely heavily on outbound growth and operational communications.
+{{agent_hook}}
 
-One thing we see repeatedly is that teams invest heavily in campaigns but have very little visibility into the infrastructure layer behind them.
+{{agent_pain}}
 
-That usually creates problems around:
-* deliverability degradation
-* reputation risk
-* provider throttling
-* governance gaps
-* operational blind spots
+{{agent_value}}
 
-At Xavira Tech Labs, we built Xavira Control Stack to help organizations monitor, govern, and operate communication infrastructure more safely at scale.
-
-Would be happy to share a short walkthrough if this is relevant to your roadmap.
+{{agent_cta}}
 
 Best,
 Vishnu
@@ -400,39 +613,28 @@ Xavira Tech Labs
 
 {{physical_address}}
 
-If this is not relevant, reply "no" and I will not follow up.`
+If this isn't relevant, just reply "no" and I won't follow up.`
 }
 
 export function sovereignAgencyEmail1Body(): string {
   return `Hi {{FirstName}},
 
-I came across {{Company}} while researching agencies and operators building serious outbound, RevOps, or client-generation infrastructure.
+{{agent_hook}}
 
-Most agencies can launch campaigns. Fewer can give clients a governed infrastructure layer that shows sender health, queue discipline, suppression, delivery proof, and AI copy controls in one place.
+{{agent_pain}}
 
-That is what Xavira Control Stack is built for:
-* Sovereign Engine for outbound operations, queues, reputation, and delivery proof
-* Sovereign Shield for AI governance, PII controls, and audit evidence
+{{agent_value}}
 
-For agencies, the white-label commercial license is designed to become a client-facing infrastructure offer:
-* white-label rights
-* reseller rights
-* commercial deployment rights
-* branding customization
-* multi-client deployment support
-
-The commercial license is ${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP. A partner can recover that across roughly 3-4 serious client deployments, then keep using the same infrastructure base for future accounts.
-
-If this is relevant to {{Company}}'s roadmap, I would be happy to walk through the architecture and commercial model.
+{{agent_cta}}
 
 Best,
 Vishnu
+Founder
 Xavira Tech Labs
-Xavira Control Stack
 
 {{physical_address}}
 
-If this is not relevant, reply "no" and I will not follow up.`
+If this isn't relevant, just reply "no" and I won't follow up.`
 }
 
 export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
@@ -450,22 +652,19 @@ export const SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS = [
 
 Just following up on my earlier note.
 
-One thing we have noticed is that most teams focus on campaigns, sequences, and tooling, but rarely have visibility into the infrastructure layer itself.
+{{agent_followup_observation}}
 
-That is usually where issues around reputation, deliverability, governance, and operational risk begin to appear.
+If useful, I can show the architecture and operating model behind Xavira Control Stack.
 
-If useful, I am happy to show how we are approaching this with Xavira Control Stack.
-
-No pitch deck - just a practical walkthrough of the architecture and operational model.
+No deck chase - just a practical comparison of how {{Company}} handles this today.
 
 Best,
 Vishnu
 Xavira Tech Labs
-Xavira Control Stack
 
 {{physical_address}}
 
-If this is not relevant, reply "no" and I will not follow up.`,
+If this isn't relevant, just reply "no" and I won't follow up.`,
   },
   {
     id: 'sovereign-stack-step-3',
@@ -479,7 +678,6 @@ I am not sure if communication infrastructure, deliverability governance, or AI 
 
 If they are, I would be happy to share:
 * architecture overview
-* operational model
 * governance approach
 * deployment options
 
@@ -488,11 +686,10 @@ Even if there is no immediate fit, it is often useful to compare infrastructure 
 Best,
 Vishnu
 Xavira Tech Labs
-Xavira Control Stack
 
 {{physical_address}}
 
-If this is not relevant, reply "no" and I will not follow up.`,
+If this isn't relevant, just reply "no" and I won't follow up.`,
   },
   {
     id: 'sovereign-stack-step-4',
@@ -505,8 +702,7 @@ I will close the loop after this message.
 The reason I reached out is that we built Xavira Control Stack to solve operational problems that typically do not become visible until organizations scale.
 
 That includes:
-* outbound governance
-* deliverability protection
+* deliverability control
 * infrastructure observability
 * AI governance
 * communication operations
@@ -518,18 +714,15 @@ Wishing you and the team continued success.
 Best,
 Vishnu
 Xavira Tech Labs
-Xavira Control Stack
 
 {{physical_address}}
 
-If this is not relevant, reply "no" and I will not follow up.`,
+If this isn't relevant, just reply "no" and I won't follow up.`,
   },
 ]
 
 export function sovereignSubjectForLead(lead: SovereignCopyLead): string {
-  return inferSovereignOfferType(lead) === 'agency'
-    ? SOVEREIGN_STACK_AGENCY_SUBJECT
-    : SOVEREIGN_STACK_DIRECT_SUBJECT
+  return buildSovereignCopyDecision(lead).subject
 }
 
 export function sovereignBodyForLead(lead: SovereignCopyLead): string {
@@ -612,6 +805,7 @@ export function renderSovereignTemplate(
     lead.reasonToContact ||
     'your team works around outbound or growth infrastructure'
   const painLine = buildSovereignPainLine(lead)
+  const copyDecision = buildSovereignCopyDecision(lead)
 
   return template
     .replaceAll('{{FirstName}}', firstName)
@@ -620,6 +814,12 @@ export function renderSovereignTemplate(
     .replaceAll('{{company}}', company)
     .replaceAll('{{reason_to_contact}}', reason)
     .replaceAll('{{pain_line}}', painLine)
+    .replaceAll('{{agent_hook}}', copyDecision.hook)
+    .replaceAll('{{agent_pain}}', copyDecision.pain)
+    .replaceAll('{{agent_value}}', copyDecision.value)
+    .replaceAll('{{agent_cta}}', copyDecision.cta)
+    .replaceAll('{{agent_followup_observation}}', copyDecision.followupObservation)
+    .replaceAll('{{agent_proof}}', copyDecision.proof)
     .replaceAll('{{physical_address}}', physicalAddress)
 }
 
@@ -779,7 +979,7 @@ function cleanBody(value: unknown, fallback: string, physicalAddress: string): s
   body = withSovereignBookingCta(body)
   if (!body.includes(physicalAddress)) body += `\n${physicalAddress}`
   if (!/reply\s+"?no"?|do not follow up|not relevant/i.test(body)) {
-    body += '\n\nIf this is not relevant, reply "no" and I will not follow up.'
+    body += '\n\nIf this isn\'t relevant, just reply "no" and I won\'t follow up.'
   }
 
   return body
@@ -825,6 +1025,7 @@ export async function buildSovereignCopyForLead(
     'the company appears relevant to outbound infrastructure or AI security'
   const firstName = safeGreetingName(lead.first_name || lead.firstName)
   const researchContext = buildLeadResearchContext(lead)
+  const copyDecision = buildSovereignCopyDecision(lead)
 
   const aiPayload = JSON.stringify({
     salesBrain: buildSalesBrainContext(lead, offerType),
@@ -839,20 +1040,17 @@ export async function buildSovereignCopyForLead(
     offer:
       offerType === 'agency'
         ? {
-            name: 'Xavira Control Stack White-Label Commercial License',
-            price: `${XAVIRA_COMMERCIAL_MODEL.whiteLabelCommercialLicense.label} GBP`,
+            name: 'Xavira Control Stack',
             positioning:
-              'white-label outbound operations and private AI governance infrastructure for agencies, RevOps firms, MSSPs, and consultancies',
+              'client-facing communication operations and AI governance infrastructure for agencies, RevOps firms, MSSPs, and consultancies',
             bullets: [
-              'White-label rights, reseller rights, and commercial deployment rights',
-              'Branding customization across dashboards and control surfaces',
-              'Partner economics designed to recover the £160,000 license across roughly 3-4 serious client rollouts',
-              'Xavira core updates, deployment support, and maintenance options',
+              'Sender health, queue discipline, suppression, delivery proof, and follow-up governance',
+              'AI governance, PII controls, and audit evidence for client-facing operations',
+              'White-label/commercial licensing exists, but do not mention pricing or commercial rights until the buyer asks',
             ],
           }
         : {
-            name: 'Xavira Control Stack Internal Enterprise License',
-            price: `${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP`,
+            name: 'Xavira Control Stack',
             positioning:
               'owned outbound operations control plane plus private AI governance layer',
             bullets: [
@@ -861,6 +1059,16 @@ export async function buildSovereignCopyForLead(
               'Deployment-ready dashboards, desktop apps, mobile apps, and operating reports',
             ],
           },
+    copyDecision,
+    forbiddenFirstTouchClaims: [
+      'GBP pricing',
+      '£40,000',
+      '£160,000',
+      'reseller rights',
+      'commercial rights',
+      'license recovery',
+      '3-4 deployments',
+    ],
     requiredSignature: ['Best regards', 'Vishnu', 'Xavira Tech Labs', 'Xavira Control Stack'],
     physicalAddress: options.physicalAddress,
     fallbackSubject,
@@ -871,6 +1079,7 @@ export async function buildSovereignCopyForLead(
       'Answer the buyer question clearly: why buy, what profit or risk reduction they should expect, and why this matters now.',
       'Optimize for client generation, not lead generation: the email should make a qualified buyer think "this could become an audit or licensing conversation."',
       `Treat ${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMin}-${SOVEREIGN_CLIENT_GENERATION_TARGET.dailyQualifiedConversationsMax} qualified conversations per day as the operating target, not a promise.`,
+      'Do not mention GBP pricing, £40,000, £160,000, reseller rights, commercial rights, license recovery, or deployment economics in cold first-touch/follow-up copy. Pricing belongs only after the buyer asks or a call is booked.',
       'Lead with the company pain before mentioning the product.',
       'Make the ask feel helpful: a 20-minute audit that maps risks and gives a 3-step action plan.',
       'If researchContext has LinkedIn or social context, use it naturally in one sentence.',
@@ -882,7 +1091,7 @@ export async function buildSovereignCopyForLead(
     ],
   })
   const aiSystem =
-    'You write compliant B2B enterprise outbound email copy for a legitimate business interest workflow. Return JSON only with subject and body. Use the supplied Sovereign Sales Brain rules. Position Xavira Tech Labs as a premium infrastructure vendor. Do not invent facts, customer names, revenue claims, urgency, fake personalization, or competitor customer claims. Write like a serious operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no bypass language. Keep it under 150 words. Include a polite opt-out line. Structure: verified evidence hook, operational pain, why Xavira Control Stack helps, low-friction audit CTA.'
+    'You write compliant B2B enterprise outbound email copy for a legitimate business interest workflow. Return JSON only with subject and body. Use the supplied Sovereign Sales Brain rules. Position Xavira Tech Labs as a premium infrastructure vendor. Do not invent facts, customer names, revenue claims, urgency, fake personalization, or competitor customer claims. Write like a serious operator sending a one-to-one note: short, specific, plain text, pain-first, and useful. No hype, no emojis, no spam tricks, no bypass language. Keep it under 150 words. Do not mention pricing, GBP amounts, reseller rights, commercial rights, or license recovery in cold first-touch/follow-up copy. Include a polite opt-out line. Structure: verified evidence hook, operational pain, why Xavira Control Stack helps, low-friction audit CTA.'
 
   const result = shouldUseOpenRouter
     ? await tryOpenRouterJson<{

@@ -2,6 +2,7 @@ import {
   inferSovereignOfferType,
   balanceSovereignOfferMix,
   buildLeadResearchContext,
+  buildSovereignCopyDecision,
   buildSovereignCopyForLead,
   buildSovereignPainLine,
   rankSovereignLeads,
@@ -142,8 +143,47 @@ assert(
   'direct subject should lead with enterprise outbound infrastructure'
 )
 assert(
-  sovereignSubjectForLead(agencyLead).includes('white-label communication'),
-  'agency subject should use premium white-label communication copy'
+  /white-label communication|infrastructure partnership/.test(sovereignSubjectForLead(agencyLead)),
+  'agency subject should adapt to buyer role without generic quick-check wording'
+)
+
+const agencyDecision = buildSovereignCopyDecision(agencyLead)
+assert(agencyDecision.offerType === 'agency', 'agency decision should keep agency offer type')
+assert(
+  agencyDecision.industry === 'agency' || agencyDecision.industry === 'revops',
+  'agency decision should detect agency/revops context'
+)
+assert(agencyDecision.persona === 'partnerships', 'agency decision should detect partnerships persona')
+assert(
+  agencyDecision.value.includes('client-facing communication operations'),
+  'agency decision should frame client-facing operations'
+)
+assert(!agencyDecision.value.includes('£160'), 'agency decision should not expose price in cold value line')
+
+const technicalDecision = buildSovereignCopyDecision({
+  ...directLead,
+  company: 'Example AI',
+  title: 'CTO',
+  reason_to_contact: 'AI infrastructure and developer tools',
+})
+assert(
+  technicalDecision.industry === 'ai' || technicalDecision.industry === 'devtools',
+  'technical decision should adapt to AI/devtools industry'
+)
+assert(technicalDecision.persona === 'technical', 'technical decision should detect technical persona')
+assert(
+  technicalDecision.cta.includes('architecture'),
+  'technical decision should ask to compare architecture'
+)
+
+const coldSequenceText = SOVEREIGN_STACK_DIRECT_SEQUENCE_STEPS.map((step) => step.body).join('\n')
+assert(
+  !coldSequenceText.includes('£160,000') && !coldSequenceText.includes('£40,000'),
+  'cold sequence should not mention pricing'
+)
+assert(
+  !/reseller rights|commercial rights|3-4 serious client/i.test(coldSequenceText),
+  'cold sequence should not mention license economics'
 )
 
 const previousBookingUrl = process.env.SOVEREIGN_BOOKING_URL
@@ -241,10 +281,17 @@ const agencyBody = renderSovereignTemplate(
   agencyLead,
   'Xavira Tech Labs, India'
 )
-assert(agencyBody.includes('£160,000'), 'agency body should mention final commercial license price')
-assert(agencyBody.includes('reseller rights'), 'agency body should mention commercial rights')
-assert(agencyBody.includes('3-4 serious client deployments'), 'agency body should explain resale economics')
-assert(agencyBody.includes('client-facing infrastructure'), 'agency body should frame resale as client-facing infrastructure')
+assert(!agencyBody.includes('£160,000'), 'first-touch agency body should not mention final commercial license price')
+assert(!/reseller rights/i.test(agencyBody), 'first-touch agency body should not mention reseller rights before a reply')
+assert(!/3-4 serious client deployments/i.test(agencyBody), 'first-touch agency body should not explain resale economics')
+assert(
+  agencyBody.includes('client-facing communication operations'),
+  'agency body should frame the client-facing operations layer'
+)
+assert(
+  agencyBody.includes('brief conversation'),
+  'agency body should optimize for a reply, not a full sale'
+)
 assert(agencyBody.includes('Xavira Control Stack'), 'agency body should mention Xavira Control Stack')
 assert(!agencyBody.includes('{{'), 'agency body should render all placeholders')
 
@@ -273,8 +320,8 @@ async function main() {
   })
   assert(rendered.html.includes('View walkthrough page'), 'built copy should include soft HTML CTA')
   assert(
-    rendered.text.includes('short walkthrough'),
-    'built copy should use the premium walkthrough ask'
+    /brief conversation|short walkthrough|walkthrough page/.test(rendered.text),
+    'built copy should use a low-friction conversation ask'
   )
 
   console.log('outbound copy tests passed')
