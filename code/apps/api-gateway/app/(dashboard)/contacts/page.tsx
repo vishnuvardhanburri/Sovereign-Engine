@@ -27,7 +27,18 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, CheckCircle2, Search, ShieldCheck, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Gauge,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Target,
+  Trash2,
+  XCircle,
+} from 'lucide-react'
 
 export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -41,7 +52,8 @@ export default function ContactsPage() {
     ?.filter((contact: Contact) => {
       const matchesSearch = 
         contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.name.toLowerCase().includes(searchTerm.toLowerCase())
+        contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.company.toLowerCase().includes(searchTerm.toLowerCase())
       const matchesStatus = statusFilter === 'all' || contact.status === statusFilter
       return matchesSearch && matchesStatus
     })
@@ -60,12 +72,28 @@ export default function ContactsPage() {
   }
 
   const isApproved = (contact: Contact) => contact.customFields?.send_status === 'approved'
-  const hunterVerdict = (contact: Contact) => String(contact.customFields?.hunter_verdict ?? '')
+  const customString = (contact: Contact, key: string, fallback = '') => {
+    const value = contact.customFields?.[key]
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback
+  }
+  const hunterVerdict = (contact: Contact) => customString(contact, 'hunter_verdict')
   const hunterConfidence = (contact: Contact) => Number(contact.customFields?.hunter_confidence ?? contact.customFields?.research_score ?? 0)
+  const hunterBounceRisk = (contact: Contact) => customString(contact, 'hunter_bounce_risk', 'unknown')
+  const hunterBuyerFit = (contact: Contact) => customString(contact, 'hunter_buyer_fit', 'unknown')
+  const hunterRecommendation = (contact: Contact) => customString(contact, 'hunter_recommendation', isApproved(contact) ? 'approve' : 'review')
+  const hunterVerificationLabel = (contact: Contact) => customString(contact, 'hunter_verification_label', hunterVerdict(contact) === 'approved' ? 'verified' : 'unchecked')
+  const sourceProofLabel = (contact: Contact) =>
+    customString(contact, 'hunter_source_proof_label', customString(contact, 'email_evidence', customString(contact, 'source', contact.source || 'source')))
+  const sourceProofUrl = (contact: Contact) =>
+    customString(contact, 'hunter_source_proof_url', customString(contact, 'research_evidence_url', customString(contact, 'public_evidence_url')))
   const hunterBlockers = (contact: Contact) => {
     const blockers = contact.customFields?.hunter_blockers
     return Array.isArray(blockers) ? blockers.map(String).filter(Boolean) : []
   }
+  const canApprove = (contact: Contact) =>
+    contact.status === 'active' &&
+    hunterRecommendation(contact) !== 'hold' &&
+    hunterBounceRisk(contact) !== 'high'
   const getHunterBadge = (contact: Contact) => {
     const verdict = hunterVerdict(contact)
     if (isApproved(contact) || verdict === 'approved') {
@@ -79,6 +107,29 @@ export default function ContactsPage() {
     }
     return <Badge className="bg-slate-500/10 text-slate-400">unchecked</Badge>
   }
+  const getRiskBadge = (risk: string) => {
+    if (risk === 'low') return <Badge className="bg-emerald-500/10 text-emerald-500">low bounce risk</Badge>
+    if (risk === 'medium') return <Badge className="bg-amber-500/10 text-amber-500">medium risk</Badge>
+    if (risk === 'high') return <Badge className="bg-red-500/10 text-red-500">high risk</Badge>
+    return <Badge className="bg-slate-500/10 text-slate-400">risk unknown</Badge>
+  }
+  const getRecommendationBadge = (recommendation: string) => {
+    if (recommendation === 'approve') return <Badge className="bg-emerald-500/10 text-emerald-500">sendable</Badge>
+    if (recommendation === 'review') return <Badge className="bg-amber-500/10 text-amber-500">review</Badge>
+    if (recommendation === 'hold') return <Badge className="bg-red-500/10 text-red-500">hold</Badge>
+    return <Badge className="bg-slate-500/10 text-slate-400">unchecked</Badge>
+  }
+
+  const hunterStats = (contacts ?? []).reduce(
+    (acc, contact) => {
+      if (isApproved(contact)) acc.sendable += 1
+      if (hunterRecommendation(contact) === 'review') acc.review += 1
+      if (hunterRecommendation(contact) === 'hold' || hunterBounceRisk(contact) === 'high') acc.held += 1
+      if (sourceProofUrl(contact)) acc.withProof += 1
+      return acc
+    },
+    { sendable: 0, review: 0, held: 0, withProof: 0 }
+  )
 
   return (
     <div className="space-y-6">
@@ -104,6 +155,45 @@ export default function ContactsPage() {
       <LeadScoutCard />
 
       <GoogleSheetImportCard />
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-emerald-500/20 bg-emerald-500/[0.03]">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Sendable inventory</p>
+              <p className="text-2xl font-bold text-emerald-400">{hunterStats.sendable}</p>
+            </div>
+            <ShieldCheck className="h-5 w-5 text-emerald-400" />
+          </CardContent>
+        </Card>
+        <Card className="border-amber-500/20 bg-amber-500/[0.03]">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Review queue</p>
+              <p className="text-2xl font-bold text-amber-400">{hunterStats.review}</p>
+            </div>
+            <Gauge className="h-5 w-5 text-amber-400" />
+          </CardContent>
+        </Card>
+        <Card className="border-red-500/20 bg-red-500/[0.03]">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Held / high risk</p>
+              <p className="text-2xl font-bold text-red-400">{hunterStats.held}</p>
+            </div>
+            <ShieldAlert className="h-5 w-5 text-red-400" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Contacts with proof</p>
+              <p className="text-2xl font-bold">{hunterStats.withProof}</p>
+            </div>
+            <Target className="h-5 w-5 text-blue-400" />
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Filters */}
       <Card>
@@ -146,12 +236,13 @@ export default function ContactsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Email</TableHead>
-                  <TableHead>Name</TableHead>
                   <TableHead>Company</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Hunter Gate</TableHead>
+                  <TableHead>Verification</TableHead>
+                  <TableHead>Risk / Fit</TableHead>
+                  <TableHead>Source Proof</TableHead>
+                  <TableHead>Recommendation</TableHead>
                   <TableHead>Outreach</TableHead>
-                  <TableHead>Added Date</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -161,7 +252,7 @@ export default function ContactsPage() {
                     .fill(0)
                     .map((_, i) => (
                       <TableRow key={i}>
-                        {Array(8)
+                        {Array(9)
                           .fill(0)
                           .map((_, j) => (
                             <TableCell key={j}>
@@ -173,17 +264,24 @@ export default function ContactsPage() {
                 ) : filteredContacts && filteredContacts.length > 0 ? (
                   filteredContacts.map((contact: Contact) => (
                     <TableRow key={contact.id}>
-                      <TableCell className="font-medium">{contact.email}</TableCell>
-                      <TableCell>{contact.name}</TableCell>
-                      <TableCell>{contact.company}</TableCell>
                       <TableCell>
-                        <Badge className={getStatusColor(contact.status)}>
-                          {contact.status}
-                        </Badge>
+                        <div className="space-y-1">
+                          <div className="font-medium">{contact.email}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {contact.name || 'No name'} · {contact.addedAt.toLocaleDateString()}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <div>{contact.company || 'Unknown company'}</div>
+                          <div className="text-xs text-muted-foreground">{contact.title || contact.source}</div>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           {getHunterBadge(contact)}
+                          <div className="text-xs text-muted-foreground">{hunterVerificationLabel(contact)}</div>
                           {hunterBlockers(contact).length > 0 ? (
                             <div className="flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
                               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
@@ -195,16 +293,44 @@ export default function ContactsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        <div className="space-y-1">
+                          {getRiskBadge(hunterBounceRisk(contact))}
+                          <div className="text-xs text-muted-foreground">fit: {hunterBuyerFit(contact)}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {sourceProofUrl(contact) ? (
+                          <a
+                            href={sourceProofUrl(contact)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-[220px] items-center gap-1 text-sm text-blue-400 hover:underline"
+                            title={sourceProofUrl(contact)}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{sourceProofLabel(contact)}</span>
+                          </a>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">No proof yet</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{getRecommendationBadge(hunterRecommendation(contact))}</TableCell>
+                      <TableCell>
                         {isApproved(contact) ? (
                           <Badge className="bg-emerald-500/10 text-emerald-500">
                             approved
+                          </Badge>
+                        ) : !canApprove(contact) ? (
+                          <Badge className="bg-red-500/10 text-red-500">
+                            <XCircle className="mr-1 h-3 w-3" />
+                            held
                           </Badge>
                         ) : (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => approveContacts({ ids: [contact.id] })}
-                            disabled={approving || contact.status !== 'active'}
+                            disabled={approving}
                           >
                             <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
                             Approve
@@ -212,7 +338,9 @@ export default function ContactsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {contact.addedAt.toLocaleDateString()}
+                        <Badge className={getStatusColor(contact.status)}>
+                          {contact.status}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -227,7 +355,7 @@ export default function ContactsPage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No contacts found
                     </TableCell>
                   </TableRow>

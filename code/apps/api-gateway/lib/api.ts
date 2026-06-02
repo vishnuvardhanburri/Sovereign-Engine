@@ -34,6 +34,14 @@ export interface ResearchApprovalDecision {
   confidence: number
   verdict: 'approved' | 'review' | 'blocked'
   approved: boolean
+  bounceRisk: 'low' | 'medium' | 'high'
+  buyerFit: 'premium' | 'strong' | 'medium' | 'low'
+  recommendation: 'approve' | 'review' | 'hold'
+  verificationLabel: 'verified' | 'likely' | 'risky' | 'unverified'
+  sourceProof: {
+    label: string
+    url: string | null
+  }
   reasons: string[]
   blockers: string[]
   evidenceUrl: string | null
@@ -732,8 +740,8 @@ export const api = {
         method: 'DELETE',
       })
     },
-    async approve(input: { ids?: string[]; limit?: number }): Promise<{ ok: boolean; approved: number; contacts: unknown[]; skipped?: string }> {
-      return fetchJson<{ ok: boolean; approved: number; contacts: unknown[]; skipped?: string }>('/api/contacts/approval', {
+    async approve(input: { ids?: string[]; limit?: number }): Promise<{ ok: boolean; approved: number; held?: number; scanned?: number; contacts: unknown[]; blocked?: ResearchApprovalDecision[]; skipped?: string }> {
+      return fetchJson<{ ok: boolean; approved: number; held?: number; scanned?: number; contacts: unknown[]; blocked?: ResearchApprovalDecision[]; skipped?: string }>('/api/contacts/approval', {
         method: 'POST',
         body: JSON.stringify(input),
       })

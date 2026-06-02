@@ -1161,7 +1161,7 @@ async function getResearchPool(clientId: number) {
        AND status = 'active'
        AND bounced_at IS NULL
        AND unsubscribed_at IS NULL
-       AND COALESCE(custom_fields->>'send_status', 'not_approved') NOT IN ('approved', 'queued', 'blocked')
+       AND COALESCE(custom_fields->>'send_status', 'not_approved') NOT IN ('approved', 'queued', 'blocked', 'review')
        AND COALESCE(verification_status, 'pending') NOT IN ('invalid', 'do_not_mail')
        AND (
          source IN ('google_sheet_import', 'google_maps_apify', 'hunter_domain_search', 'open_lead_graph', 'owned_open_lead_graph', 'public_search')
@@ -1441,12 +1441,23 @@ async function runResearchApproval(input: {
         .filter((decision) => !decision.approved)
         .map((decision) => ({
           id: decision.id,
-          send_status: decision.blockers.length > 0 ? 'blocked' : 'not_approved',
+          send_status:
+            decision.blockers.length > 0 ||
+            decision.recommendation === 'hold' ||
+            decision.bounceRisk === 'high'
+              ? 'blocked'
+              : 'review',
           approval_required: true,
           approval_blocked_reason: decision.blockers[0] ?? 'research_score_below_threshold',
           research_score: decision.score,
           hunter_confidence: decision.confidence,
           hunter_verdict: decision.verdict,
+          hunter_bounce_risk: decision.bounceRisk,
+          hunter_buyer_fit: decision.buyerFit,
+          hunter_recommendation: decision.recommendation,
+          hunter_verification_label: decision.verificationLabel,
+          hunter_source_proof_label: decision.sourceProof.label,
+          hunter_source_proof_url: decision.sourceProof.url,
           hunter_reasons: decision.reasons,
           hunter_blockers: decision.blockers,
           research_evidence_url: decision.evidenceUrl,
@@ -1463,6 +1474,12 @@ async function runResearchApproval(input: {
                'research_score', updates.research_score,
                'hunter_confidence', updates.hunter_confidence,
                'hunter_verdict', updates.hunter_verdict,
+               'hunter_bounce_risk', updates.hunter_bounce_risk,
+               'hunter_buyer_fit', updates.hunter_buyer_fit,
+               'hunter_recommendation', updates.hunter_recommendation,
+               'hunter_verification_label', updates.hunter_verification_label,
+               'hunter_source_proof_label', updates.hunter_source_proof_label,
+               'hunter_source_proof_url', updates.hunter_source_proof_url,
                'hunter_reasons', updates.hunter_reasons,
                'hunter_blockers', updates.hunter_blockers,
                'research_evidence_url', updates.research_evidence_url,
@@ -1477,6 +1494,12 @@ async function runResearchApproval(input: {
              research_score int,
              hunter_confidence int,
              hunter_verdict text,
+             hunter_bounce_risk text,
+             hunter_buyer_fit text,
+             hunter_recommendation text,
+             hunter_verification_label text,
+             hunter_source_proof_label text,
+             hunter_source_proof_url text,
              hunter_reasons jsonb,
              hunter_blockers jsonb,
              research_evidence_url text
@@ -1559,6 +1582,12 @@ async function runResearchApproval(input: {
          'research_reasons', scores.reasons,
          'hunter_confidence', scores.confidence,
          'hunter_verdict', 'approved',
+         'hunter_bounce_risk', scores.bounce_risk,
+         'hunter_buyer_fit', scores.buyer_fit,
+         'hunter_recommendation', scores.recommendation,
+         'hunter_verification_label', scores.verification_label,
+         'hunter_source_proof_label', scores.source_proof_label,
+         'hunter_source_proof_url', scores.source_proof_url,
          'research_evidence_url', scores.evidence_url,
          'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
        ),
@@ -1566,7 +1595,21 @@ async function runResearchApproval(input: {
          updated_at = CURRENT_TIMESTAMP
        FROM (
          SELECT *
-         FROM jsonb_to_recordset($3::jsonb) AS x(id bigint, score int, confidence int, reasons jsonb, evidence_url text, email_evidence text, verification_status text)
+         FROM jsonb_to_recordset($3::jsonb) AS x(
+           id bigint,
+           score int,
+           confidence int,
+           reasons jsonb,
+           evidence_url text,
+           email_evidence text,
+           verification_status text,
+           bounce_risk text,
+           buyer_fit text,
+           recommendation text,
+           verification_label text,
+           source_proof_label text,
+           source_proof_url text
+         )
        ) AS scores
        WHERE contacts.client_id = $1
          AND contacts.id = ANY($2::bigint[])
@@ -1587,6 +1630,12 @@ async function runResearchApproval(input: {
             evidence_url: candidate.evidenceUrl,
             email_evidence: asString(contactById.get(candidate.id)?.custom_fields?.email_evidence),
             verification_status: asString(contactById.get(candidate.id)?.verification_status),
+            bounce_risk: candidate.bounceRisk,
+            buyer_fit: candidate.buyerFit,
+            recommendation: candidate.recommendation,
+            verification_label: candidate.verificationLabel,
+            source_proof_label: candidate.sourceProof.label,
+            source_proof_url: candidate.sourceProof.url,
           }))
         ),
       ]
@@ -1667,6 +1716,9 @@ async function quarantineApprovedContacts(
          'blocked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
          'queue_gate_checked_at', to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
          'hunter_verdict', 'blocked',
+         'hunter_bounce_risk', 'high',
+         'hunter_recommendation', 'hold',
+         'hunter_verification_label', 'risky',
          'hunter_blockers', updates.hunter_blockers
        ),
        updated_at = CURRENT_TIMESTAMP

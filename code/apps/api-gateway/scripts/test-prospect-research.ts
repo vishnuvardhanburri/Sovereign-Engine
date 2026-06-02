@@ -45,6 +45,9 @@ assert.equal(safe.approved, true)
 assert.equal(safe.blockers.length, 0)
 assert.ok(safe.score >= 72)
 assert.ok(safe.reasons.includes('safe_business_inbox'))
+assert.equal(safe.bounceRisk, 'low')
+assert.equal(safe.recommendation, 'approve')
+assert.equal(safe.verificationLabel, 'verified')
 
 const unverifiedOpportunityInbox = scoreProspectForResearchApproval({
   id: 12,
@@ -241,10 +244,13 @@ const publicSearchBusinessRoleInbox = scoreProspectForResearchApproval({
   },
 })
 
-assert.equal(publicSearchBusinessRoleInbox.approved, true)
-assert.ok(publicSearchBusinessRoleInbox.reasons.includes('business_role_fallback_accepted'))
-assert.equal(publicSearchBusinessRoleInbox.blockers.length, 0)
-assert.deepEqual(
+assert.equal(publicSearchBusinessRoleInbox.approved, false)
+assert.ok(
+  publicSearchBusinessRoleInbox.blockers.includes(
+    'weak_generic_inbox_requires_verification_or_public_proof'
+  )
+)
+assert.ok(
   approvedContactQueueBlockers({
     id: 60,
     email: 'hello@realagency.com',
@@ -261,8 +267,7 @@ assert.deepEqual(
       fit_score: 82,
       public_evidence_url: 'https://realagency.com/',
     },
-  }),
-  []
+  }).includes('weak_generic_inbox_requires_verification_or_public_proof')
 )
 
 const openLeadGraphBusinessRoleInbox = scoreProspectForResearchApproval({
@@ -284,9 +289,13 @@ const openLeadGraphBusinessRoleInbox = scoreProspectForResearchApproval({
   },
 })
 
-assert.equal(openLeadGraphBusinessRoleInbox.approved, true)
-assert.ok(openLeadGraphBusinessRoleInbox.reasons.includes('business_role_fallback_accepted'))
-assert.deepEqual(
+assert.equal(openLeadGraphBusinessRoleInbox.approved, false)
+assert.ok(
+  openLeadGraphBusinessRoleInbox.blockers.includes(
+    'weak_generic_inbox_requires_verification_or_public_proof'
+  )
+)
+assert.ok(
   approvedContactQueueBlockers({
     id: 62,
     email: 'hello@strongagency.com',
@@ -304,8 +313,7 @@ assert.deepEqual(
       fit_score: 90,
       public_evidence_url: 'https://strongagency.com/',
     },
-  }),
-  []
+  }).includes('weak_generic_inbox_requires_verification_or_public_proof')
 )
 
 const unverifiedSalesInbox = scoreProspectForResearchApproval({

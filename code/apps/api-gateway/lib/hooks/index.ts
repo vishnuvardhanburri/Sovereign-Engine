@@ -149,9 +149,12 @@ export const useApproveContacts = () => {
     mutationFn: (input: { ids?: string[]; limit?: number }) => api.contacts.approve(input),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      const held = Number((result as any).held ?? (result as any).blocked?.length ?? 0)
       toast.success(
         result.approved > 0
-          ? `${result.approved} prospect${result.approved === 1 ? '' : 's'} approved`
+          ? `${result.approved} prospect${result.approved === 1 ? '' : 's'} approved${held > 0 ? `; ${held} held by Hunter gate` : ''}`
+          : held > 0
+            ? `${held} prospect${held === 1 ? '' : 's'} held by Hunter gate`
           : 'No reviewable prospects found'
       )
     },

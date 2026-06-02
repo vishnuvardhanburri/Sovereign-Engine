@@ -166,11 +166,11 @@ const COMPANY_SEEDS: CompanySeed[] = [
 ]
 
 const PERSONA_MAILBOXES: Record<LeadScoutPersona, string[]> = {
-  founder: ['hello', 'contact', 'team'],
-  growth: ['growth', 'marketing', 'hello'],
-  partnerships: ['partners', 'partnerships', 'hello'],
-  sales: ['sales', 'hello', 'contact'],
-  operations: ['operations', 'ops', 'hello'],
+  founder: ['business', 'sales', 'partnerships'],
+  growth: ['growth', 'marketing', 'sales'],
+  partnerships: ['partnerships', 'partners', 'business'],
+  sales: ['sales', 'business', 'growth'],
+  operations: ['operations', 'business', 'sales'],
 }
 
 const PUBLIC_EVIDENCE_PATHS = [

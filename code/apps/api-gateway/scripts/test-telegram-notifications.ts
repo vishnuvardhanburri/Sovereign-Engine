@@ -13,7 +13,22 @@ assert.equal(shouldNotifyTelegram('email_sent', { TELEGRAM_NOTIFY_SENT: 'true' }
 assert.equal(shouldNotifyTelegram('email_sent', { TELEGRAM_NOTIFY_SENT_EVENTS: 'true' }), true)
 assert.equal(shouldNotifyTelegram('email_failed', { TELEGRAM_NOTIFY_FAILED: '0' }), false)
 assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORTS: 'yes' }), false)
-assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORT_EVENTS: 'yes' }), true)
+assert.equal(shouldNotifyTelegram('sheet_import', { TELEGRAM_NOTIFY_IMPORT_EVENTS: 'yes' }), false)
+assert.equal(
+  shouldNotifyTelegram('sheet_import', {
+    TELEGRAM_OPERATOR_REPORT_ONLY: 'false',
+    TELEGRAM_NOTIFY_IMPORT_EVENTS: 'yes',
+  }),
+  true
+)
+assert.equal(shouldNotifyTelegram('lead_scout', { TELEGRAM_NOTIFY_STAGE_EVENTS: 'yes' }), false)
+assert.equal(
+  shouldNotifyTelegram('lead_scout', {
+    TELEGRAM_DEBUG_STAGE_NOTIFICATIONS: 'yes',
+    TELEGRAM_NOTIFY_STAGE_EVENTS: 'yes',
+  }),
+  true
+)
 assert.equal(shouldNotifyTelegram('queue_batch', { TELEGRAM_NOTIFY_QUEUE: 'yes' }), false)
 assert.equal(shouldNotifyTelegram('daily_outbound', { TELEGRAM_NOTIFY_QUEUE: 'yes' }), true)
 

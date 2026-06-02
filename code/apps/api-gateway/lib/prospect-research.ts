@@ -24,6 +24,14 @@ export type ProspectResearchDecision = {
   confidence: number
   verdict: 'approved' | 'review' | 'blocked'
   approved: boolean
+  bounceRisk: 'low' | 'medium' | 'high'
+  buyerFit: 'premium' | 'strong' | 'medium' | 'low'
+  recommendation: 'approve' | 'review' | 'hold'
+  verificationLabel: 'verified' | 'likely' | 'risky' | 'unverified'
+  sourceProof: {
+    label: string
+    url: string | null
+  }
   reasons: string[]
   blockers: string[]
   evidenceUrl: string | null
@@ -472,7 +480,11 @@ function hasAcceptedProviderValidationFallback(customFields: Record<string, unkn
   if (!allowUnknownProviderValidation()) return false
   const provider = asString(customFields.email_validation_provider)
   const verdict = asString(customFields.email_validation_verdict)
-  return Boolean(provider) && ['unknown', 'risky'].includes(verdict)
+  const score = scoreNumber(customFields.email_validation_score)
+  if (!provider) return false
+  if (verdict === 'risky') return score >= 0.65
+  if (verdict === 'unknown') return score >= 0.75
+  return false
 }
 
 function hasAcceptedBusinessRoleFallback(
@@ -495,10 +507,7 @@ function hasAcceptedBusinessRoleFallback(
 
   const fitScore = scoreNumber(customFields.fit_score)
   if (WEAK_GENERIC_PREFIXES.has(prefix)) {
-    if (evidence === 'synthetic_role_pattern') return fitScore >= 90
-    if (evidence === 'maps_public_business_evidence') return fitScore >= 90
-    if (evidence === 'business_domain_role_pattern') return fitScore >= 82
-    return fitScore >= 88
+    return evidence === 'maps_public_business_domain_match' && fitScore >= 95
   }
   if (evidence === 'synthetic_role_pattern') return fitScore >= 88
   if (evidence === 'maps_public_business_evidence') return fitScore >= 82
@@ -514,6 +523,77 @@ function hasStrongEmailEvidence(
     hasExactPublicEmailEvidence(customFields.email_evidence) ||
     hasAcceptedProviderValidationFallback(customFields)
   )
+}
+
+function weakGenericHasHardEvidence(
+  customFields: Record<string, unknown>,
+  verificationStatus: string
+): boolean {
+  return verificationStatus === 'valid' || hasExactPublicEmailEvidence(customFields.email_evidence)
+}
+
+function sourceProofLabel(
+  customFields: Record<string, unknown>,
+  evidenceUrl: string | null,
+  source: string | null
+): { label: string; url: string | null } {
+  const provider = asString(customFields.email_validation_provider)
+  if (evidenceUrl) {
+    return {
+      label: hasSpecificEvidencePath(evidenceUrl) ? 'public page proof' : 'domain proof',
+      url: evidenceUrl,
+    }
+  }
+  if (provider) return { label: `${provider} verification`, url: null }
+  if (source) return { label: source.replace(/_/g, ' '), url: null }
+  return { label: 'not recorded', url: null }
+}
+
+function buyerFitFromScore(fitScore: number): ProspectResearchDecision['buyerFit'] {
+  if (fitScore >= 90) return 'premium'
+  if (fitScore >= 80) return 'strong'
+  if (fitScore >= 70) return 'medium'
+  return 'low'
+}
+
+function verificationLabelFor(
+  customFields: Record<string, unknown>,
+  verificationStatus: string,
+  prefix: string
+): ProspectResearchDecision['verificationLabel'] {
+  if (verificationStatus === 'valid' || hasExactPublicEmailEvidence(customFields.email_evidence)) {
+    return 'verified'
+  }
+  if (hasAcceptedBusinessRoleFallback(customFields, prefix)) return 'likely'
+  if (['invalid', 'do_not_mail'].includes(verificationStatus)) return 'risky'
+  if (hasAcceptedProviderValidationFallback(customFields)) return 'risky'
+  return 'unverified'
+}
+
+function bounceRiskFor(
+  blockers: string[],
+  customFields: Record<string, unknown>,
+  verificationStatus: string,
+  prefix: string
+): ProspectResearchDecision['bounceRisk'] {
+  const hardRisk = blockers.some((blocker) =>
+    [
+      'invalid_email',
+      'personal_email_domain',
+      'artifact_or_too_short_mailbox',
+      'blocked_mailbox_prefix',
+      'previously_bounced',
+      'unsubscribed',
+      'institutional_or_government_domain',
+      'low_intent_public_directory_domain',
+    ].includes(blocker) ||
+    blocker.startsWith('verification_') ||
+    blocker.includes('weak_generic')
+  )
+  if (hardRisk) return 'high'
+  if (verificationStatus === 'valid' || hasExactPublicEmailEvidence(customFields.email_evidence)) return 'low'
+  if (WEAK_GENERIC_PREFIXES.has(prefix) || hasAcceptedProviderValidationFallback(customFields)) return 'medium'
+  return 'medium'
 }
 
 function hasInstitutionalOrGovernmentDomain(domain: string): boolean {
@@ -670,10 +750,9 @@ export function approvedContactQueueBlockers(
   }
   if (
     WEAK_GENERIC_PREFIXES.has(prefix) &&
-    (hasProtectedEnterpriseDomain(email.split('@')[1] ?? '') || hasLowIntentDomain(email.split('@')[1] ?? '')) &&
-    !hasStrongEmailEvidence(customFields, verificationStatus)
+    !weakGenericHasHardEvidence(customFields, verificationStatus)
   ) {
-    blockers.push('weak_generic_inbox_requires_strong_evidence')
+    blockers.push('weak_generic_inbox_requires_verification_or_public_proof')
   }
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) {
     blockers.push(`verification_${verificationStatus}`)
@@ -974,6 +1053,13 @@ export function scoreProspectForResearchApproval(
     blockers.push('generic_inbox_requires_email_validation')
   }
 
+  if (
+    WEAK_GENERIC_PREFIXES.has(prefix) &&
+    !weakGenericHasHardEvidence(customFields, verificationStatus)
+  ) {
+    blockers.push('weak_generic_inbox_requires_verification_or_public_proof')
+  }
+
   if (hasInstitutionalOrGovernmentDomain(emailDomain)) {
     blockers.push('institutional_or_government_domain')
   }
@@ -1110,9 +1196,16 @@ export function scoreProspectForResearchApproval(
     reasons.push('business_role_fallback_accepted')
   }
 
-  const confidence = Math.min(100, score)
-  const approved = blockers.length === 0 && confidence >= threshold
-  const verdict = approved ? 'approved' : blockers.length > 0 ? 'blocked' : 'review'
+  const uniqueBlockers = Array.from(new Set(blockers))
+  const bounceRisk = bounceRiskFor(uniqueBlockers, customFields, verificationStatus, prefix)
+  const buyerFit = buyerFitFromScore(fitScore)
+  const verificationLabel = verificationLabelFor(customFields, verificationStatus, prefix)
+  let confidence = Math.min(100, score)
+  if (uniqueBlockers.length > 0) confidence = Math.min(confidence, 64)
+  if (bounceRisk === 'high') confidence = Math.min(confidence, 49)
+  const approved = uniqueBlockers.length === 0 && confidence >= threshold && bounceRisk !== 'high'
+  const verdict = approved ? 'approved' : uniqueBlockers.length > 0 ? 'blocked' : 'review'
+  const recommendation = approved ? 'approve' : bounceRisk === 'high' || uniqueBlockers.length > 0 ? 'hold' : 'review'
 
   return {
     id: Number(contact.id),
@@ -1122,8 +1215,13 @@ export function scoreProspectForResearchApproval(
     confidence,
     verdict,
     approved,
+    bounceRisk,
+    buyerFit,
+    recommendation,
+    verificationLabel,
+    sourceProof: sourceProofLabel(customFields, evidenceUrl, source),
     reasons: Array.from(new Set(reasons)),
-    blockers: Array.from(new Set(blockers)),
+    blockers: uniqueBlockers,
     evidenceUrl,
     source,
   }

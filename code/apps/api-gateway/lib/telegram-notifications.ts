@@ -160,6 +160,10 @@ function envBool(value: string | undefined, fallback: boolean): boolean {
 }
 
 function stageEventEnabled(env: TelegramEnv, flag: string): boolean {
+  const operatorReportOnly = envBool(env.TELEGRAM_OPERATOR_REPORT_ONLY, true)
+  const debugStageNotifications = envBool(env.TELEGRAM_DEBUG_STAGE_NOTIFICATIONS, false)
+  if (operatorReportOnly && !debugStageNotifications) return false
+
   return envBool(env.TELEGRAM_NOTIFY_STAGE_EVENTS, false) || envBool(env[flag], false)
 }
 
