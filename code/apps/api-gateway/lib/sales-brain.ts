@@ -22,7 +22,7 @@ const CORE_RULES = [
   'Lead with the buyer question: why buy this, what risk or profit does it affect, and why now.',
   'Lead with pain before product: domain burn, inbox placement drops, AI PII leakage, prompt injection, compliance exposure, stalled follow-ups, and weak operator visibility.',
   'Make one clear offer: Xavira Control Stack combines Sovereign Engine and Sovereign Shield in one deployment.',
-  'Keep the ask low-friction: offer a 15-20 minute operational risk audit and live control-stack walkthrough.',
+  'Keep the ask low-friction: offer a short operational risk walkthrough after curiosity is established.',
   'Use proof language over hype: self-hosted, audit-ready, deployment-ready, operator-controlled, works above existing outbound tools, no fake customer claims.',
   'Write like a serious infrastructure operator: short sentences, specific business pain, calm confidence, no buzzword pileups, no AI-sounding filler.',
   'Preferred language: operational infrastructure, deliverability operations, provider-aware monitoring, infrastructure governance, realtime operational visibility, reputation monitoring, outbound reliability, AI governance systems, infrastructure intelligence.',
@@ -39,7 +39,7 @@ const DIRECT_RULES = [
   `Direct offer: ${XAVIRA_COMMERCIAL_MODEL.internalEnterpriseLicense.label} GBP internal enterprise license for Xavira Control Stack.`,
   'Frame ROI as protecting outbound revenue, reducing failed follow-up waste, improving operator visibility, and lowering AI/compliance risk.',
   'Mention Sovereign Engine as the outbound operations control plane and Sovereign Shield as the private AI governance/security layer.',
-  'Best CTA: 20-minute operational audit + deployment walkthrough.',
+  'Best CTA: short operational walkthrough after the buyer shows interest.',
 ]
 
 const AGENCY_RULES = [

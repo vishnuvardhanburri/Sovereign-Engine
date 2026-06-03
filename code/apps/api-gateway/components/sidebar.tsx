@@ -81,9 +81,9 @@ export function Sidebar() {
       </div>
 
       <aside
-        className={`fixed inset-y-0 left-0 w-64 bg-sidebar border-r border-sidebar-border transition-all duration-300 z-30 md:relative md:translate-x-0 ${
+        className={`fixed left-0 top-16 bottom-0 w-64 shrink-0 bg-sidebar border-r border-sidebar-border transition-all duration-300 z-30 md:sticky md:top-0 md:h-screen md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
-        } md:translate-x-0 md:top-0 top-16`}
+        }`}
       >
         <div className="flex flex-col h-full">
           <div className="hidden md:flex items-center gap-2 px-6 py-4 border-b border-sidebar-border">
@@ -113,8 +113,8 @@ export function Sidebar() {
                         : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                     }`}
                   >
-                    <Icon className="w-4 h-4 opacity-90" />
-                    <span className="hidden sm:inline">{item.label}</span>
+                    <Icon className="w-4 h-4 shrink-0 opacity-90" />
+                    <span className="truncate">{item.label}</span>
                   </Link>
                 )
               })}

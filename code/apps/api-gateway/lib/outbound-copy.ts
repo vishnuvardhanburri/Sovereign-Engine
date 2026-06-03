@@ -25,7 +25,7 @@ export const SOVEREIGN_STACK_DIRECT_SUBJECT =
 export const SOVEREIGN_STACK_AGENCY_SUBJECT =
   'white-label communication infrastructure'
 
-export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://www.vishnuvardhanburri.in'
+export const SOVEREIGN_DEFAULT_BOOKING_URL = 'https://www.vishnuvardhanburri.in/book'
 export const SOVEREIGN_CLIENT_GENERATION_TARGET = {
   dailyQualifiedConversationsMin: 1,
   dailyQualifiedConversationsMax: 2,
@@ -73,18 +73,22 @@ export function sovereignBookingUrl(): string {
 export const SOVEREIGN_BOOKING_URL = SOVEREIGN_DEFAULT_BOOKING_URL
 
 export function sovereignBookingCtaText(): string {
-  return `If helpful, here is the page I usually share before a walkthrough: ${sovereignBookingUrl()}`
+  return `If useful, book a short walkthrough here: ${sovereignBookingUrl()}`
 }
 
 export function withSovereignBookingCta(body: string): string {
-  const trimmed = body.trim()
-  if (
-    !trimmed ||
-    /cal\.com\/vishnuvardhanburri\/30min/i.test(trimmed) ||
-    trimmed.includes(sovereignBookingUrl())
-  ) {
-    return trimmed
-  }
+  let trimmed = body.trim()
+  if (!trimmed) return trimmed
+
+  const bookingUrl = sovereignBookingUrl()
+  trimmed = trimmed
+    .replace(/https?:\/\/cal\.com\/vishnuvardhanburri\/30min\/?/gi, bookingUrl)
+    .replace(/https?:\/\/(?:www\.)?vishnulabs\.com\/book\/?/gi, bookingUrl)
+    .replace(/https?:\/\/(?:www\.)?vishnuvardhanburri\.in\/?(\s|$)/gi, (_match, suffix: string) =>
+      `${bookingUrl}${suffix ?? ''}`
+    )
+
+  if (trimmed.includes(bookingUrl)) return trimmed
 
   const cta = sovereignBookingCtaText()
   const optOutMatch = trimmed.match(

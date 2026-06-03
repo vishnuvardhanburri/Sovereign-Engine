@@ -127,12 +127,12 @@ function StatCard({
   return (
     <Card>
       <CardContent className="pt-5 pb-4">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <div className={`mt-0.5 ${accentClass}`}>{icon}</div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className={`text-2xl font-bold ${accentClass}`}>{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+            <p className={`break-words text-2xl font-bold ${accentClass}`}>{value}</p>
+            {sub && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{sub}</p>}
           </div>
         </div>
       </CardContent>
@@ -204,21 +204,23 @@ export default function SentMailPage() {
   const s = data?.summary
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="min-w-0 space-y-6">
+      <div className="min-w-0">
         <h1 className="text-3xl font-bold">Sent Mail</h1>
-        <p className="text-muted-foreground">Client-generation proof — qualified conversations, 50/50 offer mix, and delivery health</p>
+        <p className="max-w-3xl text-muted-foreground">
+          Client-generation proof — qualified conversations, 50/50 offer mix, and delivery health
+        </p>
       </div>
 
       {/* BI Summary Cards */}
       {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {Array(8).fill(0).map((_, i) => (
             <Card key={i}><CardContent className="pt-5"><Skeleton className="h-10 w-full" /></CardContent></Card>
           ))}
         </div>
       ) : s ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
             icon={<Send className="w-4 h-4" />}
             label="Sent today"
@@ -273,13 +275,13 @@ export default function SentMailPage() {
             value={s.topProvider ?? '—'}
             accent="green"
           />
-          <StatCard
-            icon={<AlertTriangle className="w-4 h-4" />}
-            label="Top failure reason"
-            value={s.topFailureReason ? s.topFailureReason.slice(0, 24) : '—'}
-            sub={s.topFailureReason && s.topFailureReason.length > 24 ? s.topFailureReason : undefined}
-            accent="amber"
-          />
+            <StatCard
+              icon={<AlertTriangle className="w-4 h-4" />}
+              label="Top failure reason"
+              value={s.topFailureReason ? s.topFailureReason.slice(0, 28) : '—'}
+              sub={s.topFailureReason && s.topFailureReason.length > 28 ? s.topFailureReason : undefined}
+              accent="amber"
+            />
         </div>
       ) : null}
 
@@ -296,16 +298,16 @@ export default function SentMailPage() {
         </CardHeader>
         <CardContent>
           {copyPreviewLoading ? (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid min-w-0 gap-3 xl:grid-cols-2">
               <Skeleton className="h-72 w-full" />
               <Skeleton className="h-72 w-full" />
             </div>
           ) : copyPreview?.previews?.length ? (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid min-w-0 gap-3 xl:grid-cols-2">
               {copyPreview.previews.map((preview) => (
-                <div key={preview.offerType} className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                <div key={preview.offerType} className="min-w-0 space-y-3 rounded-lg border bg-muted/20 p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         {offerBadge(preview.offerType)}
                         <Badge variant="outline" className="text-xs">
@@ -319,7 +321,7 @@ export default function SentMailPage() {
                         Sample company: {preview.company}
                       </p>
                     </div>
-                    <p className="text-sm font-semibold">
+                    <p className="shrink-0 text-sm font-semibold">
                       {preview.dealValueLabel ?? `£${(preview.dealValueGbp ?? preview.dealValueUsd).toLocaleString()}`}
                     </p>
                   </div>
@@ -361,8 +363,8 @@ export default function SentMailPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex gap-4 flex-wrap items-center">
-            <div className="flex-1 min-w-72">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="min-w-0 flex-1 basis-72">
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input

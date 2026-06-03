@@ -3279,7 +3279,7 @@ function renderOutboundHtml(text: string): string {
   const safeBookingUrl = escapeHtml(sovereignBookingUrl())
   const bookingButton = [
     '<p style="margin:18px 0;">',
-    `<a href="${safeBookingUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;">Book 20-min audit/demo</a>`,
+    `<a href="${safeBookingUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;font-family:Arial,sans-serif;">Book short walkthrough</a>`,
     '</p>',
   ].join('')
   const unsubscribeMarker = '<br /><br />Unsubscribe:'
