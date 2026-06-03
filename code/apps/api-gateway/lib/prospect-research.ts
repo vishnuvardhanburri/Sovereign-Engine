@@ -28,6 +28,9 @@ export type ProspectResearchDecision = {
   buyerFit: 'premium' | 'strong' | 'medium' | 'low'
   recommendation: 'approve' | 'review' | 'hold'
   verificationLabel: 'verified' | 'likely' | 'risky' | 'unverified'
+  mailboxQuality: 'direct' | 'commercial' | 'generic' | 'risky'
+  sourceStrength: 'exact_public' | 'provider_validated' | 'domain_matched' | 'pattern_only' | 'weak'
+  decisionSummary: string
   sourceProof: {
     label: string
     url: string | null
@@ -92,11 +95,14 @@ const BLOCKED_MAILBOX_PREFIXES = new Set([
   'career',
   'careers',
   'compliance',
+  'comments',
+  'community',
   'copyright',
   'customer',
   'customerservice',
   'dmca',
   'donotreply',
+  'editor',
   'feedback',
   'finance',
   'fraud',
@@ -110,22 +116,30 @@ const BLOCKED_MAILBOX_PREFIXES = new Set([
   'invoices',
   'jobs',
   'legal',
+  'listed',
+  'listing',
   'media',
   'news',
   'no-reply',
   'noreply',
+  'office',
   'orders',
   'payroll',
   'postmaster',
   'pr',
   'press',
   'privacy',
+  'reception',
   'reportincident',
   'security',
+  'service',
+  'services',
   'support',
   'tax',
   'test',
   'testsecurity',
+  'web',
+  'website',
   'webmaster',
 ])
 
@@ -623,6 +637,88 @@ function isArtifactMailboxPrefix(prefix: string): boolean {
   return false
 }
 
+type MailboxQuality = ProspectResearchDecision['mailboxQuality']
+type SourceStrength = ProspectResearchDecision['sourceStrength']
+
+function mailboxQualityFor(prefix: string): MailboxQuality {
+  const normalized = prefix.trim().toLowerCase()
+  if (BLOCKED_MAILBOX_PREFIXES.has(normalized) || isArtifactMailboxPrefix(normalized)) return 'risky'
+  if (COMMERCIAL_ROLE_PREFIXES.has(normalized) || RISKY_GUESSED_ROLE_PREFIXES.has(normalized)) {
+    return 'commercial'
+  }
+  if (WEAK_GENERIC_PREFIXES.has(normalized) || SAFE_BUSINESS_PREFIXES.has(normalized)) return 'generic'
+  if (isPersonLikeMailboxPrefix(normalized)) return 'direct'
+  return 'generic'
+}
+
+function sourceStrengthFor(
+  customFields: Record<string, unknown>,
+  verificationStatus: string,
+  evidenceUrl: string | null,
+  source: string | null
+): SourceStrength {
+  const evidence = asString(customFields.email_evidence).toLowerCase()
+  const validationVerdict = asString(customFields.email_validation_verdict).toLowerCase()
+
+  if (['exact_public_email', 'public_mailto_match', 'public_page_email_match'].includes(evidence)) {
+    return 'exact_public'
+  }
+  if (verificationStatus === 'valid' || evidence === 'provider_validated' || validationVerdict === 'valid') {
+    return 'provider_validated'
+  }
+  if (
+    [
+      'hunter_domain_search',
+      'maps_public_business_domain_match',
+      'maps_public_business_evidence',
+      'public_domain_email',
+    ].includes(evidence)
+  ) {
+    return 'domain_matched'
+  }
+  if (['business_domain_role_pattern', 'synthetic_role_pattern'].includes(evidence)) return 'pattern_only'
+  if (evidenceUrl) return 'domain_matched'
+  if (source) return 'weak'
+  return 'weak'
+}
+
+function humanizeToken(value: string): string {
+  return value.replace(/_/g, ' ')
+}
+
+function mailboxQualityCopy(value: MailboxQuality): string {
+  if (value === 'direct') return 'direct person-like'
+  if (value === 'commercial') return 'commercial role'
+  if (value === 'generic') return 'generic business'
+  return 'risky'
+}
+
+function sourceStrengthCopy(value: SourceStrength): string {
+  if (value === 'exact_public') return 'exact public email proof'
+  if (value === 'provider_validated') return 'provider validation'
+  if (value === 'domain_matched') return 'domain-matched public proof'
+  if (value === 'pattern_only') return 'pattern-only evidence'
+  return 'weak proof'
+}
+
+function decisionSummaryFor(args: {
+  approved: boolean
+  blockers: string[]
+  bounceRisk: ProspectResearchDecision['bounceRisk']
+  mailboxQuality: MailboxQuality
+  sourceStrength: SourceStrength
+  buyerFit: ProspectResearchDecision['buyerFit']
+}): string {
+  if (args.approved) {
+    return `Sendable: ${mailboxQualityCopy(args.mailboxQuality)} inbox with ${sourceStrengthCopy(args.sourceStrength)} and ${args.buyerFit} buyer fit.`
+  }
+
+  const reason =
+    args.blockers[0] ??
+    (args.bounceRisk === 'high' ? 'high bounce risk' : 'score below approval threshold')
+  return `Hold: ${humanizeToken(reason)}. ${mailboxQualityCopy(args.mailboxQuality)} inbox with ${sourceStrengthCopy(args.sourceStrength)}.`
+}
+
 function prospectText(contact: ProspectResearchContact): string {
   const customFields = contact.custom_fields ?? {}
   const selectedCustomFields = [
@@ -1039,6 +1135,8 @@ export function scoreProspectForResearchApproval(
   }
 
   const verificationStatus = String(contact.verification_status ?? 'pending')
+  const mailboxQuality = mailboxQualityFor(prefix)
+  const sourceStrength = sourceStrengthFor(customFields, verificationStatus, evidenceUrl, source)
   if (['invalid', 'do_not_mail'].includes(verificationStatus)) {
     blockers.push(`verification_${verificationStatus}`)
   }
@@ -1127,6 +1225,23 @@ export function scoreProspectForResearchApproval(
     score += 8
     reasons.push('neutral_business_inbox')
   }
+  reasons.push(`mailbox_quality_${mailboxQuality}`)
+  reasons.push(`source_strength_${sourceStrength}`)
+  if (mailboxQuality === 'direct') {
+    score += 8
+  } else if (mailboxQuality === 'commercial') {
+    score += 6
+  }
+
+  if (sourceStrength === 'exact_public') {
+    score += 14
+  } else if (sourceStrength === 'provider_validated') {
+    score += 12
+  } else if (sourceStrength === 'domain_matched') {
+    score += 7
+  } else if (sourceStrength === 'pattern_only') {
+    score += 2
+  }
 
   if (emailDomain && companyDomain && rootDomain(emailDomain) === rootDomain(companyDomain)) {
     score += 20
@@ -1201,11 +1316,21 @@ export function scoreProspectForResearchApproval(
   const buyerFit = buyerFitFromScore(fitScore)
   const verificationLabel = verificationLabelFor(customFields, verificationStatus, prefix)
   let confidence = Math.min(100, score)
+  if (mailboxQuality === 'generic' && sourceStrength === 'weak') confidence = Math.min(confidence, 64)
+  if (mailboxQuality === 'generic' && sourceStrength === 'pattern_only') confidence = Math.min(confidence, 69)
   if (uniqueBlockers.length > 0) confidence = Math.min(confidence, 64)
   if (bounceRisk === 'high') confidence = Math.min(confidence, 49)
   const approved = uniqueBlockers.length === 0 && confidence >= threshold && bounceRisk !== 'high'
   const verdict = approved ? 'approved' : uniqueBlockers.length > 0 ? 'blocked' : 'review'
   const recommendation = approved ? 'approve' : bounceRisk === 'high' || uniqueBlockers.length > 0 ? 'hold' : 'review'
+  const decisionSummary = decisionSummaryFor({
+    approved,
+    blockers: uniqueBlockers,
+    bounceRisk,
+    mailboxQuality,
+    sourceStrength,
+    buyerFit,
+  })
 
   return {
     id: Number(contact.id),
@@ -1219,6 +1344,9 @@ export function scoreProspectForResearchApproval(
     buyerFit,
     recommendation,
     verificationLabel,
+    mailboxQuality,
+    sourceStrength,
+    decisionSummary,
     sourceProof: sourceProofLabel(customFields, evidenceUrl, source),
     reasons: Array.from(new Set(reasons)),
     blockers: uniqueBlockers,

@@ -48,6 +48,9 @@ assert.ok(safe.reasons.includes('safe_business_inbox'))
 assert.equal(safe.bounceRisk, 'low')
 assert.equal(safe.recommendation, 'approve')
 assert.equal(safe.verificationLabel, 'verified')
+assert.equal(safe.mailboxQuality, 'commercial')
+assert.equal(safe.sourceStrength, 'provider_validated')
+assert.match(safe.decisionSummary, /Sendable/)
 
 const unverifiedOpportunityInbox = scoreProspectForResearchApproval({
   id: 12,
@@ -110,6 +113,8 @@ const unsupportedInbox = scoreProspectForResearchApproval({
 
 assert.equal(unsupportedInbox.approved, false)
 assert.ok(unsupportedInbox.blockers.includes('blocked_mailbox_prefix'))
+assert.equal(unsupportedInbox.mailboxQuality, 'risky')
+assert.match(unsupportedInbox.decisionSummary, /Hold/)
 
 const pressInbox = scoreProspectForResearchApproval({
   id: 31,
@@ -221,6 +226,8 @@ const unverifiedGenericInbox = scoreProspectForResearchApproval({
 })
 
 assert.equal(unverifiedGenericInbox.approved, false)
+assert.equal(unverifiedGenericInbox.mailboxQuality, 'generic')
+assert.equal(unverifiedGenericInbox.sourceStrength, 'domain_matched')
 assert.ok(
   unverifiedGenericInbox.blockers.includes('generic_inbox_requires_email_validation')
 )
@@ -245,6 +252,7 @@ const publicSearchBusinessRoleInbox = scoreProspectForResearchApproval({
 })
 
 assert.equal(publicSearchBusinessRoleInbox.approved, false)
+assert.equal(publicSearchBusinessRoleInbox.sourceStrength, 'pattern_only')
 assert.ok(
   publicSearchBusinessRoleInbox.blockers.includes(
     'weak_generic_inbox_requires_verification_or_public_proof'
@@ -372,6 +380,7 @@ const verifiedGenericInbox = scoreProspectForResearchApproval({
 })
 
 assert.equal(verifiedGenericInbox.approved, true)
+assert.equal(verifiedGenericInbox.sourceStrength, 'provider_validated')
 
 const exactEvidenceGenericInbox = scoreProspectForResearchApproval({
   id: 71,
@@ -392,6 +401,7 @@ const exactEvidenceGenericInbox = scoreProspectForResearchApproval({
 })
 
 assert.equal(exactEvidenceGenericInbox.approved, true)
+assert.equal(exactEvidenceGenericInbox.sourceStrength, 'exact_public')
 assert.deepEqual(
   approvedContactQueueBlockers({
     id: 71,
@@ -527,7 +537,9 @@ const providerValidatedGeneric = await enrichProspectWithProviderValidation(
 assert.equal(providerValidatedGeneric.checked, true)
 assert.equal(providerValidatedGeneric.contact.verification_status, 'valid')
 assert.equal(providerValidatedGeneric.contact.custom_fields?.email_evidence, 'provider_validated')
-assert.equal(scoreProspectForResearchApproval(providerValidatedGeneric.contact).approved, true)
+const providerValidatedGenericScore = scoreProspectForResearchApproval(providerValidatedGeneric.contact)
+assert.equal(providerValidatedGenericScore.approved, true)
+assert.equal(providerValidatedGenericScore.sourceStrength, 'provider_validated')
 assert.deepEqual(approvedContactQueueBlockers(providerValidatedGeneric.contact), [])
 
 const providerValidatedSales = await enrichProspectWithProviderValidation(
@@ -563,6 +575,10 @@ assert.equal(providerValidatedSales.contact.verification_status, 'valid')
 assert.equal(
   scoreProspectForResearchApproval(providerValidatedSales.contact).approved,
   true
+)
+assert.equal(
+  scoreProspectForResearchApproval(providerValidatedSales.contact).sourceStrength,
+  'provider_validated'
 )
 
 const validMapsLead = scoreProspectForResearchApproval({

@@ -86,14 +86,25 @@ export default function ContactsPage() {
     customString(contact, 'hunter_source_proof_label', customString(contact, 'email_evidence', customString(contact, 'source', contact.source || 'source')))
   const sourceProofUrl = (contact: Contact) =>
     customString(contact, 'hunter_source_proof_url', customString(contact, 'research_evidence_url', customString(contact, 'public_evidence_url')))
+  const hunterMailboxQuality = (contact: Contact) => customString(contact, 'hunter_mailbox_quality', 'unknown')
+  const hunterSourceStrength = (contact: Contact) => customString(contact, 'hunter_source_strength', 'unknown')
+  const hunterDecisionSummary = (contact: Contact) => customString(contact, 'hunter_decision_summary')
   const hunterBlockers = (contact: Contact) => {
     const blockers = contact.customFields?.hunter_blockers
     return Array.isArray(blockers) ? blockers.map(String).filter(Boolean) : []
   }
-  const canApprove = (contact: Contact) =>
-    contact.status === 'active' &&
-    hunterRecommendation(contact) !== 'hold' &&
-    hunterBounceRisk(contact) !== 'high'
+  const canApprove = (contact: Contact) => {
+    const mailboxQuality = hunterMailboxQuality(contact)
+    const sourceStrength = hunterSourceStrength(contact)
+
+    return (
+      contact.status === 'active' &&
+      hunterRecommendation(contact) !== 'hold' &&
+      hunterBounceRisk(contact) !== 'high' &&
+      mailboxQuality !== 'risky' &&
+      sourceStrength !== 'weak'
+    )
+  }
   const getHunterBadge = (contact: Contact) => {
     const verdict = hunterVerdict(contact)
     if (isApproved(contact) || verdict === 'approved') {
@@ -113,6 +124,21 @@ export default function ContactsPage() {
     if (risk === 'high') return <Badge className="bg-red-500/10 text-red-500">high risk</Badge>
     return <Badge className="bg-slate-500/10 text-slate-400">risk unknown</Badge>
   }
+  const getMailboxBadge = (quality: string) => {
+    if (quality === 'direct') return <Badge className="bg-sky-500/10 text-sky-400">direct inbox</Badge>
+    if (quality === 'commercial') return <Badge className="bg-emerald-500/10 text-emerald-500">commercial inbox</Badge>
+    if (quality === 'generic') return <Badge className="bg-amber-500/10 text-amber-500">generic inbox</Badge>
+    if (quality === 'risky') return <Badge className="bg-red-500/10 text-red-500">risky inbox</Badge>
+    return <Badge className="bg-slate-500/10 text-slate-400">mailbox unknown</Badge>
+  }
+  const getSourceStrengthBadge = (strength: string) => {
+    if (strength === 'exact_public') return <Badge className="bg-emerald-500/10 text-emerald-500">exact public proof</Badge>
+    if (strength === 'provider_validated') return <Badge className="bg-blue-500/10 text-blue-400">provider checked</Badge>
+    if (strength === 'domain_matched') return <Badge className="bg-cyan-500/10 text-cyan-400">domain proof</Badge>
+    if (strength === 'pattern_only') return <Badge className="bg-amber-500/10 text-amber-500">pattern only</Badge>
+    if (strength === 'weak') return <Badge className="bg-red-500/10 text-red-500">weak proof</Badge>
+    return <Badge className="bg-slate-500/10 text-slate-400">proof unknown</Badge>
+  }
   const getRecommendationBadge = (recommendation: string) => {
     if (recommendation === 'approve') return <Badge className="bg-emerald-500/10 text-emerald-500">sendable</Badge>
     if (recommendation === 'review') return <Badge className="bg-amber-500/10 text-amber-500">review</Badge>
@@ -122,13 +148,15 @@ export default function ContactsPage() {
 
   const hunterStats = (contacts ?? []).reduce(
     (acc, contact) => {
+      const sourceStrength = hunterSourceStrength(contact)
       if (isApproved(contact)) acc.sendable += 1
       if (hunterRecommendation(contact) === 'review') acc.review += 1
       if (hunterRecommendation(contact) === 'hold' || hunterBounceRisk(contact) === 'high') acc.held += 1
-      if (sourceProofUrl(contact)) acc.withProof += 1
+      if (hunterConfidence(contact) >= 80 && (isApproved(contact) || hunterRecommendation(contact) === 'approve')) acc.highConfidence += 1
+      if (sourceProofUrl(contact) || ['exact_public', 'provider_validated', 'domain_matched'].includes(sourceStrength)) acc.withProof += 1
       return acc
     },
-    { sendable: 0, review: 0, held: 0, withProof: 0 }
+    { sendable: 0, review: 0, held: 0, withProof: 0, highConfidence: 0 }
   )
 
   return (
@@ -136,7 +164,7 @@ export default function ContactsPage() {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold">Prospects</h1>
-          <p className="text-muted-foreground">Import and manage your prospect database</p>
+          <p className="text-muted-foreground">Hunter-style approval cockpit: confidence, proof, mailbox quality, and buyer fit before sending.</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -187,8 +215,9 @@ export default function ContactsPage() {
         <Card>
           <CardContent className="flex items-center justify-between p-5">
             <div>
-              <p className="text-sm text-muted-foreground">Contacts with proof</p>
-              <p className="text-2xl font-bold">{hunterStats.withProof}</p>
+              <p className="text-sm text-muted-foreground">High-confidence proof</p>
+              <p className="text-2xl font-bold">{hunterStats.highConfidence}</p>
+              <p className="text-xs text-muted-foreground">{hunterStats.withProof} with source proof</p>
             </div>
             <Target className="h-5 w-5 text-blue-400" />
           </CardContent>
@@ -280,7 +309,10 @@ export default function ContactsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          {getHunterBadge(contact)}
+                          <div className="flex flex-wrap gap-1">
+                            {getHunterBadge(contact)}
+                            {getSourceStrengthBadge(hunterSourceStrength(contact))}
+                          </div>
                           <div className="text-xs text-muted-foreground">{hunterVerificationLabel(contact)}</div>
                           {hunterBlockers(contact).length > 0 ? (
                             <div className="flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
@@ -294,7 +326,10 @@ export default function ContactsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          {getRiskBadge(hunterBounceRisk(contact))}
+                          <div className="flex flex-wrap gap-1">
+                            {getRiskBadge(hunterBounceRisk(contact))}
+                            {getMailboxBadge(hunterMailboxQuality(contact))}
+                          </div>
                           <div className="text-xs text-muted-foreground">fit: {hunterBuyerFit(contact)}</div>
                         </div>
                       </TableCell>
@@ -314,7 +349,14 @@ export default function ContactsPage() {
                           <span className="text-sm text-muted-foreground">No proof yet</span>
                         )}
                       </TableCell>
-                      <TableCell>{getRecommendationBadge(hunterRecommendation(contact))}</TableCell>
+                      <TableCell>
+                        <div className="max-w-[280px] space-y-1">
+                          {getRecommendationBadge(hunterRecommendation(contact))}
+                          <div className="text-xs text-muted-foreground">
+                            {hunterDecisionSummary(contact) || 'Run the research gate to generate the send/hold reason.'}
+                          </div>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {isApproved(contact) ? (
                           <Badge className="bg-emerald-500/10 text-emerald-500">

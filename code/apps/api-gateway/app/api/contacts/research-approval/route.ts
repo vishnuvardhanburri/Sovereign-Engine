@@ -231,6 +231,9 @@ async function researchApproval(request: NextRequest, apply: boolean) {
       hunter_verification_label: decision.verificationLabel,
       hunter_source_proof_label: decision.sourceProof.label,
       hunter_source_proof_url: decision.sourceProof.url,
+      hunter_mailbox_quality: decision.mailboxQuality,
+      hunter_source_strength: decision.sourceStrength,
+      hunter_decision_summary: decision.decisionSummary,
       hunter_reasons: decision.reasons,
       hunter_blockers: decision.blockers,
       research_evidence_url: decision.evidenceUrl,
@@ -253,6 +256,9 @@ async function researchApproval(request: NextRequest, apply: boolean) {
            'hunter_verification_label', updates.hunter_verification_label,
            'hunter_source_proof_label', updates.hunter_source_proof_label,
            'hunter_source_proof_url', updates.hunter_source_proof_url,
+           'hunter_mailbox_quality', updates.hunter_mailbox_quality,
+           'hunter_source_strength', updates.hunter_source_strength,
+           'hunter_decision_summary', updates.hunter_decision_summary,
            'hunter_reasons', updates.hunter_reasons,
            'hunter_blockers', updates.hunter_blockers,
            'research_evidence_url', updates.research_evidence_url,
@@ -273,6 +279,9 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          hunter_verification_label text,
          hunter_source_proof_label text,
          hunter_source_proof_url text,
+         hunter_mailbox_quality text,
+         hunter_source_strength text,
+         hunter_decision_summary text,
          hunter_reasons jsonb,
          hunter_blockers jsonb,
          research_evidence_url text
@@ -320,6 +329,9 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          'hunter_verification_label', scores.verification_label,
          'hunter_source_proof_label', scores.source_proof_label,
          'hunter_source_proof_url', scores.source_proof_url,
+         'hunter_mailbox_quality', scores.mailbox_quality,
+         'hunter_source_strength', scores.source_strength,
+         'hunter_decision_summary', scores.decision_summary,
          'research_evidence_url', scores.evidence_url,
          'email_evidence', COALESCE(NULLIF(scores.email_evidence, ''), contacts.custom_fields->>'email_evidence')
        ),
@@ -338,7 +350,10 @@ async function researchApproval(request: NextRequest, apply: boolean) {
          recommendation text,
          verification_label text,
          source_proof_label text,
-         source_proof_url text
+         source_proof_url text,
+         mailbox_quality text,
+         source_strength text,
+         decision_summary text
        )
      ) AS scores
      WHERE contacts.client_id = $1
@@ -365,6 +380,9 @@ async function researchApproval(request: NextRequest, apply: boolean) {
           verification_label: candidate.verificationLabel,
           source_proof_label: candidate.sourceProof.label,
           source_proof_url: candidate.sourceProof.url,
+          mailbox_quality: candidate.mailboxQuality,
+          source_strength: candidate.sourceStrength,
+          decision_summary: candidate.decisionSummary,
         }))
       ),
     ]
